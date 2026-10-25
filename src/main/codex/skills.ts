@@ -25,12 +25,13 @@ export function resolvePrompt(
   prompt: string,
   snapshots: { path: string; content: string }[],
   context?: Pick<PreparedCatalogRun, 'profileSnapshot' | 'projectSnapshot'>,
+  workspaceKind: 'lab' | 'task' = 'lab',
 ): string {
   const sections: string[] = []
   if (context?.projectSnapshot) {
     const project = context.projectSnapshot
     sections.push(
-      `Project brief: ${project.name}\n${project.description}\n\nProject instructions:\n${project.instructions}\n\nDevelopment command (context only): ${project.devCommand}\nTest command (context only): ${project.testCommand}\nThe current working directory is a disposable lab workspace, not this project's repository.`,
+      `Project brief: ${project.name}\n${project.description}\n\nProject instructions:\n${project.instructions}\n\nDevelopment command (context only): ${project.devCommand}\nTest command: ${project.testCommand}\n${workspaceKind === 'lab' ? "The current working directory is a disposable lab workspace, not this project's repository." : 'The current working directory is the task worktree. Make code changes only here. Do not edit the primary project checkout, other worktrees, app data, or Git metadata. Leave code changes uncommitted; the application records snapshots and runs the configured test command after your turn.'}`,
     )
   }
   if (context?.profileSnapshot) {

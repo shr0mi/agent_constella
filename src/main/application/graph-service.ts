@@ -29,6 +29,10 @@ const digest = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 export class GraphService {
+  private executionGuard?: (identity: GraphIdentity) => boolean
+  setExecutionGuard(guard: (identity: GraphIdentity) => boolean) {
+    this.executionGuard = guard
+  }
   private listeners = new Set<(identity: GraphIdentity) => void>()
   constructor(
     private readonly database: WorkspaceDatabase,
@@ -178,6 +182,12 @@ export class GraphService {
   save(raw: unknown): GraphSnapshot {
     const input = saveGraphSchema.parse(raw)
     const identity = { projectId: input.projectId, taskId: input.taskId }
+    if (this.executionGuard?.(identity))
+      throw new ApplicationError(
+        'GRAPH_ACTIVE',
+        'This task has an active node run.',
+        'Stop the run before saving graph changes. Your draft is retained.',
+      )
     let appliedRevision = 0
     this.database.sqlite
       .transaction(() => {
@@ -307,8 +317,8 @@ export class GraphService {
       if (node.type === 'agent') {
         const profile = catalog.profiles.find(
           (profile) => profile.id === node.data.profileId,
-        )!
-        for (const id of [...profile.skillIds, ...node.data.skillIds])
+        )
+        for (const id of [...(profile?.skillIds ?? []), ...node.data.skillIds])
           skillIds.add(id)
       }
     await this.catalog.verifySelectionFiles(input.projectId, [...skillIds])

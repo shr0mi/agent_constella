@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Result } from './contracts'
+import type { WorkflowSummary } from './workflow'
 
 export const taskStatusSchema = z.enum(['todo', 'doing', 'done'])
 export type TaskStatus = z.infer<typeof taskStatusSchema>
@@ -80,6 +81,7 @@ export interface WorkspaceSnapshot {
   revision: number
   projects: Project[]
   tasks: Task[]
+  workflows?: WorkflowSummary[]
 }
 export interface ProjectBoard {
   project: Project

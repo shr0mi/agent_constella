@@ -618,6 +618,7 @@ export class CatalogService {
     workspace: string,
     runId: string,
     projectId?: string,
+    options: { stageInWorkspace?: boolean } = {},
   ): Promise<PreparedCatalogRun> {
     return this.serial(async () => {
       z.uuid().parse(runId)
@@ -690,14 +691,17 @@ export class CatalogService {
           runId,
           id,
         ])
-        const staged = await ensureDirectory(workspace, [
-          '.constella',
-          'skills',
-          runId,
-          id,
-        ])
+        const staged =
+          options.stageInWorkspace === false
+            ? archive
+            : await ensureDirectory(workspace, [
+                '.constella',
+                'skills',
+                runId,
+                id,
+              ])
         await writeSkillPack(archive, pack)
-        await writeSkillPack(staged, pack)
+        if (staged !== archive) await writeSkillPack(staged, pack)
         result.skillSnapshots.push({
           id,
           name: pack.name,

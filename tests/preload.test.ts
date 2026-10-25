@@ -47,12 +47,14 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(Object.keys(bridge).sort()).toEqual([
     'catalog',
     'diagnose',
+    'execution',
     'getState',
     'graphs',
     'newSession',
     'onState',
     'run',
     'stop',
+    'workflow',
     'workspace',
   ])
   await bridge.getState()
@@ -103,4 +105,31 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(graphCallback).toHaveBeenCalledExactlyOnceWith(graphIdentity)
   removeGraphListener()
   expect(removeListener).toHaveBeenCalledWith(graphChannel, graphListener)
+  await bridge.execution.getTask(graphIdentity)
+  expect(invoke).toHaveBeenLastCalledWith('constella:node:task', graphIdentity)
+  const nodeIdentity = { ...graphIdentity, nodeId: 'node' }
+  await bridge.execution.get(nodeIdentity)
+  expect(invoke).toHaveBeenLastCalledWith('constella:node:get', nodeIdentity)
+  const executionCallback = vi.fn()
+  const removeExecutionListener = bridge.execution.onChange(executionCallback)
+  const [executionChannel, executionListener] = on.mock.calls[4]
+  executionListener({ sender: 'must stay in preload' }, graphIdentity)
+  expect(executionCallback).toHaveBeenCalledExactlyOnceWith(graphIdentity)
+  removeExecutionListener()
+  expect(removeListener).toHaveBeenCalledWith(
+    executionChannel,
+    executionListener,
+  )
+  await bridge.workflow.get(graphIdentity)
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:workflow:get',
+    graphIdentity,
+  )
+  const workflowCallback = vi.fn()
+  const removeWorkflowListener = bridge.workflow.onChange(workflowCallback)
+  const [workflowChannel, workflowListener] = on.mock.calls[5]
+  workflowListener({ sender: 'must stay in preload' }, graphIdentity)
+  expect(workflowCallback).toHaveBeenCalledExactlyOnceWith(graphIdentity)
+  removeWorkflowListener()
+  expect(removeListener).toHaveBeenCalledWith(workflowChannel, workflowListener)
 })

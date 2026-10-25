@@ -587,6 +587,6 @@ describe('scope-aware skill and agent catalogs', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 3 })
+    ).toEqual({ n: 5 })
   })
 })

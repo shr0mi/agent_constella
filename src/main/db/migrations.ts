@@ -107,4 +107,49 @@ export const migrations = [
     CREATE INDEX graph_revisions_task ON graph_revisions(task_id, revision);
   `,
   },
+  {
+    version: 4,
+    name: 'task_worktrees_and_node_runs',
+    sql: `
+    CREATE TABLE task_worktrees (
+      task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE TABLE node_threads (
+      node_id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL,
+      thread_id TEXT
+    );
+    CREATE TABLE node_runs (
+      id TEXT PRIMARY KEY NOT NULL,
+      node_id TEXT NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE INDEX node_runs_history ON node_runs(project_id, task_id, node_id, started_at);
+  `,
+  },
+  {
+    version: 5,
+    name: 'workflow_scheduling_and_decisions',
+    sql: `
+    CREATE TABLE workflows (
+      task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE TABLE workflow_decisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE INDEX workflow_project ON workflows(project_id);
+    CREATE INDEX workflow_decisions_task ON workflow_decisions(task_id);
+  `,
+  },
 ] as const

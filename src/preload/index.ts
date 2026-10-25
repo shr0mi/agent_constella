@@ -6,6 +6,41 @@ import type { GraphIdentity } from '../shared/graph'
 
 // Expose named operations only. The renderer cannot access ipcRenderer, credentials, or Node.
 const bridge: ConstellaBridge = {
+  workflow: {
+    get: (input) => ipcRenderer.invoke(channels.workflowGet, input),
+    start: (input) => ipcRenderer.invoke(channels.workflowStart, input),
+    pause: (input) => ipcRenderer.invoke(channels.workflowPause, input),
+    accept: (input) => ipcRenderer.invoke(channels.workflowAccept, input),
+    review: (input) => ipcRenderer.invoke(channels.workflowReview, input),
+    previewIntegration: (input) =>
+      ipcRenderer.invoke(channels.workflowPreview, input),
+    integrate: (input) => ipcRenderer.invoke(channels.workflowIntegrate, input),
+    onChange(callback) {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: GraphIdentity,
+      ): void => callback(identity)
+      ipcRenderer.on(channels.workflowChanged, listener)
+      return () =>
+        ipcRenderer.removeListener(channels.workflowChanged, listener)
+    },
+  },
+  execution: {
+    getTask: (input) => ipcRenderer.invoke(channels.taskExecution, input),
+    get: (input) => ipcRenderer.invoke(channels.nodeGet, input),
+    start: (input) => ipcRenderer.invoke(channels.nodeStart, input),
+    stop: (input) => ipcRenderer.invoke(channels.nodeStop, input),
+    getRun: (input) => ipcRenderer.invoke(channels.nodeRun, input),
+    getDiff: (input) => ipcRenderer.invoke(channels.nodeDiff, input),
+    onChange(callback) {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: GraphIdentity,
+      ): void => callback(identity)
+      ipcRenderer.on(channels.nodeChanged, listener)
+      return () => ipcRenderer.removeListener(channels.nodeChanged, listener)
+    },
+  },
   graphs: {
     get: (input) => ipcRenderer.invoke(channels.graphGet, input),
     save: (input) => ipcRenderer.invoke(channels.graphSave, input),

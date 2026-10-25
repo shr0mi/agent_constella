@@ -14,11 +14,15 @@ import {
   type Result,
 } from '../shared/contracts'
 import { catalogContextSchema } from '../shared/catalog'
+import { taskIdentitySchema } from '../shared/workspace'
 import { channels } from '../shared/ipc'
 import { applicationFailure } from './application/errors'
 import { WorkspaceService } from './application/workspace-service'
 import { CatalogService } from './application/catalog-service'
 import { GraphService } from './application/graph-service'
+import { NodeExecutionService } from './application/node-execution-service'
+import { WorkflowService } from './application/workflow-service'
+import { graphIdentitySchema } from '../shared/graph'
 import { openWorkspaceDatabase, type WorkspaceDatabase } from './db/database'
 import { ConnectivityService } from './codex/service'
 import { SessionStore } from './codex/storage'
@@ -26,6 +30,8 @@ import { SessionStore } from './codex/storage'
 const directory = dirname(fileURLToPath(import.meta.url))
 let window: BrowserWindow | null = null
 let service: ConnectivityService | undefined
+let execution: NodeExecutionService | undefined
+let workflow: WorkflowService | undefined
 let database: WorkspaceDatabase | undefined
 let closing = false
 
@@ -116,6 +122,64 @@ else {
         if (window && !window.isDestroyed())
           window.webContents.send(channels.graphChanged, identity)
       })
+      execution = new NodeExecutionService(
+        database,
+        graphs,
+        catalog,
+        app.getPath('userData'),
+      )
+      await execution.initialize()
+      workflow = new WorkflowService(
+        database,
+        graphs,
+        catalog,
+        execution,
+        workspace,
+      )
+      await workflow.initialize()
+      handle(channels.workflowGet, (input) => workflow!.get(input))
+      handle(channels.workflowStart, (input) => workflow!.start(input))
+      handle(channels.workflowPause, (input) => workflow!.pause(input))
+      handle(channels.workflowAccept, (input) =>
+        workflow!.accept(input, 'desktop-human'),
+      )
+      handle(channels.workflowReview, (input) =>
+        workflow!.review(input, 'desktop-human'),
+      )
+      handle(channels.workflowPreview, (input) =>
+        workflow!.previewIntegration(input),
+      )
+      handle(channels.workflowIntegrate, (input) =>
+        workflow!.integrate(input, 'desktop-human'),
+      )
+      workflow.subscribe((identity) => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.workflowChanged, identity)
+      })
+      handle(channels.taskExecution, (input) => ({
+        ...execution!.getTask(input),
+        workflow: workflow!.get(input),
+      }))
+      handle(channels.nodeGet, (input) => {
+        const snapshot = execution!.get(input)
+        return {
+          ...snapshot,
+          workflow: workflow!.get(
+            graphIdentitySchema.parse({
+              projectId: snapshot.projectId,
+              taskId: snapshot.taskId,
+            }),
+          ),
+        }
+      })
+      handle(channels.nodeStart, (input) => workflow!.startNode(input))
+      handle(channels.nodeStop, (input) => execution!.stop(input))
+      handle(channels.nodeRun, (input) => execution!.getRun(input))
+      handle(channels.nodeDiff, (input) => execution!.getDiff(input))
+      execution.subscribe((identity) => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.nodeChanged, identity)
+      })
       handle(channels.catalogSnapshot, (context) =>
         catalog.getSnapshot(context),
       )
@@ -175,7 +239,18 @@ else {
       handle(channels.createTask, (input) => workspace.createTask(input))
       handle(channels.updateTask, (input) => workspace.updateTask(input))
       handle(channels.moveTask, (input) => workspace.moveTask(input))
-      handle(channels.archiveTask, (input) => workspace.archiveTask(input))
+      handle(channels.archiveTask, async (input) => {
+        // Validate scope/revision before stopping anything, then let the shared
+        // workspace service revalidate the final mutation after cancellation.
+        const command = taskIdentitySchema.parse(input)
+        const task = workspace
+          .getBoard({ projectId: command.projectId })
+          .tasks.find((task) => task.id === command.taskId)
+        if (!task || task.revision !== command.expectedRevision)
+          return workspace.archiveTask(input)
+        await workflow!.archive(command)
+        return workspace.archiveTask(input)
+      })
       handle(channels.restoreTask, (input) => workspace.restoreTask(input))
       workspace.subscribe((snapshot) => {
         if (window && !window.isDestroyed())
@@ -237,7 +312,13 @@ else {
     const deadline = new Promise<void>((resolve) => {
       setTimeout(resolve, 4_000).unref()
     })
-    void Promise.race([service.shutdown(), deadline])
+    void Promise.race([
+      Promise.all([
+        service.shutdown(),
+        workflow?.shutdown() ?? execution?.shutdown(),
+      ]),
+      deadline,
+    ])
       .catch(() => {})
       .finally(() => app.quit())
   })

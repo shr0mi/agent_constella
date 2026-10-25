@@ -29,6 +29,9 @@ import {
   ShieldCheck,
   Trash2,
   UserRound,
+  TriangleAlert,
+  Clock3,
+  Play,
   X,
 } from 'lucide-react'
 import {
@@ -50,6 +53,13 @@ import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
 import { useWorkspaceStore } from './workspace-store'
+import { useExecutionSnapshot } from './execution-store'
+import { NodeWorkspace, nodeStatus } from './NodeWorkspace'
+import { ReviewPanel, WorkflowControls } from './WorkflowControls'
+import {
+  workflowStatusLabel,
+  type WorkflowNodeStatus,
+} from '../../shared/workflow'
 
 const kinds = {
   start: { label: 'Start', icon: GitBranch, color: '#8accae' },
@@ -58,7 +68,12 @@ const kinds = {
   end: { label: 'End', icon: CircleStop, color: '#8db8dd' },
 }
 type CanvasNode = Node<
-  { node: WorkflowNode; subtitle: string; issueCount: number },
+  {
+    node: WorkflowNode
+    subtitle: string
+    issueCount: number
+    status: WorkflowNodeStatus
+  },
   'workflow'
 >
 function WorkflowCard({
@@ -69,9 +84,19 @@ function WorkflowCard({
   const { node } = data
   const kind = kinds[node.type],
     Icon = kind.icon
+  const StatusIcon =
+    data.status === 'completed'
+      ? Check
+      : data.status === 'failed'
+        ? TriangleAlert
+        : data.status === 'running'
+          ? LoaderCircle
+          : data.status === 'ready'
+            ? Play
+            : Clock3
   return (
     <div
-      className={`workflow-node ${node.type} ${selected ? 'selected' : ''} ${data.issueCount ? 'has-issues' : ''}`}
+      className={`workflow-node ${node.type} state-${data.status} ${selected ? 'selected' : ''} ${data.issueCount ? 'has-issues' : ''}`}
     >
       {node.type !== 'start' && (
         <Handle
@@ -83,12 +108,17 @@ function WorkflowCard({
       <div className="workflow-node-type">
         <Icon size={14} />
         {kind.label}
-        <span>
-          {data.issueCount ? `${data.issueCount} to fix` : <Check size={12} />}
-        </span>
+        <span>{data.issueCount ? `${data.issueCount} to fix` : null}</span>
       </div>
       <strong>{node.data.title || 'Untitled node'}</strong>
       <p>{data.subtitle}</p>
+      <div className="workflow-node-state">
+        <StatusIcon
+          size={12}
+          className={data.status === 'running' ? 'spin' : ''}
+        />
+        {workflowStatusLabel[data.status]}
+      </div>
       {node.type !== 'end' && (
         <Handle
           type="source"
@@ -127,6 +157,14 @@ function GraphEditor({
   const [notice, setNotice] = useState('')
   const [connectionError, setConnectionError] = useState('')
   const [externalChange, setExternalChange] = useState(false)
+  const [openNode, setOpenNode] = useState<string>()
+  const { snapshot: execution } = useExecutionSnapshot(
+    { projectId, taskId },
+    (api) => api.getTask({ projectId, taskId }),
+    `${projectId}:${taskId}`,
+  )
+  const taskActive = execution?.active?.taskId === taskId
+  const workflow = execution?.workflow
   // React Flow measurements are view state. Retain them across controlled-node
   // updates without storing library-specific fields in the graph document.
   const [measurements, setMeasurements] = useState<
@@ -228,9 +266,56 @@ function GraphEditor({
     [draft, catalog, models, saved?.task.archivedAt, task?.archivedAt],
   )
   const editable =
-    !busy && !!catalog && !(task?.archivedAt ?? saved?.task.archivedAt)
+    !busy &&
+    !taskActive &&
+    !!catalog &&
+    !(task?.archivedAt ?? saved?.task.archivedAt)
+  const runBlockers = [
+    ...(dirty
+      ? [
+          'There are unsaved graph changes. Return to the graph and click Save graph.',
+        ]
+      : []),
+    ...(externalChange
+      ? [
+          'A newer graph revision is saved. Reload the saved graph before running this node.',
+        ]
+      : []),
+    ...(!validation
+      ? ['Graph settings are still loading.']
+      : validation.issues.map((issue) => {
+          const title = draft?.nodes.find((node) => node.id === issue.nodeId)
+            ?.data.title
+          return title && !issue.message.includes(title)
+            ? `${title}: ${issue.message}`
+            : issue.message
+        })),
+  ]
   const node = draft?.nodes.find((node) => node.id === selectedNode)
   const edge = draft?.edges.find((edge) => edge.id === selectedEdge)
+  function runtimeStatus(node: WorkflowNode): WorkflowNodeStatus {
+    const state = workflow?.nodes[node.id]
+    const previous = execution?.nodeStates.find(
+      (state) => state.nodeId === node.id,
+    )
+    if (!workflow?.startedAt && node.type === 'agent' && previous)
+      return previous.status === 'completed'
+        ? 'awaiting-acceptance'
+        : previous.status === 'failed'
+          ? 'failed'
+          : previous.status === 'cancelled'
+            ? 'stopped'
+            : previous.status === 'interrupted'
+              ? 'interrupted'
+              : 'running'
+    return state?.status ?? 'pending'
+  }
+  function inspect(id: string) {
+    setSelectedNode(id)
+    setSelectedEdge(undefined)
+    const node = saved?.document.nodes.find((node) => node.id === id)
+    if (node?.type === 'agent') setOpenNode(id)
+  }
   const canvasNodes: CanvasNode[] = (draft?.nodes ?? []).map((node) => ({
     id: node.id,
     type: 'workflow',
@@ -239,11 +324,16 @@ function GraphEditor({
     selected: node.id === selectedNode,
     data: {
       node,
+      status: runtimeStatus(node),
       subtitle:
         node.type === 'agent'
           ? (catalog?.profiles.find(
               (profile) => profile.id === node.data.profileId,
-            )?.name ?? 'Choose an agent profile')
+            )?.name ??
+              (node.data.profileId ? 'Unavailable profile' : 'Default Codex')) +
+            (execution?.nodeStates.find((state) => state.nodeId === node.id)
+              ? ` · ${nodeStatus(execution.nodeStates.find((state) => state.nodeId === node.id)!.status)}`
+              : '')
           : node.type === 'review'
             ? 'Waits for your decision'
             : node.type === 'start'
@@ -259,6 +349,12 @@ function GraphEditor({
     selected: edge.id === selectedEdge,
     type: 'smoothstep',
     markerEnd: { type: MarkerType.ArrowClosed },
+    style:
+      workflow?.nodes[edge.source]?.status === 'completed'
+        ? { stroke: '#70bf95' }
+        : workflow?.nodes[edge.source]?.status === 'failed'
+          ? { stroke: '#dc7b7b', strokeDasharray: '5 4' }
+          : undefined,
     ariaLabel: `Connection from ${draft?.nodes.find((node) => node.id === edge.source)?.data.title} to ${draft?.nodes.find((node) => node.id === edge.target)?.data.title}`,
   }))
   function edit(update: (document: GraphDocument) => GraphDocument) {
@@ -339,7 +435,7 @@ function GraphEditor({
           taskId,
           expectedRevision: saved.revision,
           commandId: crypto.randomUUID(),
-          document: draft,
+          document: { ...draft, viewport: flow.getViewport() },
         }),
       )
       if (!refs.current.alive) return
@@ -361,7 +457,7 @@ function GraphEditor({
       )
       if (!refs.current.alive) return
       setNotice(
-        `Revision ${result.revision} passed readiness checks. Execution will be connected in the next milestone.`,
+        `Revision ${result.revision} passed readiness checks. Select an agent node and open Conversation & runs to execute it.`,
       )
       await refresh()
     })
@@ -463,13 +559,21 @@ function GraphEditor({
           </button>
         </div>
       </header>
-      {(notice || externalChange || saved.task.archivedAt) && (
+      <WorkflowControls
+        workflow={workflow}
+        graphRevision={saved.revision}
+        blocked={dirty || !validation?.valid || externalChange || taskActive}
+        onInspect={inspect}
+      />
+      {(notice || externalChange || saved.task.archivedAt || taskActive) && (
         <div className="graph-notice" role="status">
-          {externalChange
-            ? 'A newer graph revision is saved. Your draft is retained; reload to review the saved version.'
-            : saved.task.archivedAt
-              ? 'This task is archived. Restore it on the board to edit its graph.'
-              : notice}
+          {taskActive
+            ? 'A node is active in this task. Graph editing is paused until its attempt settles.'
+            : externalChange
+              ? 'A newer graph revision is saved. Your draft is retained; reload to review the saved version.'
+              : saved.task.archivedAt
+                ? 'This task is archived. Restore it on the board to edit its graph.'
+                : notice}
         </div>
       )}
       <div className="graph-workspace">
@@ -535,9 +639,9 @@ function GraphEditor({
                     }),
                   }))
               }}
-              onMoveEnd={(_, viewport) =>
-                edit((document) => ({ ...document, viewport }))
-              }
+              onMoveEnd={(event, viewport) => {
+                if (event) edit((document) => ({ ...document, viewport }))
+              }}
               onNodeClick={(_, node) => {
                 setSelectedNode(node.id)
                 setSelectedEdge(undefined)
@@ -561,7 +665,15 @@ function GraphEditor({
               <Background color="#34303e" gap={22} size={1} />
               <Controls showInteractive={false} />
               <MiniMap<CanvasNode>
-                nodeColor={(node) => kinds[node.data.node.type].color}
+                nodeColor={(node) =>
+                  node.data.status === 'completed'
+                    ? '#70bf95'
+                    : node.data.status === 'failed'
+                      ? '#dc7b7b'
+                      : node.data.status === 'running'
+                        ? '#bd9df2'
+                        : '#645b72'
+                }
                 pannable
                 zoomable
               />
@@ -593,7 +705,7 @@ function GraphEditor({
               <span>
                 {dirty
                   ? 'Save before checking readiness'
-                  : 'Execution connects in the next milestone'}
+                  : 'Select an agent to open its conversation'}
               </span>
             </header>
             {validation?.issues.length ? (
@@ -642,9 +754,37 @@ function GraphEditor({
             </div>
             <GitBranch size={18} />
           </header>
+          {node?.type === 'review' && workflow && (
+            <ReviewPanel
+              key={`review:${node.id}`}
+              workflow={workflow}
+              nodeId={node.id}
+              onInspect={inspect}
+              disabled={runBlockers.length > 0}
+            />
+          )}
+          {node?.type === 'agent' && (
+            <div className="graph-node-work">
+              <button
+                className="button primary"
+                disabled={
+                  !saved.document.nodes.some((item) => item.id === node.id)
+                }
+                onClick={() => setOpenNode(node.id)}
+              >
+                <Bot size={14} />
+                Conversation & runs
+              </button>
+              <p>
+                {!saved.document.nodes.some((item) => item.id === node.id)
+                  ? 'Save this new node first.'
+                  : 'Run, stop, request revisions, and inspect tests and diffs.'}
+              </p>
+            </div>
+          )}
           {node && catalog ? (
             <NodeSettings
-              key={node.id}
+              key={`settings:${node.id}`}
               node={node}
               catalog={catalog}
               models={models ?? []}
@@ -752,6 +892,18 @@ function GraphEditor({
           </div>
         </aside>
       </div>
+      {(() => {
+        const node = saved.document.nodes.find((node) => node.id === openNode)
+        return node?.type === 'agent' ? (
+          <NodeWorkspace
+            key={node.id}
+            graph={saved}
+            node={node}
+            runBlockers={runBlockers}
+            onClose={() => setOpenNode(undefined)}
+          />
+        ) : null
+      })()}
     </main>
   )
 }
@@ -791,7 +943,7 @@ function NodeSettings({
         />
         {node.type === 'agent' && (
           <>
-            <label htmlFor="graph-node-profile">Agent profile</label>
+            <label htmlFor="graph-node-profile">Agent profile (optional)</label>
             <select
               id="graph-node-profile"
               value={node.data.profileId ?? ''}
@@ -802,7 +954,7 @@ function NodeSettings({
                 })
               }
             >
-              <option value="">Choose a profile…</option>
+              <option value="">Default Codex</option>
               {node.data.profileId && (!profile || profile.removedAt) && (
                 <option value={node.data.profileId}>Unavailable profile</option>
               )}
@@ -814,6 +966,13 @@ function NodeSettings({
                   </option>
                 ))}
             </select>
+            {!node.data.profileId && (
+              <p className="helper">
+                Default Codex adds no custom role or profile skills. It uses
+                your task and project context, with model and effort defaults
+                unless overridden below.
+              </p>
+            )}
             <Link
               className="graph-catalog-link"
               to={`/agents?project=${catalog.projectId}`}
@@ -1003,7 +1162,7 @@ function NodeModelFields({
         }
       >
         <option value="__inherit__">
-          Inherit profile ({profile?.model ?? 'configured default'})
+          Use agent default ({profile?.model ?? 'configured default'})
         </option>
         <option value="__default__">Configured default</option>
         {node.data.model &&
@@ -1037,7 +1196,9 @@ function NodeModelFields({
           })
         }
       >
-        <option value="__inherit__">Inherit profile when model matches</option>
+        <option value="__inherit__">
+          Use agent default when model matches
+        </option>
         <option value="__default__">Model default</option>
         {node.data.effort && !option?.efforts.includes(node.data.effort) && (
           <option value={node.data.effort}>

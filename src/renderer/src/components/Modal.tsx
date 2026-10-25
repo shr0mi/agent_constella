@@ -8,6 +8,7 @@ export function Modal({
   onClose,
   busy = false,
   wide = false,
+  className = '',
 }: {
   title: string
   subtitle?: string
@@ -15,6 +16,7 @@ export function Modal({
   onClose: () => void
   busy?: boolean
   wide?: boolean
+  className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -29,7 +31,7 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      className={`workspace-modal ${wide ? 'wide' : ''}`}
+      className={`workspace-modal ${wide ? 'wide' : ''} ${className}`}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault()

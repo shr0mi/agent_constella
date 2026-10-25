@@ -118,7 +118,7 @@ describe('persistent project application service', () => {
       reopened.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 3 })
+    ).toEqual({ n: 5 })
     expect(readFileSync(file).subarray(0, 15).toString()).toBe(
       'SQLite format 3',
     )

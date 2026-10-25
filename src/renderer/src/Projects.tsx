@@ -536,6 +536,32 @@ export function ProjectBoardPage() {
                           Acceptance criteria added
                         </span>
                       )}
+                      {(() => {
+                        const workflow = snapshot?.workflows?.find(
+                          (workflow) => workflow.taskId === task.id,
+                        )
+                        return workflow?.started ? (
+                          <div
+                            className={`task-workflow-badge ${workflow.phase}`}
+                            title={workflow.blockers.join('\n')}
+                          >
+                            <span>
+                              {workflow.phase === 'waiting'
+                                ? 'Waiting for acceptance / review'
+                                : workflow.phase}
+                            </span>
+                            <strong>
+                              {workflow.accepted}/{workflow.total}
+                            </strong>
+                            {workflow.blockers[0] && (
+                              <small>{workflow.blockers[0]}</small>
+                            )}
+                            {workflow.integration === 'conflicts' && (
+                              <small>Integration conflicts</small>
+                            )}
+                          </div>
+                        ) : null
+                      })()}
                       <div className="task-card-actions">
                         <Link
                           className="task-graph-link"
@@ -582,7 +608,21 @@ export function ProjectBoardPage() {
                         <select
                           aria-label={`Status for ${task.title}`}
                           value={task.status}
-                          disabled={pending > 0}
+                          disabled={
+                            pending > 0 ||
+                            !!snapshot?.workflows?.find(
+                              (workflow) =>
+                                workflow.taskId === task.id && workflow.started,
+                            )
+                          }
+                          title={
+                            snapshot?.workflows?.some(
+                              (workflow) =>
+                                workflow.taskId === task.id && workflow.started,
+                            )
+                              ? 'Status follows workflow progression. Use the graph to continue or revise.'
+                              : undefined
+                          }
                           onChange={(event) =>
                             void move(task, event.target.value as TaskStatus)
                           }
@@ -962,8 +1002,9 @@ function ProjectSettings({
             </div>
           </div>
           <p className="form-helper">
-            These commands are saved for later execution workflows. Saving
-            settings does not run them.
+            Node runs use the development command as context and execute the
+            test command in the task worktree after successful Codex turns.
+            Saving settings does not run either command.
           </p>
         </fieldset>
         {failure && <FormFailure failure={failure} />}

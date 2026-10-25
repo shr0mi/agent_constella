@@ -16,7 +16,8 @@ import {
   type WorkspaceSnapshot,
 } from '../../shared/workspace'
 import type { WorkspaceDatabase } from '../db/database'
-import { projects, tasks, workspaceMeta } from '../db/schema'
+import { projects, tasks, workspaceMeta, workflows } from '../db/schema'
+import { summarizeWorkflow } from '../../shared/workflow'
 import { ApplicationError } from './errors'
 import {
   createProjectFolder,
@@ -35,6 +36,11 @@ export class WorkspaceService {
 
   getSnapshot(): WorkspaceSnapshot {
     return {
+      workflows: this.db
+        .select()
+        .from(workflows)
+        .all()
+        .map((row) => summarizeWorkflow(row.document)),
       revision: this.db.select().from(workspaceMeta).get()!.revision,
       projects: this.db
         .select()
@@ -70,6 +76,36 @@ export class WorkspaceService {
   subscribe(listener: (snapshot: WorkspaceSnapshot) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+  notify(): void {
+    const snapshot = this.getSnapshot()
+    for (const listener of this.listeners) {
+      try {
+        listener(snapshot)
+      } catch (error) {
+        console.error('Workspace notification failed:', error)
+      }
+    }
+  }
+  // Called in the scheduler's SQLite transaction; publish only after that commits.
+  setWorkflowStatus(
+    identity: { projectId: string; taskId: string },
+    status: TaskStatus,
+  ): void {
+    const task = this.task(identity.projectId, identity.taskId)
+    if (task.archivedAt || task.status === status) return
+    const now = new Date().toISOString()
+    this.db
+      .update(tasks)
+      .set({
+        status,
+        position: this.column(identity.projectId, status).length,
+        revision: task.revision + 1,
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, task.id))
+      .run()
+    this.reorder(this.column(identity.projectId, task.status), now)
   }
 
   private commit<T>(action: () => T): T {
@@ -287,6 +323,17 @@ export class WorkspaceService {
       moveTaskSchema.parse(raw)
     return this.commit(() => {
       const task = this.task(projectId, taskId)
+      const workflow = this.db
+        .select()
+        .from(workflows)
+        .where(eq(workflows.taskId, taskId))
+        .get()?.document
+      if (workflow?.startedAt && status !== task.status)
+        throw new ApplicationError(
+          'WORKFLOW_STATUS',
+          'This task status is controlled by its workflow.',
+          'Start/resume the graph to move it to Doing. Only reaching End after acceptance moves it to Done. You can still reorder it within its column.',
+        )
       this.checkRevision(task, expectedRevision)
       this.checkActive(task)
       if (beforeTaskId === taskId && status === task.status) return task

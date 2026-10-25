@@ -128,7 +128,7 @@ function Sidebar() {
         <GitBranch size={18} />
         <strong>From a task to a team.</strong>
         <p>Build visible workflows with humans and Codex.</p>
-        <span>TASK WORKFLOWS · MILESTONE 04</span>
+        <span>WORKFLOW PROGRESSION · MILESTONE 06</span>
       </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
@@ -169,7 +169,13 @@ export function App() {
       })
       return
     }
-    if (!bridge.workspace || !bridge.catalog || !bridge.graphs) {
+    if (
+      !bridge.workspace ||
+      !bridge.catalog ||
+      !bridge.graphs ||
+      !bridge.execution ||
+      !bridge.workflow
+    ) {
       setError({
         code: 'BRIDGE_VERSION',
         message: 'The desktop bridge needs to be restarted.',

@@ -164,17 +164,14 @@ export function validateGraph(
     const profile = context.catalog.profiles.find(
       (profile) => profile.id === node.data.profileId,
     )
-    if (!node.data.profileId)
-      issue(
-        'PROFILE_REQUIRED',
-        `${node.data.title || 'Agent task'} needs an agent profile.`,
-        false,
-      )
-    else if (
-      !profile ||
-      profile.removedAt ||
-      (profile.projectId !== null &&
-        profile.projectId !== context.catalog.projectId)
+    // Null explicitly selects the built-in Default Codex behavior. A supplied
+    // catalog ID must still resolve to an active profile in this project.
+    if (
+      node.data.profileId &&
+      (!profile ||
+        profile.removedAt ||
+        (profile.projectId !== null &&
+          profile.projectId !== context.catalog.projectId))
     )
       issue(
         'PROFILE_ASSIGNMENT',

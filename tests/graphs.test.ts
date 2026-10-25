@@ -505,7 +505,7 @@ describe('persistent task graph application service', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 3 })
+    ).toEqual({ n: 5 })
   })
 })
 
@@ -541,7 +541,7 @@ describe('graph schema and topology rules', () => {
     ])
       expect(validateTopology(candidate).canSave).toBe(false)
   })
-  it('allows a branching DAG with a join, requires prompt/profile settings, and forbids autoaccept fields on a review node', async () => {
+  it('allows a branching DAG with a join and optional profiles, requires prompts, and forbids autoaccept fields on a review node', async () => {
     const f = await fixture(),
       document = f.configured(),
       parallel = makeWorkflowNode('agent', randomUUID(), { x: 300, y: 350 })
@@ -568,7 +568,14 @@ describe('graph schema and topology rules', () => {
         catalog: f.catalog.getSnapshot({ projectId: f.a.id }),
         models,
       }).issues.map((issue) => issue.code),
-    ).toEqual(expect.arrayContaining(['PROFILE_REQUIRED', 'AGENT_PROMPT']))
+    ).toEqual(expect.arrayContaining(['AGENT_PROMPT']))
+    parallel.data.prompt = 'Independent branch using Default Codex'
+    expect(
+      validateGraph(document, {
+        catalog: f.catalog.getSnapshot({ projectId: f.a.id }),
+        models,
+      }).valid,
+    ).toBe(true)
     const invalid = structuredClone(document)
     Object.assign(invalid.nodes[2].data, { acceptance: 'auto' })
     expect(graphDocumentSchema.safeParse(invalid).success).toBe(false)

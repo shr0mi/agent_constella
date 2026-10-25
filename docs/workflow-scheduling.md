@@ -1,0 +1,45 @@
+# Scheduling, reviews, and integration — milestone 6
+
+`WorkflowService` owns progression independently of Electron. Start, explicit node runs, retries, follow-ups, and fresh conversations all pass the same predecessor admission rules. A valid saved graph and active scoped assignments are required. Each project has one code-writing slot shared by all its tasks and integration operations. Ready branches run serially in topological order; other projects can execute independently. A workflow waiting for a human does not hold its project's execution slot.
+
+## Acceptance and progression
+
+- Start completes when execution begins. An agent becomes ready only when every incoming predecessor has a current acceptance token. A successful SDK turn, successful configured checks (or explicitly unconfigured checks), and successful code collection are all required before acceptance.
+- Auto acceptance grants a token after success. Manual acceptance records the human's decision against the exact current run ID and workflow revision. A successful run by itself cannot release a manual node's successors.
+- Human Review becomes available after every predecessor is accepted. Its panel shows upstream summaries, check results, and links to conversations/diffs. Approval releases the gate. Request changes requires a note and an accepted upstream agent; it continues that conversation, invalidates the target and its descendants, reruns affected work, and requires review again. Revised manual nodes need a new acceptance.
+- End completes only when all required nodes are accepted. Start moves the task to Doing; failures, decisions, paused work, and interruptions keep it there. End moves it to Done. Integration is a separate action after Done. Started tasks cannot be moved to another column manually, but remain reorderable and archivable.
+- Failed/stopped/interrupted nodes block the workflow until an explicit node retry or revision. The scheduler does not silently retry failures. A different queued task in the same project can use the free slot.
+
+The canvas uses labels and icons as well as color: pending nodes are muted, running nodes purple, accepted nodes green, failed nodes red, and human decisions amber. Stale/stopped/interrupted states have distinct labels and borders. Accepted edges and failed dependencies also have different styles. The graph progress bar and board badges report accepted/required counts and blockers; the count excludes Start and includes End.
+
+The main IPC handler supplies the trusted `desktop-human` origin for acceptance, review, and integration. The application service rejects absent, manager, and worker origins. Strict input schemas reject a caller-supplied origin or approval field. Graph data, model messages, and run summaries cannot approve a review. No manager/MCP server is exposed in this milestone; later adapters must preserve these authority checks.
+
+## Persistence, edits, and recovery
+
+Migration 5 appends `workflows` and `workflow_decisions`; migrations 1–4 are unchanged. Workflow records retain node states, exact run references, acceptance tokens, graph/context signatures, completion snapshots, errors, and integration receipts. Human decisions retain actor, note, target, and time. Each state transition and board column change commits in one SQLite transaction, followed by renderer notifications. Service methods recheck project/task scope and expected revisions; stale decisions fail visibly.
+
+Node signatures include incoming dependencies, settings, selected profile/skills, and relevant project/task context. Changed nodes and descendants lose their acceptance and become stale when they have prior work. Code and historical runs stay available. Saving a graph revision pauses started scheduling, including presentation edits; explicit resume validates current configuration before continuing. Unaffected accepted nodes can be reused. Active task runs freeze graph writes. Catalog/project edits during a run mark its eventual result stale rather than accepting old configuration.
+
+An explicit follow-up can reopen a completed or integrated workflow in the same node conversation. Its prior downstream acceptance and End completion are revoked, the board returns to Doing, and affected work must pass acceptance and review again. Earlier integration receipts stay in history; revising a task never rolls back code already integrated into the project.
+
+Pause records the paused state before stopping active execution. Archiving also stops active work before changing archive metadata. Restoring unfinished work leaves it paused. On restart, active attempts become interrupted and running/waiting workflows become paused; no SDK turn or test command is replayed automatically. Previously completed workflows and human approvals remain persisted. Attempts recorded before this milestone remain inspectable but are not silently adopted as accepted workflow results.
+
+## Explicit Git integration
+
+After End, **Integrate branch** opens a separate dialog. Preview compares the exact accepted completion snapshot with the branch currently checked out in the primary project folder. It verifies the app-owned worktree, branch and common repository, rejects detached targets, dirty/untracked primary files, in-progress Git operations, and task files changed since acceptance. Newly initialized, empty repositories are supported.
+
+Preview uses [Git merge-tree --write-tree](https://git-scm.com/docs/git-merge-tree/2.38.0) (Git 2.38+). It writes Git objects and inspection snapshot refs, but leaves indexes, branch tips, and working files untouched. A conflict plan lists paths and blocks the apply button. Resolve divergence explicitly and preview again; the app does not resolve conflicts, stash local work, or reset the primary checkout.
+
+**Integrate into <branch>** rechecks workflow revision, target branch/commit, task files, and clean primary state. It promotes the immutable accepted snapshot to the task branch, aligns that worktree's index, creates an integration merge commit, and fast-forwards the primary branch to it. An empty target uses the accepted history as its first commit. The task branch and worktree are retained. Nothing is pushed remotely. Changed target revisions fail with a request to preview again.
+
+Integration failures and conflicts persist separately from node completion, so a reviewed task can remain Done while awaiting integration. A crash during integration is recorded as interrupted; inspect the primary branch and preview again. If the accepted snapshot is already an ancestor, preview records that receipt without reapplying code. Git writes cannot be part of the SQLite transaction; a failure after task-branch promotion may leave that promotion in place, and the error explains it. Project files are never reset as a recovery action.
+
+Configured checks run in the task worktree before acceptance. The merged combination with newer target changes is not automatically tested; inspect/test the integrated branch as appropriate. All nodes share one task checkout, so stale results retain their files until revisions replace them. There is no per-node code rollback, automatic dependency installation, automatic cleanup, or remote integration in this milestone. Runtime SDK/permission limits remain as documented in [node execution](node-execution.md) and [Codex integration](codex-integration.md).
+
+## Verification
+
+`npm test` uses real temporary SQLite databases and Git repositories with injected provider inference. Scheduler cases cover branching joins, serial project execution and queued tasks, auto/manual acceptance, human-only reviews, same-thread requested revisions, blocked failures and retries, stale decisions, changed context, paused decisions, archive/restore, and restart recovery. Integration cases cover clean merges, conflicts without primary-file changes, dirty checkouts, unaccepted task drift, moved targets, and empty initial repositories.
+
+`npm run test:workflow-ui` builds and opens an isolated hidden Electron window using the actual services, renderer, preload, SQLite, Git, and local test command. Only provider inference is injected. It exercises failure/completion visuals, retry, both manual acceptances around a same-thread review revision, the join/review gate, Doing → Done badges, and preview followed by explicit integration. `npm run test:graph-ui` retains the graph/conversation regression. Both require a desktop session and make no provider calls.
+
+The live Codex desktop checkpoint and plan checkboxes remain for the user.

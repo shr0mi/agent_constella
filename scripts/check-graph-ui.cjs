@@ -143,6 +143,165 @@ ipcMain.handle('constella:catalog:snapshot', () =>
   result({ projectId: project.id, revision: 1, skills, profiles }),
 )
 ipcMain.handle('constella:graph:get', () => result(snapshot))
+const attempts = []
+let activeRun = null,
+  threadId
+const worktree = {
+  taskId: task.id,
+  projectId: project.id,
+  path: '/tmp/constella-task-fixture',
+  branch: `codex/constella-${task.id}`,
+  baseRevision: 'baseline',
+  sourceHead: 'source',
+  sourceBranch: 'main',
+  state: 'ready',
+  createdAt: now,
+}
+ipcMain.handle('constella:node:task', () =>
+  result({
+    projectId: project.id,
+    taskId: task.id,
+    worktree: attempts.length ? worktree : null,
+    active: activeRun,
+    nodeStates: attempts.length
+      ? [
+          {
+            nodeId: nodes[1].id,
+            runId: attempts.at(-1).id,
+            status: attempts.at(-1).status,
+          },
+        ]
+      : [],
+  }),
+)
+ipcMain.handle('constella:node:get', (_event, input) =>
+  result({
+    ...input,
+    worktree: attempts.length ? worktree : null,
+    threadId,
+    runs: attempts,
+    active: activeRun,
+  }),
+)
+ipcMain.handle('constella:node:start', (event, input) => {
+  assert.equal(input.nodeId, nodes[1].id)
+  assert.equal(input.expectedGraphRevision, snapshot.revision)
+  assert.equal(activeRun, null)
+  const previous = attempts.at(-1)
+  const run = {
+    id: randomUUID(),
+    projectId: project.id,
+    taskId: task.id,
+    nodeId: nodes[1].id,
+    graphRevision: snapshot.revision,
+    mode: input.mode,
+    prompt: input.message ?? nodes[1].data.prompt,
+    resolvedPrompt: 'Resolved task prompt with fixture profile and skills.',
+    options: { sandbox: 'workspace-write', skillIds: [skills[0].id] },
+    skillSnapshots: [],
+    nodeSnapshot: nodes[1],
+    taskSnapshot: task,
+    projectContext: project,
+    profileSnapshot: profiles[0],
+    startedAt: new Date().toISOString(),
+    status: 'running',
+    items: [
+      {
+        id: randomUUID(),
+        type: 'command_execution',
+        title: 'write welcome.ts',
+        text: 'Working in task worktree',
+        status: 'in_progress',
+      },
+    ],
+    events: [{ type: 'turn.started', at: now, detail: '{}' }],
+    tests: {
+      command: 'npm test',
+      status: 'not-run',
+      output: '',
+      truncated: false,
+      exitCode: null,
+    },
+    worktree,
+    dependencyResults: [],
+  }
+  if (input.mode === 'followup') assert.equal(threadId, previous.threadId)
+  threadId ??= 'thread-ui-saved-conversation'
+  run.threadId = threadId
+  attempts.push(run)
+  activeRun = {
+    projectId: project.id,
+    taskId: task.id,
+    nodeId: run.nodeId,
+    runId: run.id,
+    status: run.status,
+  }
+  event.sender.send('constella:node:changed', {
+    projectId: project.id,
+    taskId: task.id,
+  })
+  if (input.message !== 'Wait until I stop you')
+    setTimeout(() => {
+      if (run.status !== 'running') return
+      run.status = 'completed'
+      run.finishedAt = new Date().toISOString()
+      run.items.push({
+        id: randomUUID(),
+        type: 'agent_message',
+        title: 'Codex',
+        text:
+          input.mode === 'followup'
+            ? 'Revised the welcome copy in the same conversation.'
+            : 'Created welcome.ts in the task worktree.',
+      })
+      run.tests = {
+        command: 'npm test',
+        status: 'passed',
+        output: 'FIXTURE_TEST_PASS',
+        truncated: false,
+        exitCode: 0,
+      }
+      run.before = { head: 'baseline', commit: 'before' }
+      run.changes = {
+        before: run.before,
+        after: { head: 'baseline', commit: 'after' },
+        files: [
+          {
+            path: 'welcome.ts',
+            status: input.mode === 'followup' ? 'modified' : 'added',
+          },
+        ],
+        omittedFiles: 0,
+      }
+      activeRun = null
+      event.sender.send('constella:node:changed', {
+        projectId: project.id,
+        taskId: task.id,
+      })
+    }, 160)
+  return result({ runId: run.id })
+})
+ipcMain.handle('constella:node:stop', (event) => {
+  const run = attempts.at(-1)
+  run.status = 'cancelled'
+  run.finishedAt = now
+  activeRun = null
+  event.sender.send('constella:node:changed', {
+    projectId: project.id,
+    taskId: task.id,
+  })
+  return result()
+})
+ipcMain.handle('constella:node:diff', (_event, input) => {
+  assert(attempts.some((run) => run.id === input.runId))
+  assert.equal(input.path, 'welcome.ts')
+  return result({
+    path: input.path,
+    original: '',
+    modified: 'export const welcome = "Hello, constellation!"\n',
+    binary: false,
+  })
+})
 ipcMain.handle('constella:graph:save', (_event, input) => {
   assert.equal(input.expectedRevision, snapshot.revision)
   snapshot = {
@@ -215,7 +374,7 @@ app
     }
     const click = (text) =>
       run(
-        `Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === ${JSON.stringify(text)}).click()`,
+        `Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim().toLowerCase() === ${JSON.stringify(text.toLowerCase())}).click()`,
       )
     const select = (selector, value) =>
       run(
@@ -226,15 +385,36 @@ app
         `{ const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); }`,
       )
     await waitFor('document.querySelectorAll(".workflow-node").length === 4')
-    assert(
+    await waitFor(
+      'document.querySelector(".graph-validation strong").textContent === "Graph is valid"',
+    )
+    assert.equal(
       await run(
         'Array.from(document.querySelectorAll("button")).find(b=>b.textContent.trim()==="Check readiness").disabled',
       ),
+      false,
     )
     await run(
       'document.querySelectorAll(".graph-structure > button")[1].click()',
     )
     await waitFor('!!document.querySelector("#graph-node-profile")')
+    assert.equal(
+      await run(
+        'document.querySelector("#graph-node-profile").selectedOptions[0].textContent',
+      ),
+      'Default Codex',
+    )
+    await click('Conversation & runs')
+    await waitFor(
+      'document.querySelector(".node-workspace")?.open && Array.from(document.querySelectorAll(".node-workspace button")).some(button => button.textContent.trim() === "Run node" && !button.disabled)',
+    )
+    assert.equal(
+      await run('!!document.querySelector(".node-run-blockers")'),
+      false,
+    )
+    await run(
+      'document.querySelector(".node-workspace > header button").click()',
+    )
     assert(
       (
         await run('document.querySelector("#graph-node-profile").textContent')
@@ -255,6 +435,22 @@ app
     await waitFor(
       'document.querySelector(".graph-validation strong").textContent === "Graph is valid"',
     )
+    await click('Conversation & runs')
+    await waitFor(
+      'document.querySelector(".node-run-blockers")?.textContent.includes("unsaved graph changes")',
+    )
+    assert.equal(
+      await run(
+        'document.querySelector(".node-run-blockers").textContent.includes("archived")',
+      ),
+      false,
+    )
+    assert(
+      await run(
+        'Array.from(document.querySelectorAll(".node-workspace button")).find(button => button.textContent.trim() === "Run node").disabled',
+      ),
+    )
+    await click('Back to graph')
     await click('Save graph')
     await waitFor(
       'document.querySelector(".graph-heading p").textContent.includes("Revision 2") && !document.querySelector(".graph-heading p").textContent.includes("Unsaved")',
@@ -378,6 +574,50 @@ app
       )) < 25,
     )
     await new Promise((resolve) => setTimeout(resolve, 200))
+    await click('Conversation & runs')
+    await waitFor(
+      'document.querySelector(".node-workspace")?.open && !!document.querySelector(".node-chat")',
+    )
+    await click('Run node')
+    await waitFor(
+      'document.querySelector(".node-chat")?.textContent.includes("Created welcome.ts")',
+    )
+    assert.equal(attempts.length, 1)
+    assert.equal(attempts[0].status, 'completed')
+    await click('Tests')
+    await waitFor(
+      'document.querySelector(".node-test-output")?.textContent.includes("FIXTURE_TEST_PASS")',
+    )
+    await click('Files & diffs')
+    await waitFor(
+      'document.querySelector(".node-file-list button")?.textContent.includes("welcome.ts")',
+    )
+    await run('document.querySelector(".node-file-list button").click()')
+    await waitFor('!!document.querySelector(".monaco-diff-editor")')
+    await waitFor(
+      'document.querySelector(".monaco-diff-editor")?.textContent.includes("constellation!")',
+    )
+    await click('Conversation')
+    await run(
+      "{const el = document.querySelector('#node-followup');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Revise the welcome copy');el.dispatchEvent(new Event('input',{bubbles:true}));}",
+    )
+    await run('document.querySelector(".node-composer button").click()')
+    await waitFor(
+      'document.querySelectorAll(".node-turn").length === 2 && document.querySelector(".node-chat").textContent.includes("Revised the welcome copy")',
+    )
+    assert.equal(attempts[1].threadId, attempts[0].threadId)
+    await run(
+      "{const el = document.querySelector('#node-followup');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Wait until I stop you');el.dispatchEvent(new Event('input',{bubbles:true}));}",
+    )
+    await run('document.querySelector(".node-composer button").click()')
+    await waitFor(
+      'Array.from(document.querySelectorAll(".node-workspace button")).some(button => button.textContent.trim() === "Stop")',
+    )
+    await click('Stop')
+    await waitFor(
+      'document.querySelectorAll(".node-turn").length === 3 && document.querySelector(".node-workspace-bar strong").textContent === "Stopped"',
+    )
+    assert.equal(attempts[2].status, 'cancelled')
     if (process.env.CONSTELLA_GRAPH_SCREENSHOT)
       writeFileSync(
         process.env.CONSTELLA_GRAPH_SCREENSHOT,
@@ -396,6 +636,11 @@ app
           reviewHumanOnly: true,
           nodeAndEdgeEditing: true,
           routeReopened: true,
+          nodeConversation: true,
+          sameThreadFollowup: true,
+          stopNode: true,
+          monacoDiff: true,
+          testOutput: true,
           saves,
           prepares,
           rendererErrors: errors,

@@ -4,9 +4,9 @@ Each task has a graph at `/projects/:projectId/tasks/:taskId/graph`, reached fro
 
 The React Flow editor supports node creation, dragging, deletion, connection/reconnection, endpoint editing, connection deletion, zoom/pan, a minimap, and a node/edge list. The list and connection form provide keyboard-accessible alternatives to pointer connections. Node measurements and selection stay in renderer state; only the workflow document and viewport are stored. Deleting a node removes its incident edges.
 
-Agent settings include title, prompt, acceptance criteria, active scoped profile, extra skills, model/effort overrides, and Auto accept / Accept manually. The panel shows profile role/style text and profile-required skills. Global profiles/skills are visible across projects; local IDs resolve only in their project. Omitted model/effort values inherit profile settings; explicit null selects configured/model defaults. Changing a model drops inherited effort unless it still matches the profile model. Required profile skills and extras resolve as a deduplicated union.
+Agent settings include title, prompt, acceptance criteria, optional active scoped profile, extra skills, model/effort overrides, and Auto accept / Accept manually. A null profile ID selects **Default Codex**, which adds no custom role or preset profile skills and uses configured model/effort defaults unless overridden. The panel shows a selected profile's role/style text and required skills. Global profiles/skills are visible across projects; local IDs resolve only in their project. Omitted model/effort values inherit profile settings; explicit null selects configured/model defaults. Changing a model drops inherited effort unless it still matches the profile model. Required profile skills and extras resolve as a deduplicated union.
 
-Human Review settings include title and review instructions. Its strict schema has no acceptance mode or approval field. Human decisions, upstream results, node chats, tools, and execution controls arrive with the execution/scheduler milestones.
+Human Review settings include title and review instructions. Its strict schema has no acceptance mode or approval field. Agent chats, tools, and execution controls are available in [milestone 5](node-execution.md). [Milestone 6](workflow-scheduling.md) adds scheduling and a separate human-only decision service; editing a graph cannot grant approval.
 
 ## Persistence and service boundary
 
@@ -18,12 +18,12 @@ Saves are explicit and atomic: document changes, revision history, command recei
 
 ## Validation and readiness
 
-The renderer and main process share the topology and assignment validator; the service always validates again against current catalog/runtime data.
+The renderer and main process share the topology and assignment validator; the service always validates again against current catalog/runtime data. The node workspace lists specific blockers, including unsaved changes or graph validation issues, with a return-to-graph action.
 
 | Rule                                                      | Draft save               | Readiness |
 | --------------------------------------------------------- | ------------------------ | --------- |
 | Missing Start/End, disconnected node                      | Allowed, issue displayed | Blocked   |
-| Missing title, agent prompt, or profile selection         | Allowed, issue displayed | Blocked   |
+| Missing title or agent prompt                             | Allowed, issue displayed | Blocked   |
 | Cycles/self-loops, duplicate IDs/edges, missing endpoints | Rejected                 | Blocked   |
 | More than one Start/End, incoming Start/outgoing End      | Rejected                 | Blocked   |
 | Missing/removed/foreign profile or skill IDs              | Rejected                 | Blocked   |
@@ -33,9 +33,9 @@ The renderer and main process share the topology and assignment validator; the s
 
 Readiness additionally reads and validates selected skill folders/resources. After asynchronous file checks, it rechecks the graph revision and a fingerprint of current project/task/catalog/model data before stamping that saved revision. Graph saves clear the stamp; changed catalog/context/runtime data makes old stamps inapplicable. A failed recheck clears an older stamp, including when files changed outside the app. This is a point-in-time check; later execution must perform admission and snapshot resolution again.
 
-Limits are 100 nodes, 400 edges, and 20 resolved skills per agent. Schemas constrain IDs, node types, text sizes, and finite canvas coordinates. A topological ordering is available for later scheduling. Branches and joins are valid DAGs, but this milestone does not execute or release dependencies.
+Limits are 100 nodes, 400 edges, and 20 resolved skills per agent. Schemas constrain IDs, node types, text sizes, and finite canvas coordinates. The scheduler uses the topological ordering to execute branches serially; joins require every predecessor's current acceptance.
 
-`prepareStart` deliberately returns `executionAvailable: false`; the UI calls it **Check readiness**. It does not invoke Codex, create worktrees, move the task to Doing, accept results, or approve a review. Milestone 5 connects a real node run; milestone 6 adds the scheduler and explicit human decisions. Revision history is stored now; history browsing and Undo arrive with milestone 7.
+`prepareStart` deliberately returns `executionAvailable: false`; the UI calls it **Check readiness**. That operation does not invoke Codex, create worktrees, move the task to Doing, accept results, or approve a review. Explicit node execution through **Conversation & runs** and **Start workflow** reuse validation and execution admission. Active task attempts freeze graph writes; saved configuration changes pause scheduling and invalidate affected acceptance until explicit resume. Revision history is stored now; history browsing and Undo arrive with milestone 7.
 
 ## Engineering verification
 

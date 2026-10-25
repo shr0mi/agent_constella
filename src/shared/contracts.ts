@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { WorkspaceBridge } from './workspace'
 import type { GraphBridge } from './graph'
+import type { ExecutionBridge } from './execution'
+import type { WorkflowBridge } from './workflow'
 import type {
   AgentProfile,
   CatalogBridge,
@@ -116,6 +118,8 @@ export interface SkillOption {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: Failure }
 
 export interface ConstellaBridge {
+  workflow: WorkflowBridge
+  execution: ExecutionBridge
   graphs: GraphBridge
   workspace: WorkspaceBridge
   catalog: CatalogBridge

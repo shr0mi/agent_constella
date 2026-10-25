@@ -1,5 +1,7 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import type { GraphDocument } from '../../shared/graph'
+import type { NodeRun, TaskWorktree } from '../../shared/execution'
+import type { WorkflowRecord, WorkflowDecision } from '../../shared/workflow'
 
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -109,4 +111,52 @@ export const graphCommands = sqliteTable('graph_commands', {
   inputHash: text('input_hash').notNull(),
   revision: integer('revision').notNull(),
   createdAt: text('created_at').notNull(),
+})
+export const taskWorktrees = sqliteTable('task_worktrees', {
+  taskId: text('task_id')
+    .primaryKey()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  document: text('document', { mode: 'json' }).$type<TaskWorktree>().notNull(),
+})
+export const nodeThreads = sqliteTable('node_threads', {
+  nodeId: text('node_id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
+  threadId: text('thread_id'),
+})
+export const nodeRuns = sqliteTable('node_runs', {
+  id: text('id').primaryKey(),
+  nodeId: text('node_id').notNull(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
+  startedAt: text('started_at').notNull(),
+  document: text('document', { mode: 'json' }).$type<NodeRun>().notNull(),
+})
+export const workflows = sqliteTable('workflows', {
+  taskId: text('task_id')
+    .primaryKey()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  document: text('document', { mode: 'json' })
+    .$type<WorkflowRecord>()
+    .notNull(),
+})
+export const workflowDecisions = sqliteTable('workflow_decisions', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
+  document: text('document', { mode: 'json' })
+    .$type<WorkflowDecision>()
+    .notNull(),
 })

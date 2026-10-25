@@ -41,7 +41,7 @@ export const graphNodeSchema = z.discriminatedUnion('type', [
           title,
           prompt: z.string().max(32_000),
           acceptanceCriteria: z.string().max(20_000),
-          profileId: z.uuid().nullable(),
+          profileId: z.uuid().nullable(), // null = Default Codex, without a custom profile
           skillIds: z.array(z.uuid()).max(20),
           model: z.string().trim().min(1).max(160).nullable().optional(),
           effort: effortSchema.nullable().optional(),
@@ -180,13 +180,11 @@ export function defaultTaskGraph(
     }
   return {
     nodes,
-    edges: nodes
-      .slice(1)
-      .map((node, index) => ({
-        id: uuid(),
-        source: nodes[index].id,
-        target: node.id,
-      })),
+    edges: nodes.slice(1).map((node, index) => ({
+      id: uuid(),
+      source: nodes[index].id,
+      target: node.id,
+    })),
     viewport: { x: 0, y: 0, zoom: 1 },
   }
 }
