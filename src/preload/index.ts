@@ -2,9 +2,23 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppState, ConstellaBridge, RunInput } from '../shared/contracts'
 import { channels } from '../shared/ipc'
 import type { WorkspaceSnapshot } from '../shared/workspace'
+import type { GraphIdentity } from '../shared/graph'
 
 // Expose named operations only. The renderer cannot access ipcRenderer, credentials, or Node.
 const bridge: ConstellaBridge = {
+  graphs: {
+    get: (input) => ipcRenderer.invoke(channels.graphGet, input),
+    save: (input) => ipcRenderer.invoke(channels.graphSave, input),
+    prepareStart: (input) => ipcRenderer.invoke(channels.graphPrepare, input),
+    onChange(callback) {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        identity: GraphIdentity,
+      ): void => callback(identity)
+      ipcRenderer.on(channels.graphChanged, listener)
+      return () => ipcRenderer.removeListener(channels.graphChanged, listener)
+    },
+  },
   catalog: {
     getSnapshot: (context) =>
       ipcRenderer.invoke(channels.catalogSnapshot, context),

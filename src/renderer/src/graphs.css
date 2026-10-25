@@ -1,0 +1,507 @@
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 23px 24px 20px;
+}
+.graph-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.graph-heading > div:first-child {
+  min-width: 0;
+}
+.graph-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #a297b1;
+  font-size: 10px;
+}
+.graph-back:hover {
+  color: #d1bbf6;
+}
+.graph-heading h1 {
+  font-size: 23px;
+  margin: 9px 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 580px;
+}
+.graph-heading p {
+  color: #82798e;
+  font-size: 10px;
+}
+.graph-heading p span {
+  margin: 0 7px;
+  color: #51465e;
+}
+.graph-actions {
+  display: flex;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.graph-actions .button {
+  padding: 9px 11px;
+  font-size: 10px;
+}
+.graph-notice {
+  padding: 10px 13px;
+  margin-bottom: 12px;
+  border: 1px solid #5c4d6d;
+  background: #28212f;
+  color: #c1addb;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.graph-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #35303f;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #17171c;
+}
+.graph-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.graph-palette {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid #302a39;
+}
+.graph-palette > span {
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #74677f;
+  margin-right: 5px;
+}
+.graph-palette button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #3c3347;
+  background: #241f2b;
+  color: #baaacf;
+  border-radius: 5px;
+  padding: 7px 9px;
+  font-size: 10px;
+}
+.graph-palette button:disabled {
+  opacity: 0.35;
+}
+.graph-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 270px;
+  background: #121217;
+}
+.graph-canvas .react-flow {
+  --xy-node-color: #dcd4e8;
+  --xy-edge-stroke: #8d7ba4;
+  --xy-edge-stroke-selected: #cfb0fa;
+  --xy-edge-stroke-width: 1.7;
+  --xy-background-color: #121217;
+  --xy-controls-button-background-color: #231d2b;
+  --xy-controls-button-background-color-hover: #352941;
+  --xy-controls-button-color: #bba8d1;
+  --xy-controls-button-border-color: #44344f;
+  --xy-minimap-background-color: #211c28;
+  --xy-minimap-mask-background-color: #100d1699;
+}
+.workflow-node {
+  width: 218px;
+  border: 1px solid #534265;
+  background: #211b29;
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 6px 18px #0003;
+}
+.workflow-node.selected {
+  border-color: #c7a3f2;
+  box-shadow:
+    0 0 0 2px #b595df33,
+    0 6px 18px #0004;
+}
+.workflow-node.start {
+  background: #1a2422;
+  border-color: #39544b;
+}
+.workflow-node.review {
+  background: #29231d;
+  border-color: #65513a;
+}
+.workflow-node.end {
+  background: #1c232c;
+  border-color: #3c526a;
+}
+.workflow-node-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #bba1dc;
+  font-size: 10px;
+  margin-bottom: 12px;
+}
+.workflow-node.start .workflow-node-type {
+  color: #8accae;
+}
+.workflow-node.review .workflow-node-type {
+  color: #e2bc85;
+}
+.workflow-node.end .workflow-node-type {
+  color: #8db8dd;
+}
+.workflow-node-type > span {
+  margin-left: auto;
+  font-size: 8px;
+  opacity: 0.8;
+}
+.workflow-node.has-issues .workflow-node-type > span {
+  color: #e9be86;
+}
+.workflow-node > strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e4dceb;
+}
+.workflow-node > p {
+  color: #9c8bac;
+  font-size: 9px;
+  margin-top: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.workflow-node .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #211b29;
+  background: #b79bd6;
+}
+.graph-canvas-tip {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  pointer-events: none;
+  color: #70637d;
+  font-size: 9px;
+}
+.graph-connection-error {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 50px;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  background: #3d292d;
+  border: 1px solid #805356;
+  border-radius: 5px;
+  padding: 10px;
+  color: #e3aaa5;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.graph-validation {
+  border-top: 1px solid #302a39;
+  padding: 13px 16px;
+  max-height: 175px;
+  overflow: auto;
+  background: #1b181f;
+  flex-shrink: 0;
+}
+.graph-validation header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  color: #b8a7cb;
+}
+.graph-validation header > span {
+  font-size: 9px;
+  color: #786986;
+}
+.graph-validation p {
+  color: #8d7b9c;
+  font-size: 10px;
+  margin-top: 9px;
+}
+.graph-validation ul {
+  list-style: none;
+  padding: 0;
+  margin: 9px 0 0;
+}
+.graph-validation li button {
+  display: flex;
+  align-items: baseline;
+  text-align: left;
+  gap: 9px;
+  font-size: 10px;
+  line-height: 1.7;
+  color: #b9a5c7;
+  background: transparent;
+  padding: 4px 0;
+}
+.graph-validation li span {
+  color: #d7b783;
+  font-size: 8px;
+  border: 1px solid #6b543b;
+  padding: 0 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.graph-validation li .hard-issue {
+  color: #e2a29d;
+  border-color: #7c4e4c;
+}
+.graph-details {
+  border-left: 1px solid #35303f;
+  background: #1b181f;
+  min-height: 0;
+  overflow: auto;
+}
+.graph-details > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid #302a39;
+  color: #aa8ac8;
+}
+.graph-details header span {
+  font-size: 7px;
+  letter-spacing: 1.3px;
+  color: #7e6c8f;
+}
+.graph-details h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: 7px;
+  color: #d8cbe4;
+}
+.graph-settings {
+  padding: 17px 18px;
+}
+.graph-settings fieldset > label,
+.graph-connect-form label {
+  display: block;
+  font-size: 10px;
+  color: #ad9dbc;
+  margin: 18px 0 8px;
+}
+.graph-settings fieldset > label:first-child {
+  margin-top: 0;
+}
+.graph-settings input:not([type='checkbox']),
+.graph-settings textarea,
+.graph-settings select,
+.graph-connect-form select {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.7;
+  padding: 8px 9px;
+  color: #d6c9e1;
+  border: 1px solid #44364f;
+  border-radius: 5px;
+  background: #211c27;
+}
+.graph-settings textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.graph-settings input:disabled,
+.graph-settings select:disabled,
+.graph-settings textarea:disabled {
+  opacity: 0.6;
+}
+.graph-intro {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #c1adcf;
+}
+.graph-catalog-link {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: #b398d1;
+  font-size: 9px;
+  margin-top: 9px;
+  background: transparent;
+  padding: 0;
+}
+.graph-inherited {
+  margin-top: 15px;
+  color: #9780ab;
+  font-size: 9px;
+}
+.graph-inherited summary {
+  cursor: pointer;
+}
+.graph-inherited pre {
+  font-size: 10px;
+  color: #b1a0bf;
+  border-left: 1px solid #5d456e;
+  padding-left: 9px;
+  margin-top: 10px;
+  max-height: 180px;
+  overflow: auto;
+}
+.graph-human-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  margin-top: 15px;
+  border: 1px solid #65513a;
+  border-radius: 5px;
+  color: #ceaf86;
+  font-size: 10px;
+  line-height: 1.8;
+}
+.graph-human-note svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.graph-delete {
+  margin-top: 22px;
+  font-size: 10px;
+}
+.graph-task-brief {
+  margin-top: 20px;
+  border-top: 1px solid #3a2f44;
+  padding-top: 16px;
+}
+.graph-task-brief strong {
+  font-size: 10px;
+  color: #b7a1c8;
+}
+.graph-task-brief p {
+  font-size: 10px;
+  color: #927c9f;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  margin: 9px 0 16px;
+  overflow-wrap: anywhere;
+}
+.graph-structure {
+  padding: 0 18px 20px;
+}
+.graph-structure h3 {
+  border-top: 1px solid #362b40;
+  padding-top: 16px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #b3a0c4;
+  margin: 4px 0 9px;
+}
+.graph-structure h3 > span {
+  float: right;
+  font-size: 9px;
+  color: #82708f;
+}
+.graph-structure > button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #ac97be;
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-size: 10px;
+  border-radius: 4px;
+  padding: 8px 5px;
+}
+.graph-structure > button.selected {
+  background: #32273d;
+  border-color: #59426c;
+}
+.graph-structure > button > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.graph-structure > button > svg {
+  flex-shrink: 0;
+}
+.graph-structure small {
+  margin-left: auto;
+  white-space: nowrap;
+  font-size: 8px;
+  color: #796587;
+}
+.graph-connect-form select {
+  margin-bottom: 8px;
+}
+.graph-connect-form .button {
+  width: 100%;
+  font-size: 10px;
+  padding: 7px;
+}
+.graph-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  font-size: 12px;
+  color: #a992bc;
+}
+.task-graph-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #b59bd0;
+  font-size: 9px;
+  padding: 4px 0;
+}
+.task-graph-link:hover {
+  color: #d6bcf1;
+}
+@media (max-width: 1200px) {
+  .graph-page {
+    padding: 20px 15px 15px;
+  }
+  .graph-workspace {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+  .graph-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .graph-heading h1 {
+    max-width: 620px;
+  }
+  .graph-palette {
+    gap: 4px;
+    padding: 9px;
+  }
+  .graph-palette > span {
+    display: none;
+  }
+  .graph-validation header > span {
+    display: none;
+  }
+}

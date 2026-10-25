@@ -537,6 +537,14 @@ export function ProjectBoardPage() {
                         </span>
                       )}
                       <div className="task-card-actions">
+                        <Link
+                          className="task-graph-link"
+                          to={`/projects/${project.id}/tasks/${task.id}/graph`}
+                          aria-label={`Open graph for ${task.title}`}
+                        >
+                          <GitBranch size={12} />
+                          Graph
+                        </Link>
                         <div className="task-order-controls">
                           <button
                             className="icon-button"
@@ -804,6 +812,15 @@ function TaskEditor({
         </fieldset>
         {failure && <FormFailure failure={failure} />}
         <footer>
+          {task && (
+            <Link
+              className="button secondary"
+              to={`/projects/${project.id}/tasks/${task.id}/graph`}
+            >
+              <GitBranch size={13} />
+              Open graph
+            </Link>
+          )}
           {task && (
             <button
               type="button"

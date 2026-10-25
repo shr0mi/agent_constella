@@ -18,6 +18,7 @@ import { channels } from '../shared/ipc'
 import { applicationFailure } from './application/errors'
 import { WorkspaceService } from './application/workspace-service'
 import { CatalogService } from './application/catalog-service'
+import { GraphService } from './application/graph-service'
 import { openWorkspaceDatabase, type WorkspaceDatabase } from './db/database'
 import { ConnectivityService } from './codex/service'
 import { SessionStore } from './codex/storage'
@@ -103,6 +104,18 @@ else {
         app.getPath('userData'),
         () => service?.snapshot().diagnostics?.models ?? [],
       )
+      const graphs = new GraphService(
+        database,
+        catalog,
+        () => service?.snapshot().diagnostics?.models ?? [],
+      )
+      handle(channels.graphGet, (input) => graphs.get(input))
+      handle(channels.graphSave, (input) => graphs.save(input))
+      handle(channels.graphPrepare, (input) => graphs.prepareStart(input))
+      graphs.subscribe((identity) => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.graphChanged, identity)
+      })
       handle(channels.catalogSnapshot, (context) =>
         catalog.getSnapshot(context),
       )

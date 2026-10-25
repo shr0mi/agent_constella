@@ -16,10 +16,12 @@
     "postinstall": "electron-rebuild -w better-sqlite3",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "test": "node scripts/run-tests.mjs",
+    "test:graph-ui": "npm run build && electron scripts/check-graph-ui.cjs",
     "probe:codex": "node --import tsx scripts/probe-codex.ts"
   },
   "dependencies": {
     "@openai/codex-sdk": "0.164.0",
+    "@xyflow/react": "12.12.0",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.4",
     "lucide-react": "1.61.0",

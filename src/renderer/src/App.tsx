@@ -41,6 +41,7 @@ import { useWorkspaceStore } from './workspace-store'
 import { CatalogPage } from './Catalogs'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
+import { TaskGraphPage } from './TaskGraph'
 
 function FailureNotice({
   failure,
@@ -127,7 +128,7 @@ function Sidebar() {
         <GitBranch size={18} />
         <strong>From a task to a team.</strong>
         <p>Build visible workflows with humans and Codex.</p>
-        <span>SKILLS & AGENTS · MILESTONE 03</span>
+        <span>TASK WORKFLOWS · MILESTONE 04</span>
       </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
@@ -168,7 +169,7 @@ export function App() {
       })
       return
     }
-    if (!bridge.workspace || !bridge.catalog) {
+    if (!bridge.workspace || !bridge.catalog || !bridge.graphs) {
       setError({
         code: 'BRIDGE_VERSION',
         message: 'The desktop bridge needs to be restarted.',
@@ -243,6 +244,10 @@ export function App() {
           <Route path="/integration" element={<IntegrationNotes />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectBoardPage />} />
+          <Route
+            path="/projects/:projectId/tasks/:taskId/graph"
+            element={<TaskGraphPage />}
+          />
           <Route path="/skills" element={<CatalogPage kind="skills" />} />
           <Route path="/agents" element={<CatalogPage kind="profiles" />} />
           <Route path="*" element={<Navigate to="/projects" replace />} />

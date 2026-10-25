@@ -1,4 +1,5 @@
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import type { GraphDocument } from '../../shared/graph'
 
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -73,4 +74,39 @@ export const agentProfiles = sqliteTable('agent_profiles', {
   removedAt: text('removed_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
+})
+export const taskGraphs = sqliteTable('task_graphs', {
+  taskId: text('task_id')
+    .primaryKey()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull(),
+  document: text('document', { mode: 'json' }).$type<GraphDocument>().notNull(),
+  preparedRevision: integer('prepared_revision'),
+  preparedAt: text('prepared_at'),
+  preparedFingerprint: text('prepared_fingerprint'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+})
+export const graphRevisions = sqliteTable('graph_revisions', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
+  revision: integer('revision').notNull(),
+  document: text('document', { mode: 'json' }).$type<GraphDocument>().notNull(),
+  createdAt: text('created_at').notNull(),
+})
+export const graphCommands = sqliteTable('graph_commands', {
+  id: text('id').primaryKey(),
+  taskId: text('task_id')
+    .notNull()
+    .references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
+  inputHash: text('input_hash').notNull(),
+  revision: integer('revision').notNull(),
+  createdAt: text('created_at').notNull(),
 })

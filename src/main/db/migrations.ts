@@ -72,4 +72,39 @@ export const migrations = [
     CREATE INDEX agent_profile_scope ON agent_profiles(project_id, removed_at);
   `,
   },
+  {
+    version: 3,
+    name: 'task_graphs_and_revisions',
+    sql: `
+    CREATE TABLE task_graphs (
+      task_id TEXT PRIMARY KEY NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      document TEXT NOT NULL CHECK(json_valid(document)),
+      prepared_revision INTEGER,
+      prepared_at TEXT,
+      prepared_fingerprint TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE graph_revisions (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL,
+      revision INTEGER NOT NULL CHECK(revision > 0),
+      document TEXT NOT NULL CHECK(json_valid(document)),
+      created_at TEXT NOT NULL,
+      UNIQUE(task_id, revision)
+    );
+    CREATE TABLE graph_commands (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL,
+      input_hash TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX graph_revisions_task ON graph_revisions(task_id, revision);
+  `,
+  },
 ] as const

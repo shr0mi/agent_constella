@@ -48,6 +48,7 @@ it('loads the built preload with only the modules available in Electron’s sand
     'catalog',
     'diagnose',
     'getState',
+    'graphs',
     'newSession',
     'onState',
     'run',
@@ -92,4 +93,14 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(catalogCallback).toHaveBeenCalledExactlyOnceWith()
   removeCatalogListener()
   expect(removeListener).toHaveBeenCalledWith(catalogChannel, catalogListener)
+  const graphIdentity = { projectId: 'project', taskId: 'task' }
+  await bridge.graphs.get(graphIdentity)
+  expect(invoke).toHaveBeenLastCalledWith('constella:graph:get', graphIdentity)
+  const graphCallback = vi.fn()
+  const removeGraphListener = bridge.graphs.onChange(graphCallback)
+  const [graphChannel, graphListener] = on.mock.calls[3]
+  graphListener({ sender: 'must stay in preload' }, graphIdentity)
+  expect(graphCallback).toHaveBeenCalledExactlyOnceWith(graphIdentity)
+  removeGraphListener()
+  expect(removeListener).toHaveBeenCalledWith(graphChannel, graphListener)
 })

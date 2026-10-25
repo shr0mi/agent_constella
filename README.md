@@ -1,6 +1,6 @@
 # AgentConstella
 
-A local desktop workspace for human + Codex workflows. The app includes repository projects, persistent Kanban boards, global/project skill and agent catalogs, and a real Codex connectivity lab. Task graphs, scheduling, and manager chats remain in later milestones.
+A local desktop workspace for human + Codex workflows. The app includes repository projects, persistent Kanban boards, global/project skill and agent catalogs, editable task graphs, and a real Codex connectivity lab. Graph execution, scheduling, and manager chats remain in later milestones.
 
 ## Run
 
@@ -58,6 +58,18 @@ The manual desktop checkpoint is left for the user. See [the persistence impleme
 Changing the lab's project starts a fresh scratch conversation. The lab keeps execution in its disposable workspace; it does not execute against the project repository yet. Selected skill resources are copied into that workspace, while exact instructions, profile/style settings, resource hashes, and archived resource copies are retained with the run. Model/effort controls override profile defaults for the next turn.
 
 See [the catalog implementation notes](docs/skills-and-agents.md) for scope rules, import limits, snapshots, and verification. The manual milestone-3 checkpoint is left for the user.
+
+## Task graphs
+
+1. Click **Graph** on a task card, or **Open graph** in its editor. The first visit creates a Start → Agent task → Human review → End draft, using the task's description and acceptance criteria.
+2. Add nodes from the toolbar and drag them into place. Drag a connection from a node's right handle to another node's left handle, or use **Add connection** in the details panel. Select a connection to change its endpoints or delete it. Deleting a node also removes its connections.
+3. Select an agent node to edit its title, initial prompt, acceptance criteria, scoped profile/skills, model/effort overrides, and manual/automatic acceptance. Human Review nodes have review instructions and always require a human decision.
+4. **Save graph** persists node settings, positions, edges, and the viewport in SQLite. Incomplete drafts can be saved. Validation lists what remains; selecting an issue opens the relevant node or connection. Save or explicitly discard a dirty draft before navigating away.
+5. Once saved and valid, **Check readiness** checks the saved revision, current profile/skill/model assignments, and skill files. A graph needs one Start, one End, no cycles, and a path from Start to End through every node. Cycles and invalid assignments are rejected by the application service as well as the editor.
+
+Readiness checking does not start Codex, change the task's board status, or approve work. Real node runs arrive in milestone 5; dependency scheduling and human review decisions arrive in milestone 6. The connectivity lab remains available for real Codex conversations.
+
+Quit Electron and restart `npm run dev` after upgrading to load the new graph preload methods. Existing databases migrate automatically. See [the task graph implementation notes](docs/task-graphs.md) for persistence, revision handling, and integration boundaries. The manual milestone-4 checkpoint is left for the user.
 
 ## Connectivity lab
 

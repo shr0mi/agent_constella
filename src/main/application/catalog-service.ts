@@ -538,6 +538,13 @@ export class CatalogService {
         'Refresh diagnostics and select a supported combination or the configured default.',
       )
   }
+  verifySelectionFiles(projectId: string, ids: string[]): Promise<void> {
+    return this.serial(async () => {
+      this.checkProfileSkills(projectId, ids)
+      for (const id of new Set(ids))
+        await readSkillPack(await this.folder(this.skill(id, projectId)))
+    })
+  }
   createProfile(raw: unknown): Promise<AgentProfile> {
     const input = createProfileSchema.parse(raw)
     return this.serial(() => {

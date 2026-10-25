@@ -27,4 +27,8 @@ export const channels = {
   updateProfile: 'constella:catalog:update-profile',
   setProfileActive: 'constella:catalog:set-profile-active',
   catalogChanged: 'constella:catalog:changed',
+  graphGet: 'constella:graph:get',
+  graphSave: 'constella:graph:save',
+  graphPrepare: 'constella:graph:prepare',
+  graphChanged: 'constella:graph:changed',
 } as const
