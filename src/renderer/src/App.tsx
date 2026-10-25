@@ -30,13 +30,17 @@ import {
 } from 'lucide-react'
 import {
   limitations,
-  skills,
   type Activity as ActivityItem,
   type Effort,
   type Failure,
   type Run,
 } from '../../shared/contracts'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
+import { ProjectBoardPage, ProjectsPage } from './Projects'
+import { useWorkspaceStore } from './workspace-store'
+import { CatalogPage } from './Catalogs'
+import { useCatalog } from './catalog-store'
+import { SkillSelector } from './components/CatalogSelectors'
 
 function FailureNotice({
   failure,
@@ -68,6 +72,8 @@ function FailureNotice({
 
 function Sidebar() {
   const diagnostics = useAppStore((s) => s.state?.diagnostics)
+  const workspace = useWorkspaceStore((state) => state.snapshot)
+  const projects = workspace?.projects ?? []
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -88,29 +94,40 @@ function Sidebar() {
       </div>
       <div className="nav-label">WORKSPACE</div>
       <nav aria-label="Main navigation">
+        <NavLink to="/projects">
+          <FolderKanban size={17} />
+          Projects<span className="soon">{projects.length}</span>
+        </NavLink>
         <NavLink to="/playground">
           <FlaskConical size={17} />
           Connectivity lab
           <span className="nav-dot" />
         </NavLink>
-        <NavLink to="/projects">
-          <FolderKanban size={17} />
-          Projects<span className="soon">02</span>
-        </NavLink>
         <NavLink to="/skills">
           <Zap size={17} />
-          Skills<span className="soon">03</span>
+          Skills
         </NavLink>
         <NavLink to="/agents">
           <Bot size={17} />
-          Agents<span className="soon">03</span>
+          Agents
         </NavLink>
       </nav>
+      {projects.length > 0 && (
+        <div className="sidebar-projects">
+          <div className="nav-label">YOUR PROJECTS</div>
+          {projects.map((project) => (
+            <NavLink key={project.id} to={`/projects/${project.id}`}>
+              <span>{project.name.slice(0, 1).toUpperCase()}</span>
+              <strong>{project.name}</strong>
+            </NavLink>
+          ))}
+        </div>
+      )}
       <div className="sidebar-note">
         <GitBranch size={18} />
         <strong>From a task to a team.</strong>
         <p>Build visible workflows with humans and Codex.</p>
-        <span>FOUNDATION · MILESTONE 01</span>
+        <span>SKILLS & AGENTS · MILESTONE 03</span>
       </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
@@ -140,6 +157,7 @@ function Sidebar() {
 export function App() {
   const { state, error, setState, setError } = useAppStore()
   const location = useLocation()
+  const workspaceSnapshot = useWorkspaceStore((state) => state.snapshot)
   useEffect(() => {
     const bridge = window.constella
     if (!bridge) {
@@ -150,10 +168,29 @@ export function App() {
       })
       return
     }
+    if (!bridge.workspace || !bridge.catalog) {
+      setError({
+        code: 'BRIDGE_VERSION',
+        message: 'The desktop bridge needs to be restarted.',
+        hint: 'Quit Electron completely, stop the dev command, then run npm run dev again to load the project bridge.',
+      })
+      useWorkspaceStore.getState().setLoading(false)
+      return
+    }
     let alive = true
     const unsubscribe = bridge.onState((next) => {
       if (alive) setState(next)
     })
+    const unsubscribeWorkspace = bridge.workspace.onChange((snapshot) => {
+      if (alive) useWorkspaceStore.getState().setSnapshot(snapshot)
+    })
+    void unwrap(bridge.workspace.getSnapshot())
+      .then((snapshot) => {
+        if (alive) useWorkspaceStore.getState().setSnapshot(snapshot)
+      })
+      .catch(() => {
+        if (alive) useWorkspaceStore.getState().setLoading(false)
+      })
     void unwrap(bridge.getState())
       .then((next) => {
         if (!alive) return
@@ -164,6 +201,7 @@ export function App() {
     return () => {
       alive = false
       unsubscribe()
+      unsubscribeWorkspace()
     }
   }, [setState, setError])
   const pageName =
@@ -171,7 +209,11 @@ export function App() {
       ? 'Integration notes'
       : location.pathname === '/playground'
         ? 'Connectivity lab'
-        : location.pathname.slice(1)
+        : location.pathname.startsWith('/projects/')
+          ? (workspaceSnapshot?.projects.find(
+              (project) => project.id === location.pathname.split('/')[2],
+            )?.name ?? 'Project')
+          : location.pathname.slice(1)
   return (
     <div className="app-shell">
       <Sidebar />
@@ -196,43 +238,14 @@ export function App() {
           )}
         </div>
         <Routes>
-          <Route path="/" element={<Navigate to="/playground" replace />} />
+          <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/playground" element={<Playground />} />
           <Route path="/integration" element={<IntegrationNotes />} />
-          <Route
-            path="/projects"
-            element={
-              <FuturePage
-                title="Projects"
-                milestone="02"
-                text="Your repositories and Kanban boards will live here. The current milestone establishes the desktop and Codex execution foundation."
-                icon={<FolderKanban size={30} />}
-              />
-            }
-          />
-          <Route
-            path="/skills"
-            element={
-              <FuturePage
-                title="Skills"
-                milestone="03"
-                text="Global and project skill catalogs are planned for milestone 3. Try the selected Connectivity proof skill in the lab today."
-                icon={<Zap size={30} />}
-              />
-            }
-          />
-          <Route
-            path="/agents"
-            element={
-              <FuturePage
-                title="Agents"
-                milestone="03"
-                text="Reusable roles, instructions, and model defaults are planned for milestone 3. The lab currently runs one Codex conversation."
-                icon={<Bot size={30} />}
-              />
-            }
-          />
-          <Route path="*" element={<Navigate to="/playground" replace />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:projectId" element={<ProjectBoardPage />} />
+          <Route path="/skills" element={<CatalogPage kind="skills" />} />
+          <Route path="/agents" element={<CatalogPage kind="profiles" />} />
+          <Route path="*" element={<Navigate to="/projects" replace />} />
         </Routes>
       </div>
     </div>
@@ -270,17 +283,32 @@ function Playground() {
     'workspace-write',
   )
   const [selectedSkill, setSelectedSkill] = useState(true)
+  const [profileId, setProfileId] = useState('')
+  const [additionalSkills, setAdditionalSkills] = useState<string[]>([])
   const [tab, setTab] = useState<'conversation' | 'events'>('conversation')
   const [pending, setPending] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
   const session = state?.session
+  const projects = useWorkspaceStore((state) => state.snapshot?.projects)
+  const { snapshot: catalog } = useCatalog(session?.projectId ?? null)
+  const profile = catalog?.profiles.find(
+    (profile) => profile.id === profileId && !profile.removedAt,
+  )
+  const profileSkills = profile?.skillIds ?? []
   const runs = session?.runs ?? []
   const last = runs.at(-1)
   const active = last?.status === 'running' || last?.status === 'stopping'
   const models = state?.diagnostics?.models ?? []
   const selectedModel = models.find((option) => option.id === model)
+  useEffect(() => {
+    setProfileId('')
+    setAdditionalSkills([])
+    setModel('')
+    setEffort('')
+    setSelectedSkill(true)
+  }, [session?.projectId])
   useEffect(() => {
     if (followRef.current)
       endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -311,10 +339,14 @@ function Playground() {
       await unwrap(
         window.constella!.run({
           prompt: message,
-          model: model || undefined,
-          effort: effort || undefined,
+          model: model || null,
+          effort: effort || null,
+          profileId: profileId || undefined,
           sandbox,
-          skillIds: selectedSkill ? ['connectivity-proof'] : [],
+          skillIds: [
+            ...(selectedSkill ? ['connectivity-proof'] : []),
+            ...additionalSkills,
+          ],
         }),
       )
       setPrompt('')
@@ -338,7 +370,9 @@ function Playground() {
           disabled={active || pending || !session}
           onClick={() =>
             void perform(async () => {
-              await unwrap(window.constella!.newSession())
+              await unwrap(
+                window.constella!.newSession({ projectId: session?.projectId }),
+              )
               setPrompt('')
             })
           }
@@ -618,6 +652,85 @@ function Playground() {
               Provider access is verified by a real turn.
             </span>
           </section>
+          <section className="config-card lab-profile-config">
+            <div className="card-title">
+              <Bot size={16} />
+              <h2>Agent context</h2>
+            </div>
+            <fieldset disabled={active || pending || !session}>
+              <label className="field-label" htmlFor="lab-project">
+                Project
+              </label>
+              <div className="select-wrap">
+                <select
+                  id="lab-project"
+                  value={session?.projectId ?? ''}
+                  onChange={(event) => {
+                    const projectId = event.target.value || undefined
+                    void perform(async () => {
+                      await unwrap(window.constella!.newSession({ projectId }))
+                    })
+                  }}
+                >
+                  <option value="">Global skills only</option>
+                  {projects?.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={13} />
+              </div>
+              <p className="helper">
+                Changing the project starts a fresh scratch conversation.
+              </p>
+              <label className="field-label" htmlFor="lab-profile">
+                Agent profile
+              </label>
+              <div className="select-wrap">
+                <select
+                  id="lab-profile"
+                  value={profileId}
+                  onChange={(event) => {
+                    const id = event.target.value
+                    const selected = catalog?.profiles.find(
+                      (profile) => profile.id === id,
+                    )
+                    setProfileId(id)
+                    setAdditionalSkills([])
+                    setSelectedSkill(false)
+                    setModel(selected?.model ?? '')
+                    setEffort(selected?.effort ?? '')
+                  }}
+                >
+                  <option value="">No profile</option>
+                  {profileId && !profile && (
+                    <option value={profileId}>Profile unavailable</option>
+                  )}
+                  {catalog?.profiles
+                    .filter((profile) => !profile.removedAt)
+                    .map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name} ·{' '}
+                        {profile.projectId ? 'Project' : 'Global'}
+                      </option>
+                    ))}
+                </select>
+                <ChevronDown size={13} />
+              </div>
+            </fieldset>
+            <p className="helper">
+              <NavLink
+                to={
+                  session?.projectId
+                    ? `/agents?project=${session.projectId}`
+                    : '/agents'
+                }
+              >
+                Manage agent profiles →
+              </NavLink>
+            </p>
+          </section>
           <section className="config-card">
             <div className="card-title">
               <Cpu size={16} />
@@ -637,6 +750,9 @@ function Playground() {
                   }}
                 >
                   <option value="">Configured default</option>
+                  {model && !selectedModel && (
+                    <option value={model}>{model} (unavailable)</option>
+                  )}
                   {models.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.name}
@@ -712,8 +828,7 @@ function Playground() {
           <section className="config-card">
             <div className="card-title">
               <Zap size={16} />
-              <h2>Selected skill</h2>
-              <span className="tiny-tag">1 AVAILABLE</span>
+              <h2>Selected skills</h2>
             </div>
             <label className="skill-option">
               <input
@@ -723,16 +838,36 @@ function Playground() {
                 onChange={(event) => setSelectedSkill(event.target.checked)}
               />
               <span>
-                <strong>{skills[0].name}</strong>
+                <strong>Connectivity proof · demo</strong>
                 <small>Read the fixture. Return a proof.</small>
               </span>
               <span className="skill-icon">
                 <Zap size={13} />
               </span>
             </label>
+            <SkillSelector
+              skills={catalog?.skills ?? []}
+              selected={[...new Set([...profileSkills, ...additionalSkills])]}
+              requiredIds={profileSkills}
+              onChange={(ids) =>
+                setAdditionalSkills(
+                  ids.filter((id) => !profileSkills.includes(id)),
+                )
+              }
+              disabled={active || pending}
+            />
             <p className="helper">
-              Selected instructions and their resource path are saved with each
-              turn.
+              Selected instructions and resources are snapshotted with each
+              turn.{' '}
+              <NavLink
+                to={
+                  session?.projectId
+                    ? `/skills?project=${session.projectId}`
+                    : '/skills'
+                }
+              >
+                Manage skills →
+              </NavLink>
             </p>
           </section>
           <section className="workspace-card">
@@ -827,6 +962,8 @@ function RunView({ run, number }: { run: Run; number: number }) {
                 {
                   options: run.options,
                   selectedSkills: run.skillSnapshots,
+                  profile: run.profileSnapshot,
+                  project: run.projectSnapshot,
                   resolvedPrompt: run.resolvedPrompt,
                 },
                 null,
@@ -906,31 +1043,6 @@ function IntegrationNotes() {
       <NavLink to="/playground" className="button secondary">
         Back to the lab
         <ArrowRight size={14} />
-      </NavLink>
-    </main>
-  )
-}
-
-function FuturePage({
-  title,
-  text,
-  milestone,
-  icon,
-}: {
-  title: string
-  text: string
-  milestone: string
-  icon: React.ReactNode
-}) {
-  return (
-    <main className="future-page">
-      <div className="future-icon">{icon}</div>
-      <span className="eyebrow">PLANNED / MILESTONE {milestone}</span>
-      <h1>{title}</h1>
-      <p>{text}</p>
-      <NavLink to="/playground" className="button primary">
-        Open connectivity lab
-        <ArrowRight size={15} />
       </NavLink>
     </main>
   )

@@ -2,11 +2,13 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { runInputSchema, type Session } from '../../shared/contracts'
+import { createProfileSchema } from '../../shared/catalog'
 
 const storedSessionSchema = z.object({
   id: z.uuid(),
   workspace: z.string().min(1),
   threadId: z.string().min(1).optional(),
+  projectId: z.uuid().optional(),
   createdAt: z.string(),
   runs: z.array(
     z.object({
@@ -15,8 +17,44 @@ const storedSessionSchema = z.object({
       resolvedPrompt: z.string(),
       options: runInputSchema.omit({ prompt: true }),
       skillSnapshots: z.array(
-        z.object({ id: z.string(), path: z.string(), content: z.string() }),
+        z.object({
+          id: z.string(),
+          path: z.string(),
+          content: z.string(),
+          name: z.string().optional(),
+          projectId: z.string().nullable().optional(),
+          originalPath: z.string().optional(),
+          archivePath: z.string().optional(),
+          files: z
+            .array(
+              z.object({
+                path: z.string(),
+                sha256: z.string(),
+                size: z.number(),
+              }),
+            )
+            .optional(),
+        }),
       ),
+      profileSnapshot: createProfileSchema
+        .extend({
+          id: z.uuid(),
+          revision: z.number(),
+          removedAt: z.string().nullable(),
+          createdAt: z.string(),
+          updatedAt: z.string(),
+        })
+        .optional(),
+      projectSnapshot: z
+        .object({
+          id: z.uuid(),
+          name: z.string(),
+          description: z.string(),
+          instructions: z.string(),
+          devCommand: z.string(),
+          testCommand: z.string(),
+        })
+        .optional(),
       startedAt: z.string(),
       finishedAt: z.string().optional(),
       status: z.enum([

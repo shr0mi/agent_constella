@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { PreparedCatalogRun } from '../../shared/catalog'
 
 export const proofSkill = `---
 name: connectivity-proof
@@ -23,7 +24,26 @@ export async function stageSkills(workspace: string, ids: string[]) {
 export function resolvePrompt(
   prompt: string,
   snapshots: { path: string; content: string }[],
+  context?: Pick<PreparedCatalogRun, 'profileSnapshot' | 'projectSnapshot'>,
 ): string {
-  if (snapshots.length === 0) return prompt
-  return `Use these explicitly selected skills for this turn. Their resource paths are below.\n\n${snapshots.map((skill) => `Skill file: ${skill.path}\n${skill.content}`).join('\n\n')}\n\nUser request:\n${prompt}`
+  const sections: string[] = []
+  if (context?.projectSnapshot) {
+    const project = context.projectSnapshot
+    sections.push(
+      `Project brief: ${project.name}\n${project.description}\n\nProject instructions:\n${project.instructions}\n\nDevelopment command (context only): ${project.devCommand}\nTest command (context only): ${project.testCommand}\nThe current working directory is a disposable lab workspace, not this project's repository.`,
+    )
+  }
+  if (context?.profileSnapshot) {
+    const profile = context.profileSnapshot
+    sections.push(
+      `Agent profile: ${profile.name}\n\nRole instructions:\n${profile.roleInstructions}\n\nStyle guide:\n${profile.styleGuide}`,
+    )
+  }
+  if (snapshots.length)
+    sections.push(
+      `Use these explicitly selected skills for this turn. Read resources relative to each staged skill file; the paths are available in the current workspace.\n\n${snapshots.map((skill) => `Skill file: ${skill.path}\n${skill.content}`).join('\n\n')}`,
+    )
+  return sections.length
+    ? `${sections.join('\n\n')}\n\nUser request:\n${prompt}`
+    : prompt
 }

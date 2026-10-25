@@ -37,7 +37,9 @@ Every follow-up reconstructs a thread with `resumeThread(savedId, options)`. Thi
 
 The SDK's typed inputs support text and local images, with no typed skill input or skills-list API. The application stages a small fixture skill under the scratch workspace's `.agents/skills/connectivity-proof/SKILL.md`, saves its exact contents and path per run, and injects the selected instructions and resource path into the prompt. The skill asks Codex to read `workspace-proof.txt` and return `CONSTELLA_SKILL_OK` with `ORBIT`.
 
-Unselecting the skill removes its staged directory for future native discovery. Previous instructions remain part of an existing thread's history; start a new session to eliminate that history. This is explicit instruction resolution, **not** an exclusive native skill allowlist. Inherited user configuration and installed skills may still be discovered by Codex. The full catalog milestone needs versioned skill/resource snapshots and a deliberate isolation policy.
+Unselecting the demo skill removes its staged directory for future native discovery. Milestone 3 adds global/project catalogs and explicit profile/skill resolution: selected catalog resources are archived in app data and staged under the scratch workspace's `.constella/skills/<run-id>/<skill-id>/`; the resolved profile, style guide, project brief, SKILL.md contents, and staged resource paths are supplied to the SDK. See [the catalog implementation record](skills-and-agents.md).
+
+Previous instructions remain part of an existing thread's history; start a new session to eliminate that history. Changing the lab project always creates a fresh scratch session. This remains explicit instruction resolution, **not** an exclusive native skill allowlist. Inherited user configuration and installed skills may still be discovered by Codex. Catalog removal preserves the source folder and does not alter Codex's native discovery configuration.
 
 ## Models and effort
 

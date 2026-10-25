@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import type { WorkspaceBridge } from './workspace'
+import type {
+  AgentProfile,
+  CatalogBridge,
+  ProjectRunSnapshot,
+  SkillSnapshot,
+} from './catalog'
 
 // This is the pinned TypeScript SDK's union, not a promise that every model supports every effort.
 export const effortSchema = z.enum([
@@ -15,13 +22,23 @@ export type Effort = z.infer<typeof effortSchema>
 export const runInputSchema = z
   .object({
     prompt: z.string().trim().min(1).max(32_000),
-    model: z.string().trim().min(1).max(160).optional(),
-    effort: effortSchema.optional(),
+    model: z.string().trim().min(1).max(160).nullable().optional(),
+    effort: effortSchema.nullable().optional(),
+    profileId: z.uuid().optional(),
     sandbox: z.enum(['read-only', 'workspace-write']),
-    skillIds: z.array(z.enum(['connectivity-proof'])).max(1),
+    skillIds: z
+      .array(z.union([z.literal('connectivity-proof'), z.uuid()]))
+      .max(21)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        'Select each skill once.',
+      ),
   })
   .strict()
 export type RunInput = z.infer<typeof runInputSchema>
+export const newSessionSchema = z
+  .object({ projectId: z.uuid().optional() })
+  .strict()
 
 export interface ModelOption {
   id: string
@@ -56,7 +73,9 @@ export interface Run {
   prompt: string
   resolvedPrompt: string
   options: Omit<RunInput, 'prompt'>
-  skillSnapshots: { id: string; path: string; content: string }[]
+  skillSnapshots: SkillSnapshot[]
+  profileSnapshot?: AgentProfile
+  projectSnapshot?: ProjectRunSnapshot
   startedAt: string
   finishedAt?: string
   status:
@@ -79,6 +98,7 @@ export interface Session {
   id: string
   workspace: string
   threadId?: string
+  projectId?: string
   createdAt: string
   runs: Run[]
 }
@@ -95,11 +115,13 @@ export interface SkillOption {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: Failure }
 
 export interface ConstellaBridge {
+  workspace: WorkspaceBridge
+  catalog: CatalogBridge
   getState(): Promise<Result<AppState>>
   diagnose(): Promise<Result<Diagnostics>>
   run(input: RunInput): Promise<Result<{ runId: string }>>
   stop(): Promise<Result<void>>
-  newSession(): Promise<Result<AppState>>
+  newSession(context?: { projectId?: string }): Promise<Result<AppState>>
   onState(callback: (state: AppState) => void): () => void
 }
 

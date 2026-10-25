@@ -45,12 +45,14 @@ it('loads the built preload with only the modules available in Electron’s sand
   ]
   expect(name).toBe('constella')
   expect(Object.keys(bridge).sort()).toEqual([
+    'catalog',
     'diagnose',
     'getState',
     'newSession',
     'onState',
     'run',
     'stop',
+    'workspace',
   ])
   await bridge.getState()
   expect(invoke).toHaveBeenLastCalledWith('constella:state')
@@ -62,4 +64,32 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(callback).toHaveBeenCalledExactlyOnceWith(state)
   unsubscribe()
   expect(removeListener).toHaveBeenCalledWith(channel, listener)
+  await bridge.workspace.getSnapshot()
+  expect(invoke).toHaveBeenLastCalledWith('constella:workspace:snapshot')
+  await bridge.workspace.chooseNewProject()
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:workspace:choose-new-project',
+  )
+  const workspaceCallback = vi.fn()
+  const removeWorkspaceListener = bridge.workspace.onChange(workspaceCallback)
+  const [workspaceChannel, workspaceListener] = on.mock.calls[1]
+  const snapshot = { revision: 1, projects: [], tasks: [] }
+  workspaceListener({ sender: 'must stay in preload' }, snapshot)
+  expect(workspaceCallback).toHaveBeenCalledExactlyOnceWith(snapshot)
+  removeWorkspaceListener()
+  expect(removeListener).toHaveBeenCalledWith(
+    workspaceChannel,
+    workspaceListener,
+  )
+  await bridge.catalog.getSnapshot({ projectId: null })
+  expect(invoke).toHaveBeenLastCalledWith('constella:catalog:snapshot', {
+    projectId: null,
+  })
+  const catalogCallback = vi.fn()
+  const removeCatalogListener = bridge.catalog.onChange(catalogCallback)
+  const [catalogChannel, catalogListener] = on.mock.calls[2]
+  catalogListener({ sender: 'must stay in preload' })
+  expect(catalogCallback).toHaveBeenCalledExactlyOnceWith()
+  removeCatalogListener()
+  expect(removeListener).toHaveBeenCalledWith(catalogChannel, catalogListener)
 })

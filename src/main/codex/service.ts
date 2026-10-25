@@ -20,6 +20,10 @@ import { describeError } from './errors'
 import { diagnose } from './runtime'
 import { resolvePrompt, stageSkills } from './skills'
 import { SessionStore } from './storage'
+import type {
+  CatalogRunResolver,
+  PreparedCatalogRun,
+} from '../../shared/catalog'
 
 export interface CodexClient {
   startThread(options: ThreadOptions): CodexThread
@@ -109,6 +113,7 @@ export class ConnectivityService {
   constructor(
     private readonly store: SessionStore,
     private readonly client: CodexClient = new Codex(),
+    private readonly resolveCatalog?: CatalogRunResolver,
   ) {}
 
   async initialize(): Promise<void> {
@@ -163,7 +168,7 @@ export class ConnectivityService {
     return this.state.diagnostics
   }
 
-  private async createSession(): Promise<void> {
+  private async createSession(projectId?: string): Promise<void> {
     const workspace = await mkdtemp(join(tmpdir(), 'agent-constella-'))
     const id = randomUUID()
     await writeFile(
@@ -173,13 +178,19 @@ export class ConnectivityService {
     await writeFile(join(workspace, '.constella-session'), id)
     const previousDiagnostics = this.state?.diagnostics
     this.state = {
-      session: { id, workspace, createdAt: new Date().toISOString(), runs: [] },
+      session: {
+        id,
+        workspace,
+        projectId,
+        createdAt: new Date().toISOString(),
+        runs: [],
+      },
       diagnostics: previousDiagnostics,
     }
     await this.persist()
   }
 
-  async newSession(): Promise<AppState> {
+  async newSession(projectId?: string): Promise<AppState> {
     if (this.active || this.resetting)
       throw new Error(
         'Stop the current turn before creating a new scratch session.',
@@ -187,7 +198,7 @@ export class ConnectivityService {
     this.resetting = true
     try {
       await this.store.archive(this.state.session)
-      await this.createSession()
+      await this.createSession(projectId)
       return this.snapshot()
     } finally {
       this.resetting = false
@@ -200,23 +211,6 @@ export class ConnectivityService {
       throw new Error(
         'A turn is already active. Stop it before starting another.',
       )
-    if (input.effort && !input.model)
-      throw new Error(
-        'Select a model from the runtime catalog before setting an effort.',
-      )
-    if (input.model) {
-      const model = this.state.diagnostics?.models.find(
-        (model) => model.id === input.model,
-      )
-      if (!model)
-        throw new Error(
-          'Selected model is not in the runtime catalog. Refresh diagnostics or use the configured default.',
-        )
-      if (input.effort && !model.efforts.includes(input.effort))
-        throw new Error(
-          'Selected reasoning effort is unsupported for this model.',
-        )
-    }
     const controller = new AbortController()
     // Claim the single execution slot before the first asynchronous operation.
     const active = { controller, done: undefined as Promise<void> | undefined }
@@ -241,14 +235,58 @@ export class ConnectivityService {
           recursive: true,
           force: true,
         })
-      const snapshots = await stageSkills(workspace, input.skillIds)
+      const runId = randomUUID()
+      let prepared: PreparedCatalogRun = {
+        skillSnapshots: [],
+        model: input.model ?? undefined,
+        effort: input.effort ?? undefined,
+      }
+      if (this.resolveCatalog)
+        prepared = await this.resolveCatalog(
+          input,
+          workspace,
+          runId,
+          this.state.session.projectId,
+        )
+      else if (
+        input.profileId ||
+        input.skillIds.some((id) => id !== 'connectivity-proof')
+      )
+        throw new Error('Catalog selection is unavailable in this runtime.')
+      if (prepared.effort && !prepared.model)
+        throw new Error(
+          'Select a model from the runtime catalog before setting an effort.',
+        )
+      if (prepared.model) {
+        const model = this.state.diagnostics?.models.find(
+          (model) => model.id === prepared.model,
+        )
+        if (
+          !model ||
+          (prepared.effort && !model.efforts.includes(prepared.effort))
+        )
+          throw new Error(
+            'Selected model or reasoning effort is not in the runtime catalog. Refresh diagnostics or use the configured default.',
+          )
+      }
+      const snapshots = [
+        ...(await stageSkills(workspace, input.skillIds)),
+        ...prepared.skillSnapshots,
+      ]
       const { prompt, ...options } = input
       const run: Run = {
-        id: randomUUID(),
+        id: runId,
         prompt,
-        resolvedPrompt: resolvePrompt(prompt, snapshots),
-        options,
+        resolvedPrompt: resolvePrompt(prompt, snapshots, prepared),
+        options: {
+          ...options,
+          model: prepared.model,
+          effort: prepared.effort,
+          skillIds: snapshots.map((skill) => skill.id),
+        },
         skillSnapshots: snapshots,
+        profileSnapshot: prepared.profileSnapshot,
+        projectSnapshot: prepared.projectSnapshot,
         startedAt: new Date().toISOString(),
         status: controller.signal.aborted ? 'stopping' : 'running',
         items: [],
@@ -284,8 +322,8 @@ export class ConnectivityService {
         approvalPolicy: 'never',
         networkAccessEnabled: false,
         webSearchMode: 'disabled',
-        model: run.options.model,
-        modelReasoningEffort: run.options.effort,
+        model: run.options.model ?? undefined,
+        modelReasoningEffort: run.options.effort ?? undefined,
       }
       const thread = this.state.session.threadId
         ? this.client.resumeThread(this.state.session.threadId, options)

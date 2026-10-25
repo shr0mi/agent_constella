@@ -8,15 +8,24 @@ import {
 } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { runInputSchema, type Result } from '../shared/contracts'
+import {
+  newSessionSchema,
+  runInputSchema,
+  type Result,
+} from '../shared/contracts'
+import { catalogContextSchema } from '../shared/catalog'
 import { channels } from '../shared/ipc'
-import { describeError } from './codex/errors'
+import { applicationFailure } from './application/errors'
+import { WorkspaceService } from './application/workspace-service'
+import { CatalogService } from './application/catalog-service'
+import { openWorkspaceDatabase, type WorkspaceDatabase } from './db/database'
 import { ConnectivityService } from './codex/service'
 import { SessionStore } from './codex/storage'
 
 const directory = dirname(fileURLToPath(import.meta.url))
 let window: BrowserWindow | null = null
 let service: ConnectivityService | undefined
+let database: WorkspaceDatabase | undefined
 let closing = false
 
 function handle<T>(
@@ -38,7 +47,7 @@ function handle<T>(
         }
         return { ok: true, value: await action(payload) }
       } catch (error) {
-        return { ok: false, error: describeError(error) }
+        return { ok: false, error: applicationFailure(error) }
       }
     },
   )
@@ -85,8 +94,85 @@ else {
   void app
     .whenReady()
     .then(async () => {
+      database = openWorkspaceDatabase(
+        join(app.getPath('userData'), 'workspace.sqlite'),
+      )
+      const workspace = new WorkspaceService(database)
+      const catalog = new CatalogService(
+        database,
+        app.getPath('userData'),
+        () => service?.snapshot().diagnostics?.models ?? [],
+      )
+      handle(channels.catalogSnapshot, (context) =>
+        catalog.getSnapshot(context),
+      )
+      handle(channels.createSkill, (input) => catalog.createSkill(input))
+      handle(channels.getSkill, (input) => catalog.getSkill(input))
+      handle(channels.readSkillFile, (input) => catalog.readSkillFile(input))
+      handle(channels.saveSkillFile, (input) => catalog.saveSkillFile(input))
+      handle(channels.setSkillActive, (input) => catalog.setSkillActive(input))
+      handle(channels.createProfile, (input) => catalog.createProfile(input))
+      handle(channels.updateProfile, (input) => catalog.updateProfile(input))
+      handle(channels.setProfileActive, (input) =>
+        catalog.setProfileActive(input),
+      )
+      handle(channels.importSkill, async (input) => {
+        const context = catalogContextSchema.parse(input)
+        catalog.getSnapshot(context)
+        const selection = await dialog.showOpenDialog(window!, {
+          title: 'Import a skill folder',
+          message:
+            'Select a folder containing SKILL.md and its optional resources.',
+          buttonLabel: 'Import skill',
+          properties: ['openDirectory'],
+        })
+        if (selection.canceled || !selection.filePaths[0]) return null
+        return catalog.importSkill({ ...context, path: selection.filePaths[0] })
+      })
+      catalog.subscribe(() => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.catalogChanged)
+      })
+      handle(channels.workspaceSnapshot, () => workspace.getSnapshot())
+      handle(channels.chooseRepository, async () => {
+        const selection = await dialog.showOpenDialog(window!, {
+          title: 'Open a project folder',
+          message:
+            'Choose a project folder. Git will be initialized if the folder is not already a repository.',
+          buttonLabel: 'Open folder',
+          properties: ['openDirectory', 'createDirectory'],
+        })
+        if (selection.canceled || !selection.filePaths[0]) return null
+        return workspace.openFolder({ path: selection.filePaths[0] })
+      })
+      handle(channels.chooseNewProject, async () => {
+        const selection = await dialog.showSaveDialog(window!, {
+          title: 'Create a project folder',
+          message:
+            'Choose a name and location for the new project folder. Git will be initialized on the main branch.',
+          nameFieldLabel: 'Project folder name:',
+          defaultPath: join(app.getPath('documents'), 'untitled-project'),
+          buttonLabel: 'Create project',
+          properties: ['createDirectory'],
+        })
+        if (selection.canceled || !selection.filePath) return null
+        return workspace.createProject({ path: selection.filePath })
+      })
+      handle(channels.updateProject, (input) => workspace.updateProject(input))
+      handle(channels.createTask, (input) => workspace.createTask(input))
+      handle(channels.updateTask, (input) => workspace.updateTask(input))
+      handle(channels.moveTask, (input) => workspace.moveTask(input))
+      handle(channels.archiveTask, (input) => workspace.archiveTask(input))
+      handle(channels.restoreTask, (input) => workspace.restoreTask(input))
+      workspace.subscribe((snapshot) => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.workspaceChanged, snapshot)
+      })
       service = new ConnectivityService(
         new SessionStore(join(app.getPath('userData'), 'connectivity')),
+        undefined,
+        (input, workspace, runId, projectId) =>
+          catalog.resolveRun(input, workspace, runId, projectId),
       )
       await service.initialize()
       handle(channels.state, () => service!.snapshot())
@@ -95,7 +181,11 @@ else {
         service!.start(runInputSchema.parse(input)),
       )
       handle(channels.stop, () => service!.stop())
-      handle(channels.reset, () => service!.newSession())
+      handle(channels.reset, (input) => {
+        const context = newSessionSchema.parse(input ?? {})
+        catalog.getSnapshot({ projectId: context.projectId ?? null })
+        return service!.newSession(context.projectId)
+      })
       service.subscribe((state) => {
         if (window && !window.isDestroyed())
           window.webContents.send(channels.updated, state)
@@ -116,7 +206,7 @@ else {
       })
     })
     .catch((error) => {
-      const failure = describeError(error)
+      const failure = applicationFailure(error)
       dialog.showErrorBox(
         'AgentConstella could not start',
         `${failure.message}\n\n${failure.hint}`,
@@ -126,6 +216,7 @@ else {
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
   })
+  app.on('will-quit', () => database?.close())
   app.on('before-quit', (event) => {
     if (closing || !service) return
     event.preventDefault()

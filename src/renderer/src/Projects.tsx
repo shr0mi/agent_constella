@@ -1,0 +1,984 @@
+import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  Archive,
+  Bot,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Check,
+  CheckCheck,
+  Circle,
+  Clock3,
+  FolderGit2,
+  FolderOpen,
+  GitBranch,
+  GripVertical,
+  Layers3,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Settings2,
+  Target,
+  X,
+  Zap,
+} from 'lucide-react'
+import type { Project, Task, TaskStatus } from '../../shared/workspace'
+import type { Failure } from '../../shared/contracts'
+import { useAppStore } from './store'
+import { Modal } from './components/Modal'
+import {
+  refreshWorkspace,
+  useWorkspaceStore,
+  workspaceAction,
+} from './workspace-store'
+
+const columns: { id: TaskStatus; title: string; caption: string }[] = [
+  { id: 'todo', title: 'To Do', caption: 'Ready to take shape' },
+  { id: 'doing', title: 'Doing', caption: 'Work in motion' },
+  { id: 'done', title: 'Done', caption: 'Finished and accounted for' },
+]
+
+function RepositoryButton({ create = false }: { create?: boolean }) {
+  const navigate = useNavigate()
+  const pending = useWorkspaceStore((state) => state.pending)
+  const [opening, setOpening] = useState(false)
+  async function open() {
+    setOpening(true)
+    try {
+      const project = await workspaceAction((api) =>
+        create ? api.chooseNewProject() : api.chooseRepository(),
+      )
+      if (project) navigate(`/projects/${project.id}`)
+    } catch {
+      /* Shared error notice keeps the native picker failure visible. */
+    } finally {
+      setOpening(false)
+    }
+  }
+  return (
+    <button
+      className={`button ${create ? 'primary' : 'secondary'}`}
+      title={
+        create
+          ? 'Create a new project folder and initialize Git'
+          : 'Open an existing folder and initialize Git if needed'
+      }
+      disabled={pending > 0}
+      onClick={() => void open()}
+    >
+      {opening ? (
+        <LoaderCircle size={15} className="spin" />
+      ) : create ? (
+        <Plus size={15} />
+      ) : (
+        <FolderOpen size={15} />
+      )}
+      {create ? 'Create project' : 'Open folder'}
+    </button>
+  )
+}
+
+function ProjectActions() {
+  return (
+    <div className="project-entry-actions">
+      <RepositoryButton />
+      <RepositoryButton create />
+    </div>
+  )
+}
+
+export function ProjectsPage() {
+  const { snapshot, loading } = useWorkspaceStore()
+  const [search, setSearch] = useState('')
+  const projects = snapshot?.projects ?? []
+  const visible = projects.filter((project) =>
+    `${project.name} ${project.repoPath} ${project.description}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  )
+  const tasks = snapshot?.tasks.filter((task) => !task.archivedAt) ?? []
+  return (
+    <main className="projects-page">
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">
+            <span />
+            WORKSPACE / PROJECTS
+          </div>
+          <h1>Your projects</h1>
+          <p>A home for each repository. A clear view of the work ahead.</p>
+        </div>
+        <ProjectActions />
+      </div>
+      <div className="project-overview">
+        <div>
+          <FolderGit2 size={17} />
+          <strong>{projects.length}</strong>
+          <span>{projects.length === 1 ? 'repository' : 'repositories'}</span>
+        </div>
+        <div>
+          <Layers3 size={17} />
+          <strong>{tasks.length}</strong>
+          <span>active tasks</span>
+        </div>
+        <div>
+          <CheckCheck size={17} />
+          <strong>
+            {tasks.filter((task) => task.status === 'done').length}
+          </strong>
+          <span>completed</span>
+        </div>
+        <span className="local-storage-tag">
+          <span className="status-dot green" />
+          Saved on this device
+        </span>
+      </div>
+      <div className="projects-toolbar">
+        <span>
+          REPOSITORIES <small>{projects.length}</small>
+        </span>
+        <label className="workspace-search">
+          <Search size={14} />
+          <input
+            aria-label="Search projects"
+            placeholder="Find a project…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
+      {loading && !snapshot ? (
+        <LoadingWorkspace />
+      ) : !snapshot ? (
+        <div className="workspace-empty">
+          <h2>Workspace could not be loaded</h2>
+          <button
+            className="button secondary"
+            onClick={() => void refreshWorkspace()}
+          >
+            <RefreshCw size={14} />
+            Try again
+          </button>
+        </div>
+      ) : projects.length === 0 ? (
+        <div className="workspace-empty first-project">
+          <div className="empty-project-icon">
+            <FolderGit2 size={32} />
+          </div>
+          <span className="eyebrow">START WITH A PROJECT</span>
+          <h2>Give your next idea a workspace.</h2>
+          <p>
+            Create a project folder or open one you already have. We’ll set up
+            Git and its board so you can start capturing the work.
+          </p>
+          <ProjectActions />
+          <span className="empty-footnote">
+            Project files stay in place. Boards and settings are saved locally.
+          </span>
+        </div>
+      ) : (
+        <div className="project-cards">
+          {visible.map((project) => {
+            const projectTasks = tasks.filter(
+              (task) => task.projectId === project.id,
+            )
+            const done = projectTasks.filter(
+              (task) => task.status === 'done',
+            ).length
+            return (
+              <Link
+                to={`/projects/${project.id}`}
+                key={project.id}
+                className="project-card"
+              >
+                <div className="project-card-top">
+                  <span className="project-monogram">
+                    {project.name.slice(0, 2).toUpperCase()}
+                  </span>
+                  <ArrowRight size={17} />
+                </div>
+                <h2>{project.name}</h2>
+                <p className="project-card-path" title={project.repoPath}>
+                  <GitBranch size={12} />
+                  {project.repoPath}
+                </p>
+                <p className="project-card-description">
+                  {project.description ||
+                    'Add a project brief in settings to give the work context.'}
+                </p>
+                <div className="project-progress">
+                  <span
+                    style={{
+                      width: `${projectTasks.length ? (done / projectTasks.length) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <div className="project-card-bottom">
+                  <span>
+                    {projectTasks.length}{' '}
+                    {projectTasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
+                  <span>
+                    {done} done
+                    <ChevronArrow />
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+          {visible.length === 0 && (
+            <div className="workspace-empty">
+              <h2>No matching projects</h2>
+              <p>Try another name or repository path.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </main>
+  )
+}
+
+function ChevronArrow() {
+  return <ArrowRight size={12} />
+}
+function LoadingWorkspace() {
+  return (
+    <div className="workspace-empty">
+      <LoaderCircle className="spin" size={24} />
+      <p>Loading your workspace…</p>
+    </div>
+  )
+}
+
+export function ProjectBoardPage() {
+  const { projectId } = useParams()
+  const { snapshot, loading, pending } = useWorkspaceStore()
+  const project = snapshot?.projects.find((project) => project.id === projectId)
+  const [editor, setEditor] = useState<Task | TaskStatus | null>(null)
+  const [settings, setSettings] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const [dragged, setDragged] = useState<string | null>(null)
+  const [dropColumn, setDropColumn] = useState<TaskStatus | null>(null)
+  const [undo, setUndo] = useState<Task | null>(null)
+  useEffect(() => {
+    setEditor(null)
+    setSettings(false)
+    setArchiveOpen(false)
+    setSearch('')
+    setUndo(null)
+    setDragged(null)
+  }, [projectId])
+  if (loading && !snapshot) return <LoadingWorkspace />
+  if (!project)
+    return (
+      <main className="projects-page">
+        <div className="workspace-empty">
+          <FolderGit2 size={30} />
+          <h2>Project not found</h2>
+          <p>Choose a repository from your saved projects.</p>
+          <Link className="button secondary" to="/projects">
+            <ArrowLeft size={14} />
+            All projects
+          </Link>
+        </div>
+      </main>
+    )
+  const projectTasks = snapshot!.tasks.filter(
+    (task) => task.projectId === project.id,
+  )
+  const activeTasks = projectTasks.filter((task) => !task.archivedAt)
+  const archived = projectTasks
+    .filter((task) => task.archivedAt)
+    .sort((a, b) => b.archivedAt!.localeCompare(a.archivedAt!))
+  const done = activeTasks.filter((task) => task.status === 'done').length
+
+  async function move(
+    task: Task,
+    status: TaskStatus,
+    beforeTaskId: string | null = null,
+  ) {
+    try {
+      await workspaceAction((api) =>
+        api.moveTask({
+          projectId: task.projectId,
+          taskId: task.id,
+          expectedRevision: task.revision,
+          status,
+          beforeTaskId,
+        }),
+      )
+    } catch {
+      /* Failed mutations keep the committed board intact. */
+    }
+  }
+  async function archive(task: Task) {
+    try {
+      const saved = await workspaceAction((api) =>
+        api.archiveTask({
+          projectId: task.projectId,
+          taskId: task.id,
+          expectedRevision: task.revision,
+        }),
+      )
+      setUndo(saved)
+      setEditor(null)
+    } catch {
+      /* The shared notice explains why archiving failed. */
+    }
+  }
+  async function restore(task: Task) {
+    try {
+      await workspaceAction((api) =>
+        api.restoreTask({
+          projectId: task.projectId,
+          taskId: task.id,
+          expectedRevision: task.revision,
+        }),
+      )
+      if (undo?.id === task.id) setUndo(null)
+    } catch {
+      /* The archive remains available after a failed restore. */
+    }
+  }
+  function drop(
+    event: DragEvent,
+    status: TaskStatus,
+    beforeTaskId: string | null = null,
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    const taskId = event.dataTransfer.getData('application/x-constella-task')
+    const task = activeTasks.find((task) => task.id === taskId)
+    setDragged(null)
+    setDropColumn(null)
+    if (task && !pending && task.id !== beforeTaskId)
+      void move(task, status, beforeTaskId)
+  }
+
+  return (
+    <main className="project-board-page">
+      <Link to="/projects" className="back-link">
+        <ArrowLeft size={13} />
+        All projects
+      </Link>
+      <div className="page-heading board-heading">
+        <div>
+          <div className="eyebrow">
+            <GitBranch size={11} />
+            PROJECT WORKSPACE
+          </div>
+          <h1>{project.name}</h1>
+          <p className="board-repo-path" title={project.repoPath}>
+            {project.repoPath}
+          </p>
+        </div>
+        <div className="heading-actions">
+          <button
+            className="button secondary"
+            onClick={() => setSettings(true)}
+            disabled={pending > 0}
+          >
+            <Settings2 size={14} />
+            Project settings
+          </button>
+          <button
+            className="button primary"
+            onClick={() => setEditor('todo')}
+            disabled={pending > 0}
+          >
+            <Plus size={15} />
+            New task
+          </button>
+        </div>
+      </div>
+      {project.description && (
+        <p className="project-brief">{project.description}</p>
+      )}
+      <div className="board-toolbar">
+        <div className="board-tab">
+          <FolderGit2 size={14} />
+          Board<span>{activeTasks.length}</span>
+        </div>
+        <span className="board-progress-text">
+          {done} of {activeTasks.length} done
+        </span>
+        <span className="toolbar-spacer" />
+        <Link
+          className="button archive-toggle"
+          to={`/skills?project=${project.id}`}
+        >
+          <Zap size={13} />
+          Skills
+        </Link>
+        <Link
+          className="button archive-toggle"
+          to={`/agents?project=${project.id}`}
+        >
+          <Bot size={13} />
+          Agents
+        </Link>
+        <label className="workspace-search">
+          <Search size={13} />
+          <input
+            aria-label="Search tasks"
+            placeholder="Filter tasks…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          {search && (
+            <button
+              className="icon-button"
+              onClick={() => setSearch('')}
+              aria-label="Clear task filter"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </label>
+        <button
+          className={`button archive-toggle ${archiveOpen ? 'active' : ''}`}
+          onClick={() => setArchiveOpen((value) => !value)}
+        >
+          <Archive size={14} />
+          Archive<span>{archived.length}</span>
+        </button>
+      </div>
+      <div className="kanban-board">
+        {columns.map((column) => {
+          const all = activeTasks
+            .filter((task) => task.status === column.id)
+            .sort((a, b) => a.position - b.position)
+          const visible = all.filter((task) =>
+            `${task.title} ${task.description} ${task.acceptanceCriteria}`
+              .toLowerCase()
+              .includes(search.toLowerCase()),
+          )
+          return (
+            <section
+              key={column.id}
+              className={`kanban-column ${column.id} ${dropColumn === column.id ? 'drop-active' : ''}`}
+              aria-label={`${column.title} column`}
+              onDragOver={(event) => {
+                if (dragged && !search && !pending) {
+                  event.preventDefault()
+                  setDropColumn(column.id)
+                }
+              }}
+              onDragLeave={(event) => {
+                if (
+                  !event.currentTarget.contains(
+                    event.relatedTarget as Node | null,
+                  )
+                )
+                  setDropColumn(null)
+              }}
+              onDrop={(event) => drop(event, column.id)}
+            >
+              <div className="column-heading">
+                <span className="column-dot" />
+                <h2>{column.title}</h2>
+                <span>{all.length}</span>
+                <button
+                  className="icon-button"
+                  aria-label={`Add task to ${column.title}`}
+                  onClick={() => setEditor(column.id)}
+                  disabled={pending > 0}
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
+              <p className="column-caption">{column.caption}</p>
+              <div className="column-cards">
+                {visible.map((task) => {
+                  const index = all.findIndex((row) => row.id === task.id)
+                  return (
+                    <article
+                      key={task.id}
+                      className={`task-card ${dragged === task.id ? 'dragging' : ''}`}
+                      draggable={!pending && !search}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData(
+                          'application/x-constella-task',
+                          task.id,
+                        )
+                        event.dataTransfer.effectAllowed = 'move'
+                        setDragged(task.id)
+                      }}
+                      onDragEnd={() => {
+                        setDragged(null)
+                        setDropColumn(null)
+                      }}
+                      onDragOver={(event) => {
+                        if (dragged && !pending && !search)
+                          event.preventDefault()
+                      }}
+                      onDrop={(event) => drop(event, column.id, task.id)}
+                    >
+                      <div className="task-card-meta">
+                        <span>AC-{task.id.slice(0, 6).toUpperCase()}</span>
+                        <GripVertical size={13} />
+                      </div>
+                      <button
+                        className="task-open"
+                        onClick={() => setEditor(task)}
+                      >
+                        <h3>{task.title}</h3>
+                        {task.description && <p>{task.description}</p>}
+                      </button>
+                      {task.acceptanceCriteria && (
+                        <span className="task-criteria">
+                          <Target size={11} />
+                          Acceptance criteria added
+                        </span>
+                      )}
+                      <div className="task-card-actions">
+                        <div className="task-order-controls">
+                          <button
+                            className="icon-button"
+                            aria-label={`Move ${task.title} up`}
+                            disabled={pending > 0 || index === 0 || !!search}
+                            onClick={() =>
+                              void move(
+                                task,
+                                task.status,
+                                all[index - 1]?.id ?? null,
+                              )
+                            }
+                          >
+                            <ArrowUp size={12} />
+                          </button>
+                          <button
+                            className="icon-button"
+                            aria-label={`Move ${task.title} down`}
+                            disabled={
+                              pending > 0 ||
+                              index === all.length - 1 ||
+                              !!search
+                            }
+                            onClick={() =>
+                              void move(
+                                task,
+                                task.status,
+                                all[index + 2]?.id ?? null,
+                              )
+                            }
+                          >
+                            <ArrowDown size={12} />
+                          </button>
+                        </div>
+                        <select
+                          aria-label={`Status for ${task.title}`}
+                          value={task.status}
+                          disabled={pending > 0}
+                          onChange={(event) =>
+                            void move(task, event.target.value as TaskStatus)
+                          }
+                        >
+                          {columns.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.title}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="icon-button task-archive"
+                          aria-label={`Archive ${task.title}`}
+                          disabled={pending > 0}
+                          onClick={() => void archive(task)}
+                        >
+                          <Archive size={12} />
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })}
+                {visible.length === 0 && (
+                  <div className="empty-column">
+                    {column.id === 'done' ? (
+                      <CheckCheck size={23} />
+                    ) : column.id === 'doing' ? (
+                      <Clock3 size={23} />
+                    ) : (
+                      <Circle size={23} />
+                    )}
+                    <p>
+                      {search
+                        ? 'No matching tasks'
+                        : column.id === 'todo'
+                          ? 'Make space for the next step.'
+                          : column.id === 'doing'
+                            ? 'Ready when you are.'
+                            : 'Your finished work lands here.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <button
+                className="column-add"
+                disabled={pending > 0}
+                onClick={() => setEditor(column.id)}
+              >
+                <Plus size={13} />
+                Add task
+              </button>
+            </section>
+          )
+        })}
+      </div>
+      <div className="board-footer">
+        <span>
+          <Check size={12} />
+          Changes saved locally
+        </span>
+        <span>Drag to reorder or move between columns</span>
+      </div>
+      {archiveOpen && (
+        <section className="archive-panel">
+          <div className="archive-heading">
+            <div>
+              <Archive size={16} />
+              <h2>Archived tasks</h2>
+              <span>{archived.length}</span>
+            </div>
+            <button
+              className="icon-button"
+              onClick={() => setArchiveOpen(false)}
+              aria-label="Close archive"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          {archived.length === 0 ? (
+            <p className="archive-empty">No archived tasks in this project.</p>
+          ) : (
+            archived.map((task) => (
+              <div className="archive-row" key={task.id}>
+                <div>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {columns.find((column) => column.id === task.status)?.title}{' '}
+                    · Archived {new Date(task.archivedAt!).toLocaleDateString()}
+                  </span>
+                </div>
+                <button
+                  className="button secondary"
+                  disabled={pending > 0}
+                  onClick={() => void restore(task)}
+                >
+                  <RotateCcw size={13} />
+                  Restore
+                </button>
+              </div>
+            ))
+          )}
+        </section>
+      )}
+      {undo && (
+        <div className="undo-toast" role="status">
+          <Archive size={15} />
+          <span>Task archived</span>
+          <button disabled={pending > 0} onClick={() => void restore(undo)}>
+            Undo
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Dismiss undo"
+            onClick={() => setUndo(null)}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+      {editor !== null && (
+        <TaskEditor
+          key={typeof editor === 'string' ? `new-${editor}` : editor.id}
+          project={project}
+          task={typeof editor === 'string' ? undefined : editor}
+          status={typeof editor === 'string' ? editor : editor.status}
+          onClose={() => setEditor(null)}
+          onArchive={archive}
+        />
+      )}
+      {settings && (
+        <ProjectSettings
+          key={project.id}
+          project={project}
+          onClose={() => setSettings(false)}
+        />
+      )}
+    </main>
+  )
+}
+
+function TaskEditor({
+  project,
+  task,
+  status,
+  onClose,
+  onArchive,
+}: {
+  project: Project
+  task?: Task
+  status: TaskStatus
+  onClose: () => void
+  onArchive: (task: Task) => Promise<void>
+}) {
+  const [failure, setFailure] = useState<Failure>()
+  const [title, setTitle] = useState(task?.title ?? '')
+  const [description, setDescription] = useState(task?.description ?? '')
+  const [criteria, setCriteria] = useState(task?.acceptanceCriteria ?? '')
+  const busy = useWorkspaceStore((state) => state.pending > 0)
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    try {
+      if (task)
+        await workspaceAction((api) =>
+          api.updateTask({
+            projectId: project.id,
+            taskId: task.id,
+            expectedRevision: task.revision,
+            title,
+            description,
+            acceptanceCriteria: criteria,
+          }),
+        )
+      else
+        await workspaceAction((api) =>
+          api.createTask({
+            projectId: project.id,
+            title,
+            description,
+            acceptanceCriteria: criteria,
+            status,
+          }),
+        )
+      onClose()
+    } catch {
+      setFailure(useAppStore.getState().error)
+    }
+  }
+  return (
+    <Modal
+      title={task ? 'Edit task' : 'Create a task'}
+      subtitle={`${project.name} / ${columns.find((column) => column.id === status)?.title}`}
+      onClose={onClose}
+      busy={busy}
+    >
+      <form className="workspace-form" onSubmit={(event) => void save(event)}>
+        <fieldset disabled={busy}>
+          <label htmlFor="task-title">
+            Title<span>Required</span>
+          </label>
+          <input
+            id="task-title"
+            autoFocus
+            required
+            maxLength={180}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="What needs to happen?"
+          />
+          <label htmlFor="task-description">Description</label>
+          <textarea
+            id="task-description"
+            maxLength={30000}
+            rows={5}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Give this task context: the problem, the goal, and any useful details."
+          />
+          <label htmlFor="task-criteria">Acceptance criteria</label>
+          <textarea
+            id="task-criteria"
+            maxLength={20000}
+            rows={4}
+            value={criteria}
+            onChange={(event) => setCriteria(event.target.value)}
+            placeholder="Describe what a successful result should look like."
+          />
+        </fieldset>
+        {failure && <FormFailure failure={failure} />}
+        <footer>
+          {task && (
+            <button
+              type="button"
+              className="button subtle-danger"
+              disabled={busy}
+              onClick={() =>
+                void onArchive(task).then(() =>
+                  setFailure(useAppStore.getState().error),
+                )
+              }
+            >
+              <Archive size={13} />
+              Archive task
+            </button>
+          )}
+          <span />
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="button primary" disabled={busy || !title.trim()}>
+            {busy ? (
+              <LoaderCircle size={14} className="spin" />
+            ) : (
+              <Check size={14} />
+            )}
+            {task ? 'Save changes' : 'Create task'}
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  )
+}
+
+function ProjectSettings({
+  project,
+  onClose,
+}: {
+  project: Project
+  onClose: () => void
+}) {
+  const [failure, setFailure] = useState<Failure>()
+  const [expectedRevision] = useState(project.revision)
+  const [name, setName] = useState(project.name)
+  const [description, setDescription] = useState(project.description)
+  const [instructions, setInstructions] = useState(project.instructions)
+  const [devCommand, setDevCommand] = useState(project.devCommand)
+  const [testCommand, setTestCommand] = useState(project.testCommand)
+  const busy = useWorkspaceStore((state) => state.pending > 0)
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    try {
+      await workspaceAction((api) =>
+        api.updateProject({
+          projectId: project.id,
+          expectedRevision,
+          name,
+          description,
+          instructions,
+          devCommand,
+          testCommand,
+        }),
+      )
+      onClose()
+    } catch {
+      setFailure(useAppStore.getState().error)
+    }
+  }
+  return (
+    <Modal
+      title="Project settings"
+      subtitle="The shared brief for work in this repository."
+      onClose={onClose}
+      busy={busy}
+      wide
+    >
+      <form className="workspace-form" onSubmit={(event) => void save(event)}>
+        <fieldset disabled={busy}>
+          <label htmlFor="project-name">
+            Project name<span>Required</span>
+          </label>
+          <input
+            id="project-name"
+            autoFocus
+            required
+            maxLength={100}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <label>Repository</label>
+          <div className="settings-repository">
+            <FolderGit2 size={15} />
+            <code>{project.repoPath}</code>
+          </div>
+          <label htmlFor="project-description">Project brief</label>
+          <textarea
+            id="project-description"
+            maxLength={20000}
+            rows={3}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="What does this project do? What matters most?"
+          />
+          <label htmlFor="project-instructions">Project instructions</label>
+          <textarea
+            id="project-instructions"
+            maxLength={40000}
+            rows={4}
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            placeholder="Conventions, constraints, and context for future agents."
+          />
+          <div className="command-fields">
+            <div>
+              <label htmlFor="dev-command">Development command</label>
+              <input
+                id="dev-command"
+                className="command-input"
+                maxLength={2000}
+                value={devCommand}
+                onChange={(event) => setDevCommand(event.target.value)}
+                placeholder="npm run dev"
+              />
+            </div>
+            <div>
+              <label htmlFor="test-command">Test command</label>
+              <input
+                id="test-command"
+                className="command-input"
+                maxLength={2000}
+                value={testCommand}
+                onChange={(event) => setTestCommand(event.target.value)}
+                placeholder="npm test"
+              />
+            </div>
+          </div>
+          <p className="form-helper">
+            These commands are saved for later execution workflows. Saving
+            settings does not run them.
+          </p>
+        </fieldset>
+        {failure && <FormFailure failure={failure} />}
+        <footer>
+          <span />
+          <button
+            className="button secondary"
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="button primary" disabled={busy || !name.trim()}>
+            {busy ? (
+              <LoaderCircle size={14} className="spin" />
+            ) : (
+              <Check size={14} />
+            )}
+            Save settings
+          </button>
+        </footer>
+      </form>
+    </Modal>
+  )
+}
+
+function FormFailure({ failure }: { failure: Failure }) {
+  return (
+    <div className="form-error" role="alert">
+      <strong>{failure.message}</strong>
+      <p>{failure.hint}</p>
+    </div>
+  )
+}
