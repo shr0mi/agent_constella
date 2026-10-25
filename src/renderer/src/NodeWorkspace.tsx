@@ -308,6 +308,11 @@ export function NodeWorkspace({
           </button>
         </div>
       </div>
+      <div className="node-context-note">
+        Run controls execute only this node. All prerequisites must be completed
+        and accepted. Use Run workflow on the graph to schedule ready nodes
+        automatically.
+      </div>
       {graph.project.testCommand.trim() && (
         <div className="node-context-note">
           Checks after each successful turn:{' '}

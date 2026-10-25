@@ -374,7 +374,7 @@ app
     }
     const click = (text) =>
       run(
-        `Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim().toLowerCase() === ${JSON.stringify(text.toLowerCase())}).click()`,
+        `Array.from((document.querySelector('dialog[open]') ?? document).querySelectorAll('button')).find(button => button.textContent.trim().toLowerCase() === ${JSON.stringify(text.toLowerCase())}).click()`,
       )
     const select = (selector, value) =>
       run(
@@ -536,6 +536,7 @@ app
     // Mouse events exercise React Flow dragging without focusing a real window.
     await new Promise((resolve) => setTimeout(resolve, 250))
     const beforeDrag = snapshot.document.nodes[1].position
+    const beforeDragSaves = saves
     const box = await run(
       'document.querySelectorAll(".react-flow__node")[1].getBoundingClientRect().toJSON()',
     )
@@ -553,14 +554,51 @@ app
     await run(
       `window.dispatchEvent(new MouseEvent('mouseup', {bubbles:true, view:window, button:0, buttons:0, clientX:${start.x + 85}, clientY:${start.y + 70}}))`,
     )
+    const viewKey = `constella:graph-view:${project.id}:${task.id}`
     await waitFor(
-      'document.querySelector(".graph-heading p").textContent.includes("Unsaved")',
+      `!!JSON.parse(localStorage.getItem(${JSON.stringify(viewKey)}))?.positions[${JSON.stringify(nodes[1].id)}]`,
     )
-    await click('Save graph')
+    const viewAfterDrag = await run(
+      `JSON.parse(localStorage.getItem(${JSON.stringify(viewKey)}))`,
+    )
+    assert.notDeepEqual(viewAfterDrag.positions[nodes[1].id], beforeDrag)
+    assert.deepEqual(snapshot.document.nodes[1].position, beforeDrag)
+    const beforeZoom = await run(
+      'document.querySelector(".react-flow__viewport").style.transform',
+    )
+    await run('document.querySelector(".react-flow__controls-zoomin").click()')
     await waitFor(
-      'document.querySelector(".graph-heading p").textContent.includes("Revision 4")',
+      `document.querySelector('.react-flow__viewport').style.transform !== ${JSON.stringify(beforeZoom)}`,
     )
-    assert.notDeepEqual(snapshot.document.nodes[1].position, beforeDrag)
+    await run('document.querySelector(".react-flow__controls-zoomout").click()')
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.equal(
+      await run(
+        'document.querySelector(".graph-heading p").textContent.includes("Unsaved")',
+      ),
+      false,
+    )
+    assert(
+      await run(
+        'Array.from(document.querySelectorAll("button")).find(button=>button.textContent.trim()==="Save graph").disabled',
+      ),
+    )
+    assert.equal(saves, beforeDragSaves)
+    // View preferences survive route navigation without saving the graph.
+    await run('document.querySelector(".graph-back").click()')
+    await waitFor('!!document.querySelector(".project-board-page")')
+    await run(`location.hash = ${JSON.stringify(route)}`)
+    await waitFor('document.querySelectorAll(".workflow-node").length === 4')
+    assert.deepEqual(
+      await run(
+        `JSON.parse(localStorage.getItem(${JSON.stringify(viewKey)})).positions[${JSON.stringify(nodes[1].id)}]`,
+      ),
+      viewAfterDrag.positions[nodes[1].id],
+    )
+    await run(
+      'document.querySelectorAll(".graph-structure > button")[1].click()',
+    )
+    await waitFor('!!document.querySelector("#graph-node-profile")')
     await waitFor(
       'document.querySelectorAll(".react-flow__edge").length === 3 && Array.from(document.querySelectorAll(".react-flow__node")).every(node => node.style.visibility !== "hidden")',
     )
@@ -635,6 +673,7 @@ app
           cycleRejected: true,
           reviewHumanOnly: true,
           nodeAndEdgeEditing: true,
+          canvasChangesNeedNoSave: true,
           routeReopened: true,
           nodeConversation: true,
           sameThreadFollowup: true,

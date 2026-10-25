@@ -507,7 +507,11 @@ export class WorkflowService {
         'Fix and save the graph before starting or resuming.',
       )
   }
-  private activate(identity: GraphIdentity, expectedGraphRevision: number) {
+  private activate(
+    identity: GraphIdentity,
+    expectedGraphRevision: number,
+    scheduling: 'automatic' | 'manual',
+  ) {
     const { record, graph } = this.reconcile(identity)
     this.validate(graph, expectedGraphRevision)
     if (this.operations.has(identity.projectId))
@@ -523,6 +527,7 @@ export class WorkflowService {
         'Wait for integration to finish.',
       )
     record.startedAt ??= now()
+    record.scheduling = scheduling
     record.phase = 'running'
     delete record.error
     this.advance(record, graph)
@@ -531,7 +536,11 @@ export class WorkflowService {
   }
   start(raw: unknown): WorkflowSnapshot {
     const input = workflowStartSchema.parse(raw)
-    const { record, graph } = this.activate(input, input.expectedGraphRevision)
+    const { record, graph } = this.activate(
+      input,
+      input.expectedGraphRevision,
+      'automatic',
+    )
     this.wake(input.projectId)
     return this.snapshot(record, graph)
   }
@@ -568,7 +577,7 @@ export class WorkflowService {
         'Another operation is active in this project.',
         'Wait or stop the active node first.',
       )
-    this.activate(input, input.expectedGraphRevision)
+    this.activate(input, input.expectedGraphRevision, 'manual')
     return this.execution.start(input)
   }
   private admit(input: StartNodeInput) {
@@ -689,6 +698,7 @@ export class WorkflowService {
         record.phase = 'blocked'
     }
     if (record.phase !== 'archived') this.advance(record, graph)
+    this.waitForManualChoice(record)
     this.persist(record)
     this.wake(run.projectId)
   }
@@ -699,6 +709,14 @@ export class WorkflowService {
         'Only an explicit human action can accept results or release a human review gate.',
         'Use the desktop acceptance or review controls. Agent and manager requests cannot approve work.',
       )
+  }
+  private waitForManualChoice(record: WorkflowRecord) {
+    if (
+      record.scheduling === 'manual' &&
+      record.phase === 'running' &&
+      !Object.values(record.nodes).some((node) => node.status === 'running')
+    )
+      record.phase = 'waiting'
   }
   private version(record: WorkflowRecord, expected: number) {
     if (record.revision !== expected)
@@ -741,6 +759,7 @@ export class WorkflowService {
     this.complete(node, 'human')
     if (record.phase === 'waiting') record.phase = 'running'
     this.advance(record, graph)
+    this.waitForManualChoice(record)
     this.persist(record, {
       ...input,
       id: randomUUID(),
@@ -797,6 +816,7 @@ export class WorkflowService {
     }
     if (record.phase === 'waiting') record.phase = 'running'
     this.advance(record, graph)
+    this.waitForManualChoice(record)
     this.persist(record, {
       ...input,
       id: randomUUID(),
@@ -805,6 +825,26 @@ export class WorkflowService {
       note: input.note,
       at: now(),
     })
+    if (input.decision === 'changes' && record.scheduling === 'manual') {
+      const history = this.execution.get({
+        projectId: input.projectId,
+        taskId: input.taskId,
+        nodeId: input.targetNodeId!,
+      })
+      this.startNode({
+        projectId: input.projectId,
+        taskId: input.taskId,
+        nodeId: input.targetNodeId!,
+        expectedGraphRevision: graph.revision,
+        mode: history.threadId
+          ? 'followup'
+          : history.runs.length
+            ? 'restart'
+            : 'run',
+        ...(history.threadId ? { message: input.note } : {}),
+      })
+      return this.get({ projectId: input.projectId, taskId: input.taskId })
+    }
     this.wake(input.projectId)
     return this.snapshot(record, graph)
   }
@@ -1015,6 +1055,7 @@ export class WorkflowService {
         (a.document.startedAt ?? '').localeCompare(b.document.startedAt ?? ''),
       )) {
       let { record, graph } = this.reconcile(row.document)
+      if (record.scheduling === 'manual') continue
       if (!['running', 'waiting'].includes(record.phase)) continue
       if (!graph.validation.valid) {
         record.phase = 'blocked'

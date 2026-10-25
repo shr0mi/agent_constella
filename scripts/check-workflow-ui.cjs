@@ -302,7 +302,7 @@ app
     }
     const click = (text) =>
       run(
-        `{const button=Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(text)});if(!button)throw new Error(${JSON.stringify('Missing button: ' + text)});if(button.disabled)throw new Error(${JSON.stringify('Disabled button: ' + text)});button.click()}`,
+        `{const button=Array.from((document.querySelector('dialog[open]') ?? document).querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(text)});if(!button)throw new Error(${JSON.stringify('Missing button: ' + text)});if(button.disabled)throw new Error(${JSON.stringify('Disabled button: ' + text)});button.click()}`,
       )
     const set = (selector, value, kind = 'textarea') =>
       run(
@@ -317,7 +317,30 @@ app
       ),
       6,
     )
-    await click('Start workflow')
+    const revisionBeforeView = graphs.get(identity).revision
+    await run('document.querySelector(".react-flow__controls-zoomin").click()')
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await run('document.querySelector(".react-flow__controls-zoomout").click()')
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    assert.equal(
+      await run(
+        'document.querySelector(".graph-heading p").textContent.includes("Unsaved")',
+      ),
+      false,
+    )
+    assert.equal(graphs.get(identity).revision, revisionBeforeView)
+    await run(
+      'document.querySelectorAll(".graph-structure > button")[3].click()',
+    )
+    await until('!!document.querySelector(".graph-run-node")')
+    assert(await run('document.querySelector(".graph-run-node").disabled'))
+    await run(
+      'document.querySelectorAll(".graph-structure > button")[1].click()',
+    )
+    await until(
+      '!!document.querySelector(".graph-run-node") && !document.querySelector(".graph-run-node").disabled',
+    )
+    await run('document.querySelector(".graph-run-node").click()')
     await until('!!document.querySelector(".workflow-node.state-failed")')
     const colors = await run(
       '({failed:getComputedStyle(document.querySelector(".workflow-node.state-failed")).backgroundColor,pending:getComputedStyle(document.querySelector(".workflow-node.state-pending")).backgroundColor})',
@@ -331,6 +354,12 @@ app
     assert.equal(
       workspace.getBoard({ projectId: project.id }).tasks[0].status,
       'doing',
+    )
+    assert.equal(scheduler.get(identity).scheduling, 'manual')
+    assert.equal(calls.length, 1)
+    await until('document.querySelector(".node-workspace")?.open')
+    await run(
+      'document.querySelector(".node-workspace > header button").click()',
     )
     await click('Inspect Implement feature')
     await until(
@@ -350,6 +379,12 @@ app
     await run(
       'document.querySelector(".node-workspace > header button").click()',
     )
+    assert.equal(calls.filter((call) => call.name === j.data.title).length, 0)
+    assert.equal(calls.filter((call) => call.name === b.data.title).length, 0)
+    await until(
+      'Array.from(document.querySelectorAll(".workflow-controls button")).some(button => button.textContent.trim() === "Run workflow" && !button.disabled)',
+    )
+    await click('Run workflow')
     await until(
       '!!document.querySelector(".workflow-node.review.state-waiting-review")',
     )
@@ -453,6 +488,8 @@ app
         {
           result: 'PASS',
           realServices: true,
+          canvasChangesNeedNoSave: true,
+          individualNodeRun: true,
           branchJoin: true,
           failedAndCompletedVisuals: true,
           manualAcceptance: true,

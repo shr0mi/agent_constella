@@ -279,6 +279,75 @@ async function fixture(
 }
 
 describe('workflow scheduler, acceptance and review gates', () => {
+  it('runs only the selected eligible node and keeps joins gated through manual acceptance and review revisions', async () => {
+    const f = await fixture({ manualA: true })
+    const run = (nodeId: string, mode: 'run' | 'followup' = 'run') =>
+      f.scheduler.startNode({
+        ...f.identity,
+        nodeId,
+        expectedGraphRevision: f.graph.revision,
+        mode,
+        ...(mode === 'followup'
+          ? {
+              message:
+                'Update this node with the accepted prerequisite results.',
+            }
+          : {}),
+      })
+    const acceptA = () =>
+      f.scheduler.accept(
+        {
+          ...f.identity,
+          nodeId: f.a.id,
+          expectedRevision: f.snapshot().revision,
+          runId: f.snapshot().nodes[f.a.id].runId!,
+        },
+        'desktop-human',
+      )
+    run(f.a.id)
+    await until(
+      () => f.snapshot().nodes[f.a.id].status === 'awaiting-acceptance',
+    )
+    await f.scheduler.waitForIdle()
+    expect(f.snapshot().scheduling).toBe('manual')
+    expect(f.calls.map((call) => call.name)).toEqual(['A'])
+    expect(() => run(f.joinNode.id)).toThrow(/Every predecessor/)
+    run(f.b.id)
+    await until(() => f.snapshot().nodes[f.b.id].status === 'completed')
+    expect(() => run(f.joinNode.id)).toThrow(/Every predecessor/)
+    acceptA()
+    await f.scheduler.waitForIdle()
+    expect(f.snapshot().nodes[f.joinNode.id].status).toBe('ready')
+    expect(f.calls.map((call) => call.name)).toEqual(['A', 'B'])
+    run(f.joinNode.id)
+    await f.waitingReview()
+    f.scheduler.review(
+      {
+        ...f.identity,
+        nodeId: f.review.id,
+        expectedRevision: f.snapshot().revision,
+        decision: 'changes',
+        targetNodeId: f.a.id,
+        note: 'Revise A before releasing this review.',
+      },
+      'desktop-human',
+    )
+    await until(
+      () => f.snapshot().nodes[f.a.id].status === 'awaiting-acceptance',
+    )
+    acceptA()
+    await f.scheduler.waitForIdle()
+    expect(f.calls.map((call) => call.name)).toEqual(['A', 'B', 'Join', 'A'])
+    expect(f.calls.at(-1)?.resumed).toBe('thread-A')
+    expect(f.snapshot().nodes[f.end.id].status).not.toBe('completed')
+    run(f.joinNode.id, 'followup')
+    await f.waitingReview()
+    f.approve()
+    expect(f.snapshot().phase).toBe('completed')
+    expect(
+      f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
+    ).toBe('done')
+  })
   it('reopens integrated work for an explicit same-thread revision and requires new downstream review', async () => {
     const f = await fixture()
     f.begin()
@@ -318,6 +387,9 @@ describe('workflow scheduler, acceptance and review gates', () => {
     expect(
       f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
     ).toBe('doing')
+    await until(() => f.snapshot().nodes[f.a.id].status === 'completed')
+    expect(f.calls).toHaveLength(4)
+    f.begin()
     await f.waitingReview()
     expect(f.calls.filter((call) => call.name === 'A').at(-1)?.resumed).toBe(
       'thread-A',
@@ -567,6 +639,9 @@ describe('workflow scheduler, acceptance and review gates', () => {
       expectedGraphRevision: f.graph.revision,
       mode: 'retry',
     })
+    await until(() => f.snapshot().nodes[f.a.id].status === 'completed')
+    expect(f.calls).toHaveLength(2)
+    f.begin()
     await f.waitingReview()
     expect(f.calls.map((call) => call.name)).toEqual(['A', 'A', 'B', 'Join'])
     const dependencies = f.execution

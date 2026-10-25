@@ -53,7 +53,8 @@ import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
 import { useWorkspaceStore } from './workspace-store'
-import { useExecutionSnapshot } from './execution-store'
+import { executionAction, useExecutionSnapshot } from './execution-store'
+import { readGraphView, writeGraphView } from './graph-view'
 import { NodeWorkspace, nodeStatus } from './NodeWorkspace'
 import { ReviewPanel, WorkflowControls } from './WorkflowControls'
 import {
@@ -158,11 +159,17 @@ function GraphEditor({
   const [connectionError, setConnectionError] = useState('')
   const [externalChange, setExternalChange] = useState(false)
   const [openNode, setOpenNode] = useState<string>()
-  const { snapshot: execution } = useExecutionSnapshot(
-    { projectId, taskId },
-    (api) => api.getTask({ projectId, taskId }),
-    `${projectId}:${taskId}`,
+  const [view, setView] = useState(() => readGraphView({ projectId, taskId }))
+  useEffect(
+    () => writeGraphView({ projectId, taskId }, view),
+    [projectId, taskId, view],
   )
+  const { snapshot: execution, refresh: refreshExecution } =
+    useExecutionSnapshot(
+      { projectId, taskId },
+      (api) => api.getTask({ projectId, taskId }),
+      `${projectId}:${taskId}`,
+    )
   const taskActive = execution?.active?.taskId === taskId
   const workflow = execution?.workflow
   // React Flow measurements are view state. Retain them across controlled-node
@@ -319,7 +326,7 @@ function GraphEditor({
   const canvasNodes: CanvasNode[] = (draft?.nodes ?? []).map((node) => ({
     id: node.id,
     type: 'workflow',
-    position: node.position,
+    position: view.positions[node.id] ?? node.position,
     measured: measurements[node.id],
     selected: node.id === selectedNode,
     data: {
@@ -435,7 +442,14 @@ function GraphEditor({
           taskId,
           expectedRevision: saved.revision,
           commandId: crypto.randomUUID(),
-          document: { ...draft, viewport: flow.getViewport() },
+          document: {
+            ...draft,
+            nodes: draft.nodes.map((node) => ({
+              ...node,
+              position: view.positions[node.id] ?? node.position,
+            })),
+            viewport: flow.getViewport(),
+          },
         }),
       )
       if (!refs.current.alive) return
@@ -457,7 +471,7 @@ function GraphEditor({
       )
       if (!refs.current.alive) return
       setNotice(
-        `Revision ${result.revision} passed readiness checks. Select an agent node and open Conversation & runs to execute it.`,
+        `Revision ${result.revision} passed readiness checks. Select an agent and click Run node, or start the workflow.`,
       )
       await refresh()
     })
@@ -474,6 +488,51 @@ function GraphEditor({
     edit((document) => ({ ...document, nodes: [...document.nodes, next] }))
     setSelectedNode(next.id)
     setSelectedEdge(undefined)
+  }
+  const blockedParents =
+    node?.type === 'agent' && workflow
+      ? (draft?.edges
+          .filter((edge) => edge.target === node.id)
+          .map((edge) => workflow.nodes[edge.source])
+          .filter(
+            (parent) =>
+              !parent ||
+              (!(parent.status === 'completed' && parent.acceptanceId) &&
+                !(parent.type === 'start' && !workflow.startedAt)),
+          ) ?? [])
+      : []
+  const nodeRunReason =
+    runBlockers[0] ??
+    (blockedParents.length
+      ? `Waiting for completed and accepted prerequisites: ${blockedParents.map((parent) => parent?.title ?? 'Unknown node').join(', ')}.`
+      : execution?.active
+        ? 'Another node is active in this project.'
+        : execution?.persistenceError?.message)
+  async function runSelectedNode() {
+    if (node?.type !== 'agent' || !saved || nodeRunReason) return
+    const selected = node
+    await perform(async () => {
+      const identity = { projectId, taskId, nodeId: selected.id }
+      const current = await executionAction((api) => api.get(identity))
+      const last = current.runs.at(-1)
+      const mode = !last
+        ? 'run'
+        : ['failed', 'cancelled', 'interrupted'].includes(last.status)
+          ? 'retry'
+          : current.threadId
+            ? 'followup'
+            : 'restart'
+      await executionAction((api) =>
+        api.start({
+          ...identity,
+          expectedGraphRevision: saved.revision,
+          mode,
+          ...(mode === 'followup' ? { message: selected.data.prompt } : {}),
+        }),
+      )
+      setOpenNode(selected.id)
+      await refreshExecution()
+    })
   }
   if (!draft || !saved)
     return (
@@ -605,11 +664,11 @@ function GraphEditor({
               nodes={canvasNodes}
               edges={canvasEdges}
               nodeTypes={nodeTypes}
-              defaultViewport={draft.viewport}
+              defaultViewport={view.viewport ?? draft.viewport}
               minZoom={0.1}
               maxZoom={2.5}
               colorMode="dark"
-              nodesDraggable={!!editable}
+              nodesDraggable
               nodesConnectable={!!editable}
               edgesReconnectable={!!editable}
               deleteKeyCode={null}
@@ -626,22 +685,17 @@ function GraphEditor({
                     return next
                   })
                 if (changes.some((change) => change.type === 'position'))
-                  edit((document) => ({
-                    ...document,
-                    nodes: document.nodes.map((node) => {
-                      const change = changes.find(
-                        (change) =>
-                          change.type === 'position' && change.id === node.id,
-                      )
-                      return change?.type === 'position' && change.position
-                        ? { ...node, position: change.position }
-                        : node
-                    }),
-                  }))
+                  setView((current) => {
+                    const positions = { ...current.positions }
+                    for (const change of changes)
+                      if (change.type === 'position' && change.position)
+                        positions[change.id] = change.position
+                    return { ...current, positions }
+                  })
               }}
-              onMoveEnd={(event, viewport) => {
-                if (event) edit((document) => ({ ...document, viewport }))
-              }}
+              onMoveEnd={(_, viewport) =>
+                setView((current) => ({ ...current, viewport }))
+              }
               onNodeClick={(_, node) => {
                 setSelectedNode(node.id)
                 setSelectedEdge(undefined)
@@ -657,7 +711,7 @@ function GraphEditor({
               onConnect={(connection) => connect(connection)}
               onReconnect={(edge, connection) => connect(connection, edge.id)}
               onInit={(instance) => {
-                if (saved.revision === 1)
+                if (saved.revision === 1 && !view.viewport)
                   void instance.fitView({ padding: 0.2, maxZoom: 1 })
               }}
               proOptions={{ hideAttribution: false }}
@@ -766,7 +820,24 @@ function GraphEditor({
           {node?.type === 'agent' && (
             <div className="graph-node-work">
               <button
-                className="button primary"
+                className="button primary graph-run-node"
+                disabled={
+                  busy ||
+                  !!nodeRunReason ||
+                  !execution ||
+                  !saved.document.nodes.some((item) => item.id === node.id)
+                }
+                title={
+                  nodeRunReason ??
+                  'Run only this node using its saved settings. Other ready nodes wait for you.'
+                }
+                onClick={() => void runSelectedNode()}
+              >
+                <Play size={14} />
+                Run node
+              </button>
+              <button
+                className="button secondary"
                 disabled={
                   !saved.document.nodes.some((item) => item.id === node.id)
                 }
@@ -778,7 +849,8 @@ function GraphEditor({
               <p>
                 {!saved.document.nodes.some((item) => item.id === node.id)
                   ? 'Save this new node first.'
-                  : 'Run, stop, request revisions, and inspect tests and diffs.'}
+                  : (nodeRunReason ??
+                    'Run this node individually, or open its conversation to inspect results and request revisions.')}
               </p>
             </div>
           )}

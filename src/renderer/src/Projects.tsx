@@ -547,7 +547,10 @@ export function ProjectBoardPage() {
                           >
                             <span>
                               {workflow.phase === 'waiting'
-                                ? 'Waiting for acceptance / review'
+                                ? workflow.scheduling === 'manual' &&
+                                  !workflow.blockers.length
+                                  ? 'Choose a ready node'
+                                  : 'Waiting for acceptance / review'
                                 : workflow.phase}
                             </span>
                             <strong>

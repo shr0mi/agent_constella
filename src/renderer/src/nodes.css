@@ -4,6 +4,9 @@
 .graph-node-work .button {
   width: 100%;
 }
+.graph-node-work .button + .button {
+  margin-top: 8px;
+}
 .graph-node-work p {
   color: #887495;
   font-size: 9px;

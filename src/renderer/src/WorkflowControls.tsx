@@ -55,7 +55,9 @@ export function WorkflowControls({
     ['awaiting-acceptance', 'waiting-review'].includes(node.status),
   )
   const paused = ['paused', 'blocked'].includes(workflow.phase)
-  const active = ['running', 'waiting'].includes(workflow.phase)
+  const manual = workflow.scheduling === 'manual'
+  const active =
+    workflow.phase === 'running' || (workflow.phase === 'waiting' && !manual)
   return (
     <>
       <section
@@ -69,7 +71,9 @@ export function WorkflowControls({
               : workflow.phase === 'waiting'
                 ? waiting?.status === 'waiting-review'
                   ? 'Waiting for human review'
-                  : 'Waiting for acceptance'
+                  : waiting
+                    ? 'Waiting for acceptance'
+                    : 'Choose a ready node'
                 : workflow.phase[0].toUpperCase() + workflow.phase.slice(1)}
           </strong>
           <span>
@@ -134,7 +138,8 @@ export function WorkflowControls({
               Pause & edit
             </button>
           ) : (
-            ['idle', 'paused', 'blocked'].includes(workflow.phase) && (
+            (['idle', 'paused', 'blocked'].includes(workflow.phase) ||
+              (manual && workflow.phase === 'waiting')) && (
               <button
                 className="button primary"
                 disabled={pending || blocked || !!issue}
@@ -154,7 +159,11 @@ export function WorkflowControls({
                 ) : (
                   <Play size={13} />
                 )}
-                {paused ? 'Resume workflow' : 'Start workflow'}
+                {paused
+                  ? 'Resume workflow'
+                  : manual
+                    ? 'Run workflow'
+                    : 'Start workflow'}
               </button>
             )
           )}
@@ -202,6 +211,7 @@ export function ReviewPanel({
     [pending, setPending] = useState(false)
   const node = workflow.nodes[nodeId],
     evidence = workflow.evidence[nodeId] ?? []
+  const manual = workflow.scheduling === 'manual'
   async function decide(decision: 'approve' | 'changes') {
     setPending(true)
     useAppStore.getState().setError(undefined)
@@ -285,8 +295,9 @@ export function ReviewPanel({
               ))}
           </select>
           <p className="helper">
-            Request changes continues this agent's conversation, reruns affected
-            downstream nodes, and returns to this review.
+            {manual
+              ? "Request changes continues this agent's conversation. Run affected downstream nodes individually or choose Run workflow afterward."
+              : "Request changes continues this agent's conversation, reruns affected downstream nodes, and returns to this review."}
           </p>
           <button
             className="button primary"

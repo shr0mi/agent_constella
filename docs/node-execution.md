@@ -6,6 +6,8 @@ New nodes use **Default Codex**: no custom profile is required. A null profile I
 
 A completed attempt means its SDK turn and configured checks settled successfully and its changes were recorded; this is distinct from workflow acceptance. [Milestone 6](workflow-scheduling.md) adds scheduling, auto/manual acceptance, human review, board progression, and explicit branch integration around this execution service. Explicit node runs now require accepted predecessors too.
 
+Select an agent and click **Run node** in its graph details for an individual run. The same action is available in its conversation. Rerunning completed work continues its saved thread; failed attempts retry their last request. These actions, follow-ups, and new conversations execute only that node and leave other ready nodes waiting for your selection. Use **Run workflow** to enable automatic scheduling again. Canvas zoom, pan, and node placement do not require saving or block these actions.
+
 ## Worktrees and code snapshots
 
 - One worktree per task lives at `<app-data>/task-worktrees/<project-id>/<task-id>`, on branch `codex/constella-<task-id>`. All of a task's nodes share its code; each node has its own thread. App metadata and archived skill resources are outside the agent's worktree.

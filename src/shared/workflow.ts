@@ -63,6 +63,7 @@ export interface WorkflowRecord extends GraphIdentity {
   revision: number
   graphRevision: number
   phase: WorkflowPhase
+  scheduling?: 'automatic' | 'manual'
   nodes: Record<string, WorkflowNodeState>
   startedAt?: string
   completedAt?: string
@@ -75,6 +76,7 @@ export interface WorkflowRecord extends GraphIdentity {
 }
 export interface WorkflowSummary extends GraphIdentity {
   phase: WorkflowPhase
+  scheduling?: WorkflowRecord['scheduling']
   started: boolean
   accepted: number
   total: number
@@ -178,6 +180,7 @@ export function summarizeWorkflow(record: WorkflowRecord): WorkflowSummary {
     projectId: record.projectId,
     taskId: record.taskId,
     phase: record.phase,
+    scheduling: record.scheduling,
     started: !!record.startedAt,
     accepted: required.filter(
       (node) => node.status === 'completed' && node.acceptanceId,
