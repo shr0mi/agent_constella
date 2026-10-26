@@ -175,8 +175,8 @@ export function WorkflowControls({
         {workflow.phase === 'completed' && (
           <p className="workflow-integration-hint">
             {workflow.integration?.status === 'integrated'
-              ? 'Accepted work has been integrated into the project folder.'
-              : 'Work accepted. Use Integrate branch to update the project folder; until then, review the product in its task folder.'}
+              ? 'Accepted work has been merged into the base branch.'
+              : 'Work accepted on the task branch. Review it in your project directory, then use Integrate branch to merge it into the base branch.'}
           </p>
         )}
         {(workflow.error || issue || workflow.phase === 'paused') && (
@@ -405,8 +405,9 @@ function IntegrationDialog({
     >
       <div className="integration-content">
         <p>
-          Integration creates a commit from the accepted task snapshot and
-          updates the project branch. The task worktree is retained.
+          Integration merges the accepted task result into its saved base branch
+          and selects that branch in your project directory. The task branch
+          stays available in your IDE.
         </p>
         <button
           className="button secondary"

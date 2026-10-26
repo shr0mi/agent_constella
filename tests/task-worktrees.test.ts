@@ -1,8 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { eq } from 'drizzle-orm'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   openWorkspaceDatabase,
@@ -27,7 +33,7 @@ function git(path: string, ...args: string[]) {
   }).trim()
 }
 async function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "constella task's-"))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "constella task's-")))
   roots.push(root)
   const appData = join(root, 'app'),
     database = openWorkspaceDatabase(join(appData, 'workspace.sqlite'))
@@ -60,7 +66,7 @@ describe('readable task branches', () => {
       'codex/add-csv-export-3',
     ])
     for (const worktree of worktrees)
-      await f.service.verify(worktree, f.project.repoPath)
+      await f.service.verify(worktree, f.project.repoPath, false)
     expect(git(f.project.repoPath, 'rev-parse', 'codex/add-csv-export')).toBe(
       original,
     )
@@ -89,7 +95,8 @@ describe('readable task branches', () => {
     const f = await fixture(),
       task = f.task('Original title')
     const original = await f.service.ensure(f.project, task)
-    writeFileSync(join(original.path, 'local-work.txt'), 'preserve changes')
+    expect(original.path).toBe(f.project.repoPath)
+    expect(existsSync(join(f.root, 'app', 'task-worktrees'))).toBe(false)
     const renamed = f.workspace.updateTask({
       taskId: task.id,
       projectId: f.project.id,
@@ -99,26 +106,74 @@ describe('readable task branches', () => {
       acceptanceCriteria: task.acceptanceCriteria,
     })
     expect(await f.service.ensure(f.project, renamed)).toEqual(original)
-    expect(git(original.path, 'status', '--porcelain')).toContain(
-      'local-work.txt',
-    )
+    expect(git(original.path, 'status', '--porcelain')).toBe('')
   })
-  it('reuses saved legacy branch names and preserves their uncommitted files', async () => {
+  it('saves legacy task changes, releases the branch, and retains the old folder as a detached backup', async () => {
     const f = await fixture(),
       task = f.task('Legacy task')
-    const worktree = await f.service.ensure(f.project, task)
-    const legacy = { ...worktree, branch: `codex/constella-${task.id}` }
-    git(worktree.path, 'branch', '-m', legacy.branch)
-    writeFileSync(join(worktree.path, 'legacy-work.txt'), 'preserve changes')
+    const branch = `codex/constella-${task.id}`,
+      path = join(f.root, 'app', 'task-worktrees', f.project.id, task.id)
+    const baseRevision = git(f.project.repoPath, 'rev-parse', 'main')
+    git(f.project.repoPath, 'worktree', 'add', '-b', branch, path, 'main')
+    writeFileSync(join(path, 'legacy-work.txt'), 'staged changes')
+    git(path, 'add', '.')
+    writeFileSync(join(path, 'legacy-work.txt'), 'latest unstaged changes')
     f.database.db
-      .update(taskWorktrees)
-      .set({ document: legacy })
-      .where(eq(taskWorktrees.taskId, task.id))
+      .insert(taskWorktrees)
+      .values({
+        taskId: task.id,
+        projectId: f.project.id,
+        document: {
+          taskId: task.id,
+          projectId: f.project.id,
+          path,
+          branch,
+          baseRevision,
+          sourceHead: baseRevision,
+          sourceBranch: 'main',
+          state: 'ready',
+          createdAt: new Date().toISOString(),
+        },
+      })
       .run()
-    expect(await f.service.ensure(f.project, task)).toEqual(legacy)
-    expect(git(worktree.path, 'status', '--porcelain')).toContain(
-      'legacy-work.txt',
+    const adopted = await f.service.adopt(f.project, task)
+    expect(adopted).toMatchObject({
+      mode: 'project',
+      path: f.project.repoPath,
+      branch,
+      legacyPath: path,
+    })
+    expect(readFileSync(join(path, 'legacy-work.txt'), 'utf8')).toBe(
+      'latest unstaged changes',
     )
+    expect(git(path, 'branch', '--show-current')).toBe('')
+    git(f.project.repoPath, 'switch', branch)
+    expect(
+      readFileSync(join(f.project.repoPath, 'legacy-work.txt'), 'utf8'),
+    ).toBe('latest unstaged changes')
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
+    expect(await f.service.ensure(f.project, task)).toEqual(adopted)
+  })
+  it('blocks dirty branch switches and keeps files, staged edits and branch selection intact', async () => {
+    const f = await fixture(),
+      a = f.task('First'),
+      b = f.task('Second')
+    const first = await f.service.ensure(f.project, a)
+    writeFileSync(join(f.project.repoPath, 'local.txt'), 'staged')
+    git(f.project.repoPath, 'add', '.')
+    writeFileSync(join(f.project.repoPath, 'local.txt'), 'unstaged')
+    const index = git(f.project.repoPath, 'diff', '--cached')
+    await expect(f.service.ensure(f.project, b)).rejects.toThrow(
+      'uncommitted or untracked',
+    )
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
+      first.branch,
+    )
+    expect(git(f.project.repoPath, 'diff', '--cached')).toBe(index)
+    expect(readFileSync(join(f.project.repoPath, 'local.txt'), 'utf8')).toBe(
+      'unstaged',
+    )
+    expect(f.service.get(b.id)).toBeNull()
   })
   it('avoids branch namespace collisions and reports an occupied codex prefix', async () => {
     const f = await fixture()

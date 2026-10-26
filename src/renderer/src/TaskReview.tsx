@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Copy, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react'
+import {
+  Copy,
+  FolderOpen,
+  GitBranch,
+  LoaderCircle,
+  RefreshCw,
+} from 'lucide-react'
 import type { GraphIdentity } from '../../shared/graph'
 import type { TaskReviewContext } from '../../shared/execution'
 import { executionAction } from './execution-store'
@@ -21,7 +27,7 @@ export function TaskReviewButton({
         title={
           available
             ? 'Open and run the task code before approving or integrating it.'
-            : 'Run an agent node first to create the task folder.'
+            : 'Run an agent node first to create the task branch.'
         }
         onClick={() => setOpen(true)}
       >
@@ -97,13 +103,13 @@ function TaskReviewDialog({
     >
       <div className="task-review-content">
         <p>
-          Open this task folder in your IDE or terminal and run the app there.
-          It is already checked out on the task branch, so your main project
-          folder can stay on its current branch.
+          Use your existing project directory and IDE window. Select this task’s
+          branch in your IDE, or switch to it below, then run the product as
+          usual.
         </p>
         {loading ? (
           <p>
-            <LoaderCircle size={14} className="spin" /> Loading task folder…
+            <LoaderCircle size={14} className="spin" /> Loading task branch…
           </p>
         ) : (
           context && (
@@ -113,26 +119,56 @@ function TaskReviewDialog({
                 <dd>
                   <code>{context.branch}</code>
                 </dd>
-                <dt>Task folder</dt>
-                <dd>
-                  <code>{context.path}</code>
-                </dd>
-                <dt>Project branch</dt>
+                <dt>Current branch</dt>
                 <dd>{context.projectBranch ?? 'Detached checkout'}</dd>
-                <dt>Project folder</dt>
+                <dt>Merge into</dt>
+                <dd>{context.targetBranch ?? 'Base branch unavailable'}</dd>
+                <dt>Project directory</dt>
                 <dd>
                   <code>{context.projectPath}</code>
                 </dd>
               </dl>
               {context.active && (
                 <p className="task-review-notice">
-                  An agent is still working in this folder. Wait for it to
+                  An agent is still working in this project. Wait for it to
                   finish before making your review decision.
                 </p>
               )}
               <div className="task-review-actions">
                 <button
                   className="button primary"
+                  disabled={
+                    pending ||
+                    context.active ||
+                    context.projectBranch === context.branch
+                  }
+                  onClick={() =>
+                    void act(async () => {
+                      await executionAction((api) => api.checkoutTask(identity))
+                      setRefresh((value) => value + 1)
+                    })
+                  }
+                >
+                  <GitBranch size={14} />
+                  {context.projectBranch === context.branch
+                    ? 'Task branch selected'
+                    : 'Switch to task branch'}
+                </button>
+                <button
+                  className="button secondary"
+                  disabled={pending}
+                  onClick={() =>
+                    void act(
+                      () => navigator.clipboard.writeText(context.branch),
+                      'Branch name copied.',
+                    )
+                  }
+                >
+                  <Copy size={13} />
+                  Copy branch name
+                </button>
+                <button
+                  className="button secondary"
                   disabled={pending}
                   onClick={() =>
                     void act(() =>
@@ -141,7 +177,7 @@ function TaskReviewDialog({
                   }
                 >
                   <FolderOpen size={14} />
-                  Open task folder
+                  Open project folder
                 </button>
                 <button
                   className="button secondary"
@@ -149,20 +185,21 @@ function TaskReviewDialog({
                   onClick={() =>
                     void act(
                       () => navigator.clipboard.writeText(context.path),
-                      'Task folder path copied.',
+                      'Project directory copied.',
                     )
                   }
                 >
                   <Copy size={13} />
-                  Copy folder path
+                  Copy project path
                 </button>
               </div>
               <h3>Run the product</h3>
               {context.runCommand ? (
                 <>
                   <p>
-                    Paste this command into a terminal. Prepare dependencies in
-                    this task folder if needed.
+                    Paste this command into a terminal to select the task branch
+                    and run the project. You can also select the branch in your
+                    IDE.
                   </p>
                   <pre className="task-review-command">
                     {context.runCommand}
@@ -185,16 +222,16 @@ function TaskReviewDialog({
               ) : (
                 <p>
                   No development command is configured. Set it in Project
-                  settings, or run the project from this task folder using your
-                  usual commands.
+                  settings, or select the task branch and run the project using
+                  your usual commands.
                 </p>
               )}
               <p className="task-review-next">
                 After testing the product, approve the human review or request
                 changes. When the workflow is complete, use Integrate branch to
-                bring the accepted work into{' '}
-                {context.projectBranch ?? 'your project branch'} and the project
-                folder.
+                merge the accepted work into{' '}
+                {context.targetBranch ?? 'the base branch'}. The app then leaves
+                your project directory on that branch.
               </p>
             </>
           )
@@ -215,7 +252,7 @@ function TaskReviewDialog({
           onClick={() => setRefresh((value) => value + 1)}
         >
           <RefreshCw size={13} />
-          Refresh folder details
+          Refresh branch details
         </button>
       </div>
     </Modal>

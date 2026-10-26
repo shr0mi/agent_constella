@@ -18,7 +18,7 @@ The main process opens `workspace.sqlite` in Electron's user data directory, out
 
 If folder creation or Git initialization fails, no project row is registered. Missing Git is checked before creating a new directory. If Git initialization succeeds but database registration fails, the folder is retained and the error explains how to retry using Open folder.
 
-An initial-commit failure also leaves the folder and index intact and prevents registration until retry succeeds. New task worktrees recheck this invariant for projects registered by older versions. This prevention does not rewrite already-created unrelated task branches; those require a separate repair.
+An initial-commit failure also leaves the folder and index intact and prevents registration until retry succeeds. New task branches recheck this invariant for projects registered by older versions. This prevention does not rewrite already-created unrelated task branches; those require a separate repair.
 
 ## Deleting a project
 

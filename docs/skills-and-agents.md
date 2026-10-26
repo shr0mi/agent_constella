@@ -47,7 +47,7 @@ The pinned TypeScript SDK still has no native typed skill input. This implementa
 - SKILL.md and editable resources must be UTF-8 text of at most 250 KB. Binary or larger assets remain available as imported run resources. UTF-8 BOM documents are editable without false file-change conflicts.
 - One run selects at most 20 catalog skills and 40 MB of resources. The existing connectivity-proof demo remains a separate optional fixture.
 - The catalog stores registered folders; it does not automatically scan every preexisting repository skill. Use Import folder to register an existing skill. External filesystem edits are read/validated at edit and run time; the catalog's displayed metadata is refreshed when saved or reimported.
-- Graph/node profile and skill selectors are available in milestone 4. [Milestone 5](node-execution.md) resolves the same catalogs for real node runs in task worktrees, using archived resource paths directly to keep generated skill copies out of code diffs.
+- Graph/node profile and skill selectors are available in milestone 4. [Milestone 5](node-execution.md) resolves the same catalogs for real node runs on task branches, using archived resource paths directly to keep generated skill copies out of code diffs.
 
 ## Verification
 

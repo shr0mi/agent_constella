@@ -924,6 +924,16 @@ export class WorkflowService {
       )
     this.operations.add(projectId)
   }
+  async checkoutTask(raw: unknown) {
+    const identity = graphIdentitySchema.parse(raw)
+    this.reserve(identity.projectId)
+    try {
+      await this.execution.checkoutTask(identity)
+    } finally {
+      this.operations.delete(identity.projectId)
+      this.wake(identity.projectId)
+    }
+  }
   async previewIntegration(raw: unknown): Promise<IntegrationPlan> {
     const input = integrationPreviewSchema.parse(raw),
       { record, graph, worktree } = this.integrationContext(

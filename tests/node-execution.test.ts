@@ -136,7 +136,7 @@ async function fixture(
   )
   writeFileSync(join(project.repoPath, 'input.txt'), 'original input')
   writeFileSync(join(project.repoPath, 'ignored.txt'), 'not copied')
-  if (committed) {
+  {
     git(project.repoPath, 'add', '.')
     git(
       project.repoPath,
@@ -150,6 +150,8 @@ async function fixture(
       '-m',
       'Fixture',
     )
+  }
+  if (committed) {
     writeFileSync(join(project.repoPath, 'input.txt'), 'uncommitted input')
     git(project.repoPath, 'add', 'input.txt')
     writeFileSync(join(project.repoPath, 'input.txt'), 'unstaged input')
@@ -248,14 +250,13 @@ async function until(condition: () => boolean) {
   throw new Error('Timed out waiting for execution state')
 }
 
-describe('node execution in task worktrees', () => {
+describe('node execution in the project directory', () => {
   it('provides current verified review context without creating a checkout or running the development command', async () => {
     const f = await fixture()
     const identity = { projectId: f.project.id, taskId: f.task.id }
     await expect(f.execution.getReview(identity)).rejects.toThrow('not ready')
     expect(f.execution.worktrees.get(f.task.id)).toBeNull()
-    const head = git(f.project.repoPath, 'rev-parse', 'HEAD')
-    const index = git(f.project.repoPath, 'ls-files', '--stage')
+    const head = git(f.project.repoPath, 'rev-parse', 'main')
     f.start()
     await f.execution.waitForIdle()
     const worktree = f.execution.worktrees.get(f.task.id)!
@@ -283,9 +284,10 @@ describe('node execution in task worktrees', () => {
     expect(review.runCommand).toContain(worktree.path)
     expect(review.runCommand).toContain(project.devCommand)
     expect(existsSync(join(worktree.path, 'SHOULD_NOT_RUN'))).toBe(false)
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(head)
-    expect(git(f.project.repoPath, 'ls-files', '--stage')).toBe(index)
-    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
+    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(head)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
+    expect(worktree.path).toBe(f.project.repoPath)
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
     await expect(
       f.execution.getReview({ ...identity, path: '/tmp' }),
     ).rejects.toThrow()
@@ -293,8 +295,12 @@ describe('node execution in task worktrees', () => {
       f.execution.getReview({ ...identity, projectId: randomUUID() }),
     ).rejects.toThrow()
     git(worktree.path, 'switch', '-c', 'user-switched-branch')
-    await expect(f.execution.getReview(identity)).rejects.toThrow(
-      'branch or root changed',
+    expect((await f.execution.getReview(identity)).projectBranch).toBe(
+      'user-switched-branch',
+    )
+    await f.execution.checkoutTask(identity)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
+      worktree.branch,
     )
   })
   it('runs Default Codex without an assigned or available custom profile', async () => {
@@ -335,12 +341,22 @@ describe('node execution in task worktrees', () => {
   })
   it('establishes shared history before creating a new task worktree for a legacy unborn project', async () => {
     const f = await fixture()
+    git(
+      f.project.repoPath,
+      'rm',
+      '-f',
+      '--',
+      'README.md',
+      '.gitignore',
+      'input.txt',
+    )
+    rmSync(join(f.project.repoPath, 'ignored.txt'))
     git(f.project.repoPath, 'update-ref', '-d', 'HEAD')
     f.start()
     await f.execution.waitForIdle()
     const run = f.execution.get(f.identity).runs[0]
     expect(run.status).toBe('completed')
-    const initialHead = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    const initialHead = git(f.project.repoPath, 'rev-parse', 'main')
     expect(run.worktree?.sourceHead).toBe(initialHead)
     expect(
       git(
@@ -352,7 +368,7 @@ describe('node execution in task worktrees', () => {
       ),
     ).toBe('')
   })
-  it('executes in a task worktree from a newly initialized repository, saves exact run context, tests, new files and diffs', async () => {
+  it('executes on a task branch in the project directory, saves exact run context, tests, new files and diffs', async () => {
     const f = await fixture(
       undefined,
       false,
@@ -374,14 +390,22 @@ describe('node execution in task worktrees', () => {
     expect(readFileSync(join(run.worktree!.path, 'input.txt'), 'utf8')).toBe(
       'original input',
     )
-    expect(existsSync(join(run.worktree!.path, 'ignored.txt'))).toBe(false)
+    expect(existsSync(join(run.worktree!.path, 'ignored.txt'))).toBe(true)
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
+    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(projectHead)
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(
+      run.changes?.after.commit,
+    )
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
+    git(f.project.repoPath, 'switch', 'main')
     expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(projectHead)
+    git(f.project.repoPath, 'switch', run.worktree!.branch)
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
     expect(run.worktree?.sourceHead).toBe(projectHead)
     expect(run.nodeSnapshot.data.profileId).toBe(f.profile.id)
     expect(run.profileSnapshot?.styleGuide).toBe(f.profile.styleGuide)
     expect(run.skillSnapshots[0].content).toContain('use readable names')
-    expect(run.resolvedPrompt).toContain('the task worktree')
+    expect(run.resolvedPrompt).toContain('the actual project directory')
     expect(run.resolvedPrompt).not.toContain('disposable lab workspace')
     expect(run.taskSnapshot.acceptanceCriteria).toBe(f.task.acceptanceCriteria)
     expect(run.before?.commit).toMatch(/^[a-f0-9]{40,64}$/)
@@ -413,7 +437,7 @@ describe('node execution in task worktrees', () => {
       f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
     ).toBe('todo')
   })
-  it('preserves the primary index and dirty files, and reuses the task worktree for follow-ups in the saved thread', async () => {
+  it('blocks dirty local files without changing the index, then resumes on its task branch in the saved thread', async () => {
     let turn = 0
     const f = await fixture(
       (options, _input, _signal, id) =>
@@ -429,7 +453,32 @@ describe('node execution in task worktrees', () => {
       originalStatus = git(f.project.repoPath, 'status', '--porcelain')
     f.start()
     await f.execution.waitForIdle()
-    const first = f.execution.get(f.identity).runs[0]
+    expect(f.execution.get(f.identity).runs[0].error?.message).toContain(
+      'uncommitted or untracked',
+    )
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(originalHead)
+    expect(git(f.project.repoPath, 'diff', '--cached')).toBe(originalIndex)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe(
+      originalStatus,
+    )
+    expect(f.transport.calls).toHaveLength(0)
+    git(f.project.repoPath, 'add', '.')
+    git(
+      f.project.repoPath,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@localhost',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'Save local edits',
+    )
+    const savedMain = git(f.project.repoPath, 'rev-parse', 'main')
+    f.start('retry')
+    await f.execution.waitForIdle()
+    const first = f.execution.get(f.identity).runs[1]
     expect(readFileSync(join(first.worktree!.path, 'input.txt'), 'utf8')).toBe(
       'unstaged input',
     )
@@ -445,16 +494,16 @@ describe('node execution in task worktrees', () => {
     })
     f.start('followup', 'Change the answer to a second revision.')
     await f.execution.waitForIdle()
-    const second = f.execution.get(f.identity).runs[1]
+    const second = f.execution.get(f.identity).runs[2]
     expect(second.threadId).toBe(first.threadId)
     expect(f.transport.calls[1].resumed).toBe('thread-same')
     expect(second.worktree?.path).toBe(first.worktree?.path)
     expect(second.profileSnapshot?.roleInstructions).toBe(
       'Updated role for the next attempt.',
     )
-    expect(
-      f.execution.get(f.identity).runs[0].profileSnapshot?.roleInstructions,
-    ).toBe(f.profile.roleInstructions)
+    expect(first.profileSnapshot?.roleInstructions).toBe(
+      f.profile.roleInstructions,
+    )
     expect(
       await f.execution.getDiff({
         ...f.identity,
@@ -469,11 +518,8 @@ describe('node execution in task worktrees', () => {
         path: 'answer.txt',
       }),
     ).toMatchObject({ original: '', modified: 'first revision' })
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(originalHead)
-    expect(git(f.project.repoPath, 'diff', '--cached')).toBe(originalIndex)
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe(
-      originalStatus,
-    )
+    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(savedMain)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
     f.start('restart')
     await f.execution.waitForIdle()
     expect(f.transport.calls[2].resumed).toBeUndefined()
@@ -539,6 +585,11 @@ describe('node execution in task worktrees', () => {
         })
       })(),
     )
+    const otherTask = f.workspace.createTask({
+      projectId: f.project.id,
+      title: 'Another task to review',
+    })
+    await f.execution.worktrees.ensure(f.project, otherTask)
     f.start()
     expect(() => f.start()).toThrow(/Another node is active/)
     expect(() =>
@@ -554,6 +605,11 @@ describe('node execution in task worktrees', () => {
       f.execution
         .get(f.identity)
         .runs[0].items.some((item) => item.id === 'slow'),
+    )
+    const otherIdentity = { projectId: f.project.id, taskId: otherTask.id }
+    expect((await f.execution.getReview(otherIdentity)).active).toBe(true)
+    await expect(f.execution.checkoutTask(otherIdentity)).rejects.toMatchObject(
+      { code: 'PROJECT_BUSY' },
     )
     await f.execution.stop(f.identity)
     await f.execution.waitForIdle()
@@ -845,26 +901,50 @@ describe('node execution in task worktrees', () => {
       f.execution.get({ ...f.identity, nodeId: secondId }).runs,
     ).toHaveLength(1)
   })
-  it('blocks archived tasks and refuses to recreate missing worktrees or reuse a switched branch', async () => {
+  it('preserves files and refuses to commit progress when the branch changes during an agent turn', async () => {
+    const f = await fixture((options) =>
+      (async function* (): AsyncGenerator<ThreadEvent> {
+        yield* successful(options)
+        git(options.workingDirectory!, 'switch', '-c', 'changed-in-ide')
+      })(),
+    )
+    const base = git(f.project.repoPath, 'rev-parse', 'main')
+    f.start()
+    await f.execution.waitForIdle()
+    const run = f.execution.get(f.identity).runs[0]
+    expect(run.status).toBe('failed')
+    expect(run.inspectionError?.message).toContain(
+      'branch or project root changed',
+    )
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(base)
+    expect(git(f.project.repoPath, 'rev-parse', run.worktree!.branch)).toBe(
+      base,
+    )
+    expect(readFileSync(join(f.project.repoPath, 'answer.txt'), 'utf8')).toBe(
+      'first revision',
+    )
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toContain(
+      'answer.txt',
+    )
+  })
+  it('selects an existing task branch for follow-ups but never recreates deleted branches or runs archived tasks', async () => {
     const f = await fixture()
     f.start()
     await f.execution.waitForIdle()
-    const worktree = f.execution.get(f.identity).worktree!
-    git(worktree.path, 'switch', '-c', 'unrelated-branch')
+    const branch = f.execution.get(f.identity).worktree!.branch
+    git(f.project.repoPath, 'switch', 'main')
     f.start('followup', 'Revise')
     await f.execution.waitForIdle()
-    expect(f.execution.get(f.identity).runs.at(-1)?.error?.code).toBe(
-      'TASK_WORKTREE',
-    )
-    expect(f.transport.calls).toHaveLength(1)
-    git(worktree.path, 'switch', worktree.branch)
-    rmSync(worktree.path, { recursive: true, force: true })
-    f.start('retry')
+    expect(f.transport.calls).toHaveLength(2)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(branch)
+    git(f.project.repoPath, 'switch', 'main')
+    git(f.project.repoPath, 'branch', '-D', branch)
+    f.start('followup', 'Continue after branch deletion')
     await f.execution.waitForIdle()
     expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain(
-      'saved task worktree is missing',
+      'saved task branch is missing',
     )
-    expect(existsSync(worktree.path)).toBe(false)
+    expect(f.transport.calls).toHaveLength(2)
     f.workspace.archiveTask({
       projectId: f.project.id,
       taskId: f.task.id,

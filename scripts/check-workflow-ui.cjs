@@ -16,7 +16,7 @@ const errors = [],
 let window,
   scheduler,
   database,
-  openedTaskFolders = 0,
+  openedProjectFolders = 0,
   ending = false
 const deadline = setTimeout(() => {
   console.error('Workflow UI timed out', errors)
@@ -241,9 +241,10 @@ app
       workflow: scheduler.get(input),
     }))
     handle(channels.taskReview, (input) => execution.getReview(input))
+    handle(channels.taskCheckout, (input) => scheduler.checkoutTask(input))
     handle(channels.taskOpenWorktree, async (input) => {
       await execution.getReview(input)
-      openedTaskFolders++
+      openedProjectFolders++
     })
     handle(channels.nodeGet, (input) => ({
       ...execution.get(input),
@@ -437,13 +438,35 @@ app
     )
     assert.equal(
       existsSync(join(project.repoPath, 'Implement-feature.txt')),
+      true,
+    )
+    assert.equal(reviewContext.path, project.repoPath)
+    assert.equal(
+      git(project.repoPath, 'branch', '--show-current'),
+      reviewContext.branch,
+    )
+    git(project.repoPath, 'switch', 'main')
+    assert.equal(
+      existsSync(join(project.repoPath, 'Implement-feature.txt')),
       false,
     )
-    await click('Open task folder')
+    await click('Refresh branch details')
+    await until(
+      'Array.from(document.querySelectorAll(".task-review-dialog button")).some(button=>button.textContent.trim()==="Switch to task branch"&&!button.disabled)',
+    )
+    await click('Switch to task branch')
+    await until(
+      'Array.from(document.querySelectorAll(".task-review-dialog button")).some(button=>button.textContent.trim()==="Task branch selected")',
+    )
+    assert.equal(
+      existsSync(join(project.repoPath, 'Implement-feature.txt')),
+      true,
+    )
+    await click('Open project folder')
     await until(
       '!document.querySelector(".task-review-dialog > header button").disabled',
     )
-    assert.equal(openedTaskFolders, 1)
+    assert.equal(openedProjectFolders, 1)
     await run(
       'document.querySelector(".task-review-dialog > header button").click()',
     )
@@ -513,7 +536,7 @@ app
     )
     assert.equal(
       await run(
-        'document.querySelector(".workflow-integration-hint").textContent.includes("Use Integrate branch")',
+        'document.querySelector(".workflow-integration-hint").textContent.includes("Integrate branch")',
       ),
       true,
     )
@@ -523,7 +546,7 @@ app
     await until('!!document.querySelector(".integration-plan.ready")')
     assert.equal(
       existsSync(join(project.repoPath, 'Implement-feature.txt')),
-      false,
+      true,
     )
     await click('Integrate into main')
     await until('!!document.querySelector(".integration-plan.integrated")')
@@ -531,9 +554,10 @@ app
       existsSync(join(project.repoPath, 'Implement-feature.txt')),
       true,
     )
+    assert.equal(git(project.repoPath, 'branch', '--show-current'), 'main')
     assert.equal(git(project.repoPath, 'status', '--porcelain'), '')
     await until(
-      'document.querySelector(".workflow-integration-hint")?.textContent.includes("has been integrated")',
+      'document.querySelector(".workflow-integration-hint")?.textContent.includes("merged into the base branch")',
     )
     if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
       writeFileSync(
@@ -553,7 +577,8 @@ app
           manualAcceptance: true,
           humanRevision: true,
           humanReview: true,
-          taskFolderReview: true,
+          singleProjectDirectory: true,
+          ideBranchSwitching: true,
           readableBranch: true,
           boardDoingToDone: true,
           explicitIntegration: true,

@@ -6,84 +6,77 @@ import { ApplicationError } from './errors'
 
 export class BranchIntegrationService {
   constructor(private readonly worktrees: TaskWorktreeService) {}
+  private async ref(path: string, branch: string) {
+    return taskGit(path, ['rev-parse', '--verify', `refs/heads/${branch}`])
+      .then((value) => value.trim())
+      .catch(() => null)
+  }
+  private async selected(path: string) {
+    return taskGit(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+      .then((value) => value.trim())
+      .catch(() => null)
+  }
   async preview(
     project: Project,
     worktree: TaskWorktree,
     accepted: CodeSnapshot,
     workflowRevision: number,
   ): Promise<IntegrationPlan> {
+    const path = project.repoPath
     const plan: IntegrationPlan = {
       status: 'blocked',
       workflowRevision,
-      targetBranch: null,
+      targetBranch: worktree.sourceBranch,
       targetHead: null,
       resultCommit: accepted.commit,
       conflicts: [],
       message: '',
       checkedAt: new Date().toISOString(),
     }
-    await this.worktrees.verify(worktree, project.repoPath)
-    plan.targetBranch = await taskGit(project.repoPath, [
-      'symbolic-ref',
-      '--quiet',
-      '--short',
-      'HEAD',
-    ])
-      .then((value) => value.trim())
-      .catch(() => null)
-    plan.targetHead = await taskGit(project.repoPath, [
-      'rev-parse',
-      '--verify',
-      'HEAD',
-    ])
-      .then((value) => value.trim())
-      .catch(() => null)
+    if (worktree.mode !== 'project') {
+      plan.message =
+        'The older task branch could not be moved to the project directory. Open Review task to retry its migration; existing files are preserved.'
+      return plan
+    }
+    await this.worktrees.verify(worktree, path, false)
     if (!plan.targetBranch || plan.targetBranch === worktree.branch) {
       plan.message =
-        'Check out the project branch in the primary project folder before integrating.'
+        'The original integration branch is unavailable. Restore the task’s base branch before integrating.'
       return plan
     }
-    const current = await this.worktrees.capture(
-      worktree.path,
-      'AgentConstella integration inspection',
-    )
+    plan.targetHead = await this.ref(path, plan.targetBranch)
+    const taskHead = await this.ref(path, worktree.branch)
+    if (!plan.targetHead || !taskHead) {
+      plan.message =
+        'A saved project or task branch is missing. Restore it before integrating.'
+      return plan
+    }
     const tree = async (commit: string) =>
-      (await taskGit(worktree.path, ['rev-parse', `${commit}^{tree}`])).trim()
-    if ((await tree(current.commit)) !== (await tree(accepted.commit))) {
+      (await taskGit(path, ['rev-parse', `${commit}^{tree}`])).trim()
+    if ((await tree(taskHead)) !== (await tree(accepted.commit))) {
       plan.message =
-        'The task worktree changed after the accepted result. Run and accept a revision before integrating those changes.'
+        'The task branch changed after the accepted result. Run and accept a revision before integrating those changes.'
       return plan
     }
-    if (
-      (await taskGit(project.repoPath, ['status', '--porcelain=v1', '-z']))
-        .length
-    ) {
+    try {
+      await this.worktrees.assertClean(path)
+    } catch (error) {
+      plan.message = error instanceof Error ? error.message : String(error)
+      return plan
+    }
+    if (!(await this.selected(path))) {
       plan.message =
-        'The project checkout has uncommitted or untracked files. Commit or move those local changes, then preview integration again. No files were changed.'
+        'The project is in a detached checkout. Select a branch before integrating.'
       return plan
     }
-    const inProgress = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD']
-    for (const ref of inProgress)
-      if (
-        await taskGit(project.repoPath, ['rev-parse', '--verify', ref])
-          .then(() => true)
-          .catch(() => false)
-      ) {
-        plan.message =
-          'Finish the existing Git operation in the project checkout before integrating.'
-        return plan
-      }
-    if (!plan.targetHead) {
-      plan.status = 'ready'
-      plan.mergedTree = await tree(accepted.commit)
-      plan.message = `Ready to create the initial commit history on ${plan.targetBranch}.`
-      return plan
-    }
+    // A migrated legacy branch can have a different commit with the exact
+    // accepted tree. Merge that saved branch head without rewriting its history.
+    plan.resultCommit = taskHead
     if (
-      await taskGit(project.repoPath, [
+      await taskGit(path, [
         'merge-base',
         '--is-ancestor',
-        accepted.commit,
+        taskHead,
         plan.targetHead,
       ])
         .then(() => true)
@@ -91,27 +84,27 @@ export class BranchIntegrationService {
     ) {
       plan.status = 'integrated'
       plan.commit = plan.targetHead
-      plan.message = `The accepted task snapshot is already in ${plan.targetBranch}.`
+      plan.message = `The accepted task result is already in ${plan.targetBranch}.`
       return plan
     }
     let output: string,
       conflict = false
     try {
-      output = await taskGit(project.repoPath, [
+      output = await taskGit(path, [
         'merge-tree',
         '--write-tree',
         '--name-only',
         '--no-messages',
         '-z',
         plan.targetHead,
-        accepted.commit,
+        taskHead,
       ])
     } catch (error) {
       if ((error as { code?: number }).code !== 1)
         throw new ApplicationError(
           'INTEGRATION_PREVIEW',
           error instanceof Error ? error.message : String(error),
-          'Check Git support for merge-tree --write-tree (Git 2.38+) and the repository history. The project checkout was not modified.',
+          'Check Git support for merge-tree --write-tree (Git 2.38+) and the repository history. Project files were not modified.',
         )
       conflict = true
       output = String((error as { stdout?: string }).stdout ?? '')
@@ -122,18 +115,14 @@ export class BranchIntegrationService {
       throw new ApplicationError(
         'INTEGRATION_PREVIEW',
         'Git did not return a valid merge tree.',
-        'The project checkout is unchanged. Inspect Git and retry the preview.',
+        'Project files are unchanged. Inspect Git and retry the preview.',
       )
     plan.mergedTree = mergedTree
-    if (conflict) {
-      plan.status = 'conflicts'
-      plan.conflicts = fields.filter(Boolean)
-      plan.message =
-        'Git found conflicts. The project checkout is unchanged; resolve the divergence and preview again.'
-    } else {
-      plan.status = 'ready'
-      plan.message = `Ready to integrate the accepted task result into ${plan.targetBranch}.`
-    }
+    plan.status = conflict ? 'conflicts' : 'ready'
+    plan.conflicts = conflict ? fields.filter(Boolean) : []
+    plan.message = conflict
+      ? 'Git found conflicts. Project files are unchanged; resolve the divergence and preview again.'
+      : `Ready to integrate the accepted task result into ${plan.targetBranch}.`
     return plan
   }
   async apply(
@@ -145,7 +134,6 @@ export class BranchIntegrationService {
     guard: () => void = () => {},
   ): Promise<IntegrationPlan> {
     const plan = await this.preview(project, worktree, accepted, revision)
-    if (plan.status !== 'ready') return plan
     if (
       plan.targetBranch !== expected.targetBranch ||
       plan.targetHead !== expected.targetHead
@@ -155,53 +143,45 @@ export class BranchIntegrationService {
         'The project branch or commit changed after the preview.',
         'Preview the current project state before integrating. No project files were changed.',
       )
-    const taskHead = (
-      await taskGit(worktree.path, ['rev-parse', 'HEAD'])
+    if (plan.status !== 'ready') return plan
+    const path = project.repoPath,
+      selected = await this.selected(path)
+    const commit = (
+      await taskGit(path, [
+        'commit-tree',
+        plan.mergedTree!,
+        '-p',
+        plan.targetHead!,
+        '-p',
+        plan.resultCommit!,
+        '-m',
+        `Integrate ${worktree.branch}`,
+      ])
     ).trim()
     guard()
-    // Promote the accepted immutable snapshot to the app-owned task branch. Its
-    // working files already match the snapshot; read-tree only aligns its index.
-    await taskGit(worktree.path, [
-      'update-ref',
-      `refs/heads/${worktree.branch}`,
-      accepted.commit,
-      taskHead,
-    ])
-    await taskGit(worktree.path, ['read-tree', accepted.commit])
-    const commit = plan.targetHead
-      ? (
-          await taskGit(project.repoPath, [
-            'commit-tree',
-            plan.mergedTree!,
-            '-p',
-            plan.targetHead,
-            '-p',
-            accepted.commit,
-            '-m',
-            `Integrate AgentConstella task ${worktree.taskId}`,
-          ])
-        ).trim()
-      : accepted.commit
+    await this.worktrees.assertClean(path)
     if (
-      (
-        await taskGit(project.repoPath, ['symbolic-ref', '--short', 'HEAD'])
-      ).trim() !== expected.targetBranch ||
-      (await taskGit(project.repoPath, ['rev-parse', '--verify', 'HEAD'])
-        .then((value) => value.trim())
-        .catch(() => null)) !== expected.targetHead ||
-      (await taskGit(project.repoPath, ['status', '--porcelain=v1', '-z']))
-        .length
+      (await this.selected(path)) !== selected ||
+      (await this.ref(path, plan.targetBranch!)) !== plan.targetHead ||
+      (await this.ref(path, worktree.branch)) !== plan.resultCommit
     )
       throw new ApplicationError(
         'INTEGRATION_CHANGED',
-        'The project checkout changed during integration preparation.',
-        'Preview again. Task code was committed to its own branch; project files were not reset or overwritten.',
+        'The project checkout or a branch changed during integration preparation.',
+        'Preview again. Your commits and local files are preserved.',
       )
+    await taskGit(path, ['switch', plan.targetBranch!])
     guard()
-    await taskGit(project.repoPath, ['merge', '--ff-only', '--no-edit', commit])
+    if ((await taskGit(path, ['rev-parse', 'HEAD'])).trim() !== plan.targetHead)
+      throw new ApplicationError(
+        'INTEGRATION_CHANGED',
+        'The integration branch moved while switching to it.',
+        'Preview again before integrating.',
+      )
+    await taskGit(path, ['merge', '--ff-only', '--no-edit', commit])
     plan.status = 'integrated'
     plan.commit = commit
-    plan.message = `Integrated into ${plan.targetBranch}. The task worktree and branch are retained.`
+    plan.message = `Integrated into ${plan.targetBranch}. The project directory is now on ${plan.targetBranch}; the task branch is retained.`
     plan.checkedAt = new Date().toISOString()
     return plan
   }

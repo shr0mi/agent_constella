@@ -416,8 +416,9 @@ export function NodeWorkspace({
                 <Bot size={32} />
                 <h3>Put this node to work.</h3>
                 <p>
-                  Run its saved prompt in a dedicated task worktree. Ask for
-                  revisions here and Codex will continue the same conversation.
+                  Run its saved prompt on a task branch in your project
+                  directory. Ask for revisions here and Codex will continue the
+                  same conversation.
                 </p>
                 <p className="node-seed-prompt">{node.data.prompt}</p>
               </div>
@@ -465,7 +466,7 @@ export function NodeWorkspace({
                   <p className="node-working">
                     <LoaderCircle size={13} className="spin" />
                     {run.status === 'preparing'
-                      ? 'Preparing worktree and run snapshot…'
+                      ? 'Selecting task branch and recording run snapshot…'
                       : run.status === 'testing'
                         ? 'Running the configured checks…'
                         : run.status === 'stopping'
@@ -616,8 +617,8 @@ export function NodeWorkspace({
                 </code>
                 <p className="node-limit-note">
                   The saved project test command runs locally in this task
-                  worktree after a successful Codex turn. Output is retained up
-                  to 64 KB; timeout is two minutes.
+                  project directory after a successful Codex turn. Output is
+                  retained up to 64 KB; timeout is two minutes.
                 </p>
                 <pre className="node-test-output">
                   {selected.tests.output ||
@@ -649,9 +650,10 @@ export function NodeWorkspace({
       <footer className="node-workspace-footer">
         <div className="node-worktree-path">
           <GitBranch size={13} />
-          <span title={snapshot?.worktree?.path}>
-            {snapshot?.worktree?.path ??
-              'A task worktree will be created from current project files, respecting .gitignore.'}
+          <span title={graph.project.repoPath}>
+            {snapshot?.worktree?.branch ??
+              'A readable task branch will be created'}{' '}
+            · {graph.project.repoPath}
           </span>
           {snapshot?.worktree && (
             <button
@@ -667,7 +669,7 @@ export function NodeWorkspace({
                   ),
                 )
               }
-              aria-label="Open task folder"
+              aria-label="Open project folder"
             >
               <FolderOpen size={13} /> Open folder
             </button>
@@ -676,9 +678,9 @@ export function NodeWorkspace({
             <button
               className="icon-button"
               onClick={() =>
-                void navigator.clipboard.writeText(snapshot.worktree!.path)
+                void navigator.clipboard.writeText(graph.project.repoPath)
               }
-              aria-label="Copy task worktree path"
+              aria-label="Copy project directory"
             >
               Copy path
             </button>

@@ -1098,7 +1098,7 @@ function ProjectSettings({
           </div>
           <p className="form-helper">
             Node runs use the development command as context and execute the
-            test command in the task worktree after successful Codex turns.
+            test command in the project directory after successful Codex turns.
             Saving settings does not run either command.
           </p>
         </fieldset>

@@ -62,7 +62,7 @@ const gitFailure = (message: string, error: unknown) =>
   new ApplicationError(
     'TASK_WORKTREE',
     `${message}\n${error instanceof Error ? error.message : String(error)}`,
-    'Your files are preserved. Check Git and folder access, then retry. The app will not reset or delete a task worktree.',
+    'Your files are preserved. Check the project branch, local changes, and Git access, then retry. The app will not discard local edits.',
   )
 function readableTaskBranch(title: string, existing: string[]) {
   const occupied = existing.map((name) => name.normalize('NFKC').toLowerCase())
@@ -92,6 +92,7 @@ function readableTaskBranch(title: string, existing: string[]) {
   return branch
 }
 export class TaskWorktreeService {
+  private preparing = new Map<string, Promise<unknown>>()
   constructor(
     private readonly database: WorkspaceDatabase,
     private readonly appData: string,
@@ -170,133 +171,228 @@ export class TaskWorktreeService {
     task: Task,
     signal?: AbortSignal,
   ): Promise<TaskWorktree> {
+    const previous = this.preparing.get(project.id) ?? Promise.resolve()
+    const pending = previous
+      .catch(() => {})
+      .then(() => this.prepare(project, task, signal))
+    this.preparing.set(project.id, pending)
+    try {
+      return await pending
+    } finally {
+      if (this.preparing.get(project.id) === pending)
+        this.preparing.delete(project.id)
+    }
+  }
+  async assertClean(path: string) {
+    if ((await taskGit(path, ['status', '--porcelain=v1', '-z'])).length)
+      throw new Error(
+        'The project has uncommitted or untracked changes. Commit or stash your edits before switching task branches. Your files and index have been preserved.',
+      )
+    for (const name of [
+      'MERGE_HEAD',
+      'CHERRY_PICK_HEAD',
+      'REVERT_HEAD',
+      'rebase-merge',
+      'rebase-apply',
+      'sequencer',
+      'BISECT_LOG',
+    ]) {
+      const gitPath = (
+        await taskGit(path, ['rev-parse', '--git-path', name])
+      ).trim()
+      if (await lstat(resolve(path, gitPath)).catch(() => null))
+        throw new Error(
+          'Finish the existing Git operation in the project before switching task branches.',
+        )
+    }
+  }
+  // Release branches held by older app-managed checkouts. Their files remain as
+  // backups; the saved branch becomes available in the user's project directory.
+  async adopt(project: Project, task: Task): Promise<TaskWorktree | null> {
+    const worktree = this.get(task.id)
+    if (!worktree || worktree.mode === 'project') return worktree
+    const expected = join(
+      await realpath(this.appData),
+      'task-worktrees',
+      project.id,
+      task.id,
+    )
+    if (
+      worktree.projectId !== project.id ||
+      worktree.taskId !== task.id ||
+      resolve(worktree.path) !== resolve(expected)
+    )
+      throw new Error(
+        'Stored legacy checkout ownership does not match this task.',
+      )
+    await this.verify(worktree, project.repoPath, false)
+    const branch = await taskGit(worktree.path, [
+      'symbolic-ref',
+      '--quiet',
+      '--short',
+      'HEAD',
+    ])
+      .then((value) => value.trim())
+      .catch(() => null)
+    if (branch && branch !== worktree.branch)
+      throw new Error(
+        'The legacy task checkout is on another branch. Its files have been preserved.',
+      )
+    if (branch) {
+      const snapshot = await this.capture(
+        worktree.path,
+        `Save ${worktree.branch} before moving to the project directory`,
+      )
+      await this.checkpoint(worktree, snapshot)
+      await taskGit(worktree.path, ['switch', '--detach', snapshot.commit])
+    } else {
+      await this.assertClean(worktree.path)
+      const head = (await taskGit(worktree.path, ['rev-parse', 'HEAD'])).trim()
+      const tip = (
+        await taskGit(worktree.path, [
+          'rev-parse',
+          `refs/heads/${worktree.branch}`,
+        ])
+      ).trim()
+      if (head !== tip)
+        throw new Error(
+          'The detached legacy backup differs from the task branch. Its files are preserved; reconcile that branch before continuing.',
+        )
+    }
+    const adopted: TaskWorktree = {
+      ...worktree,
+      mode: 'project',
+      legacyPath: worktree.path,
+      path: await realpath(project.repoPath),
+      state: 'ready',
+    }
+    this.save(adopted)
+    return adopted
+  }
+  private async prepare(
+    project: Project,
+    task: Task,
+    signal?: AbortSignal,
+  ): Promise<TaskWorktree> {
     try {
       const source = await resolveRepository(project.repoPath)
       if (source !== (await realpath(project.repoPath)))
         throw new Error('The project repository root changed.')
-      let worktree = this.get(task.id)
-      const path = join(
-        await realpath(this.appData),
-        'task-worktrees',
-        project.id,
-        task.id,
-      )
-      if (
-        worktree &&
-        (worktree.taskId !== task.id ||
-          worktree.projectId !== project.id ||
-          resolve(worktree.path) !== resolve(path) ||
-          !worktree.branch.startsWith('codex/'))
-      )
-        throw new Error(
-          'Stored task worktree ownership does not match this task.',
-        )
+      signal?.throwIfAborted()
+      let worktree = await this.adopt(project, task)
+      await this.assertClean(source)
+      await ensureInitialCommit(source)
       if (!worktree) {
-        if (await lstat(path).catch(() => null))
-          throw new Error(
-            'The task worktree path is already occupied and is not registered to this task.',
+        let sourceBranch = (
+          await taskGit(
+            source,
+            ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+            { signal },
           )
-        // Also cover projects registered by earlier app versions, before they
-        // create any new task baselines from an unborn project branch.
-        await ensureInitialCommit(source)
-        const snapshot = await this.capture(
-          source,
-          `AgentConstella task baseline ${task.id}`,
-          signal,
-        )
-        const sourceBranch = await taskGit(
-          source,
-          ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-          { signal },
-        )
-          .then((value) => value.trim())
-          .catch(() => null)
+        ).trim()
+        // A second todo starts from the integration branch, not another todo's
+        // unintegrated progress left selected in the shared project directory.
+        const records = this.database.db
+          .select()
+          .from(taskWorktrees)
+          .all()
+          .map((row) => row.document)
+        const visited = new Set<string>()
+        while (true) {
+          const owner = records.find(
+            (record) =>
+              record.projectId === project.id && record.branch === sourceBranch,
+          )
+          if (!owner) break
+          if (!owner.sourceBranch || visited.has(sourceBranch))
+            throw new Error(
+              'Cannot determine the project integration branch. Check out your base branch before starting a new task.',
+            )
+          visited.add(sourceBranch)
+          sourceBranch = owner.sourceBranch
+        }
+        const baseRevision = (
+          await taskGit(
+            source,
+            ['rev-parse', '--verify', `refs/heads/${sourceBranch}`],
+            { signal },
+          )
+        ).trim()
         const existing = (
-          await taskGit(source, [
-            'for-each-ref',
-            '--format=%(refname:strip=2)',
-            'refs/heads',
-          ])
+          await taskGit(
+            source,
+            ['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads'],
+            { signal },
+          )
         )
           .trim()
           .split('\n')
           .filter(Boolean)
-        // Choose and reserve together without awaiting, so concurrent task
-        // preparations cannot claim the same readable name before Git creates it.
-        const reserved = this.database.db
-          .select()
-          .from(taskWorktrees)
-          .all()
-          .filter(
-            (row) =>
-              row.projectId === project.id || row.document.state === 'creating',
-          )
-          .map((row) => row.document.branch)
-        const branch = readableTaskBranch(task.title, [
-          ...existing,
-          ...reserved,
-        ])
+        const reserved = records
+          .filter((record) => record.projectId === project.id)
+          .map((record) => record.branch)
         worktree = {
+          mode: 'project',
           taskId: task.id,
           projectId: project.id,
-          path,
-          branch,
-          baseRevision: snapshot.commit,
-          sourceHead: snapshot.head || null,
+          path: source,
+          branch: readableTaskBranch(task.title, [...existing, ...reserved]),
+          baseRevision,
+          sourceHead: baseRevision,
           sourceBranch,
           state: 'creating',
           createdAt: new Date().toISOString(),
         }
         this.save(worktree)
       }
-      const branch = worktree.branch
-      const exists = await lstat(path).catch(() => null)
-      if (!exists) {
+      if (
+        worktree.taskId !== task.id ||
+        worktree.projectId !== project.id ||
+        worktree.path !== source ||
+        !worktree.branch.startsWith('codex/')
+      )
+        throw new Error(
+          'Stored task branch ownership does not match this project.',
+        )
+      const head = await taskGit(
+        source,
+        ['rev-parse', '--verify', `refs/heads/${worktree.branch}`],
+        { signal },
+      )
+        .then((value) => value.trim())
+        .catch(() => null)
+      if (!head) {
         if (worktree.state === 'ready')
           throw new Error(
-            'The saved task worktree is missing. Restore it at its recorded path to continue the conversation.',
-          )
-        await mkdir(join(this.appData, 'task-worktrees', project.id), {
-          recursive: true,
-        })
-        const hasBranch = await taskGit(
-          source,
-          ['show-ref', '--verify', `refs/heads/${branch}`],
-          { signal },
-        )
-          .then(() => true)
-          .catch(() => false)
-        if (
-          hasBranch &&
-          (
-            await taskGit(source, ['rev-parse', `refs/heads/${branch}`])
-          ).trim() !== worktree.baseRevision
-        )
-          throw new Error(
-            'The reserved task branch now contains different work. Its files and history have been preserved.',
+            'The saved task branch is missing. Restore it before continuing; it will not be silently recreated.',
           )
         await taskGit(
           source,
-          [
-            'worktree',
-            'add',
-            ...(hasBranch ? [] : ['-b', branch]),
-            path,
-            hasBranch ? branch : worktree.baseRevision,
-          ],
+          ['branch', worktree.branch, worktree.baseRevision],
           { signal },
         )
+      } else if (
+        worktree.state === 'creating' &&
+        head !== worktree.baseRevision
+      ) {
+        throw new Error(
+          'The reserved task branch now contains different work. Its files and history have been preserved.',
+        )
       }
+      await taskGit(source, ['switch', worktree.branch], { signal })
       await this.verify(worktree, source)
       worktree.state = 'ready'
       this.save(worktree)
       return structuredClone(worktree)
     } catch (error) {
       if (signal?.aborted) throw error
-      throw gitFailure('Cannot prepare the task worktree.', error)
+      throw gitFailure(
+        'Cannot prepare the task branch in the project directory.',
+        error,
+      )
     }
   }
-  async verify(worktree: TaskWorktree, source?: string) {
+  async verify(worktree: TaskWorktree, source?: string, checkedOut = true) {
     const metadata = await lstat(worktree.path)
     if (
       !metadata.isDirectory() ||
@@ -304,23 +400,27 @@ export class TaskWorktreeService {
       (await realpath(worktree.path)) !== resolve(worktree.path)
     )
       throw new Error('The task worktree path is not an owned local directory.')
-    const actualBranch = (
-      await taskGit(worktree.path, [
-        'symbolic-ref',
-        '--quiet',
-        '--short',
-        'HEAD',
-      ])
-    ).trim()
+    const actualBranch = await taskGit(worktree.path, [
+      'symbolic-ref',
+      '--quiet',
+      '--short',
+      'HEAD',
+    ])
+      .then((value) => value.trim())
+      .catch(() => null)
     const root = await resolveRepository(worktree.path)
     if (
-      actualBranch !== worktree.branch ||
+      (checkedOut && actualBranch !== worktree.branch) ||
       root !== (await realpath(worktree.path))
     )
       throw new Error(
-        'The task worktree branch or root changed. Restore its recorded branch to continue.',
+        'The task branch or project root changed during the operation. Select the task branch and retry.',
       )
     if (source) {
+      if (worktree.mode === 'project' && (await realpath(source)) !== root)
+        throw new Error(
+          'The task branch is registered to a different project directory.',
+        )
       const common = async (path: string) =>
         realpath(
           (
@@ -337,15 +437,27 @@ export class TaskWorktreeService {
         )
     }
   }
+  async checkpoint(worktree: TaskWorktree, snapshot: CodeSnapshot) {
+    await this.verify(worktree)
+    await taskGit(worktree.path, [
+      'update-ref',
+      `refs/heads/${worktree.branch}`,
+      snapshot.commit,
+      snapshot.head,
+    ])
+    await this.verify(worktree)
+    // Only align the index: working files are never reset or overwritten.
+    await taskGit(worktree.path, ['read-tree', snapshot.commit])
+  }
   async changes(
     worktree: TaskWorktree,
     before: CodeSnapshot,
+    saveProgress = true,
   ): Promise<RunChanges> {
     await this.verify(worktree)
-    const after = await this.capture(
-      worktree.path,
-      'AgentConstella attempt result',
-    )
+    const after = await this.capture(worktree.path, `Update ${worktree.branch}`)
+    if (saveProgress && worktree.mode === 'project')
+      await this.checkpoint(worktree, after)
     const fields = (
       await taskGit(worktree.path, [
         'diff',
@@ -392,7 +504,7 @@ export class TaskWorktreeService {
         'This file is not part of the selected attempt.',
         'Select a recorded changed file.',
       )
-    await this.verify(worktree)
+    await this.verify(worktree, undefined, false)
     const read = async (commit: string) => {
       const spec = `${commit}:${path}`
       const kind = await taskGit(worktree.path, ['cat-file', '-t', spec])

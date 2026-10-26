@@ -35,7 +35,7 @@ export function resolvePrompt(
   if (context?.projectSnapshot) {
     const project = context.projectSnapshot
     sections.push(
-      `Project brief: ${project.name}\n${project.description}\n\nProject instructions:\n${project.instructions}\n\nDevelopment command (context only): ${project.devCommand}\nTest command: ${project.testCommand}\n${workspaceKind === 'lab' ? "The current working directory is a disposable lab workspace, not this project's repository." : 'The current working directory is the task worktree. Make code changes only here. Do not edit the primary project checkout, other worktrees, app data, or Git metadata. Leave code changes uncommitted; the application records snapshots and runs the configured test command after your turn.'}`,
+      `Project brief: ${project.name}\n${project.description}\n\nProject instructions:\n${project.instructions}\n\nDevelopment command (context only): ${project.devCommand}\nTest command: ${project.testCommand}\n${workspaceKind === 'lab' ? "The current working directory is a disposable lab workspace, not this project's repository." : 'The current working directory is the actual project directory, checked out on this task’s branch. This location supersedes paths from earlier conversation turns. Make code changes only here. Do not switch branches, commit, reset, stash, edit Git metadata, or edit old backup checkouts or app data. Leave your edits for the application: it runs the configured test command, records snapshots, and saves task progress as a Git commit after your turn.'}`,
     )
   }
   if (context?.profileSnapshot) {

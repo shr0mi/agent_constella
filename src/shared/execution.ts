@@ -27,6 +27,9 @@ export const fileDiffSchema = runIdentitySchema
   .extend({ path: z.string().min(1).max(4096) })
   .strict()
 export interface TaskWorktree {
+  /** Missing on older, isolated worktree records. */
+  mode?: 'project'
+  legacyPath?: string
   taskId: string
   projectId: string
   path: string
@@ -117,6 +120,8 @@ export interface TaskReviewContext extends GraphIdentity {
   devCommand: string
   runCommand: string | null
   active: boolean
+  targetBranch: string | null
+  checkoutCommand: string
 }
 export interface NodeExecutionSnapshot extends NodeIdentity {
   workflow?: WorkflowSnapshot
@@ -130,6 +135,7 @@ export interface ExecutionBridge {
   getTask(input: GraphIdentity): Promise<Result<TaskExecutionSnapshot>>
   getReview(input: GraphIdentity): Promise<Result<TaskReviewContext>>
   openWorktree(input: GraphIdentity): Promise<Result<void>>
+  checkoutTask(input: GraphIdentity): Promise<Result<void>>
   get(input: NodeIdentity): Promise<Result<NodeExecutionSnapshot>>
   start(input: StartNodeInput): Promise<Result<{ runId: string }>>
   stop(input: NodeIdentity): Promise<Result<void>>

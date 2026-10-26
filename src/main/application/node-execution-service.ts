@@ -2,7 +2,13 @@ import { Codex, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk'
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
-import { nodeRuns, nodeThreads, projects, tasks } from '../db/schema'
+import {
+  nodeRuns,
+  nodeThreads,
+  projects,
+  tasks,
+  taskWorktrees,
+} from '../db/schema'
 import { toActivity, type CodexClient } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
 import { applicationFailure, ApplicationError } from './errors'
@@ -216,20 +222,20 @@ export class NodeExecutionService {
       .from(projects)
       .where(eq(projects.id, identity.projectId))
       .get()!
-    const worktree = this.worktrees.get(identity.taskId)
+    const worktree = await this.worktrees.adopt(project, task)
     if (!worktree || worktree.state !== 'ready')
       throw new ApplicationError(
         'TASK_REVIEW_UNAVAILABLE',
-        'The task folder is not ready yet.',
-        'Run an agent node first, then open its task folder to review the product.',
+        'The task branch is not ready yet.',
+        'Run an agent node first, then select its branch in your project directory.',
       )
     if (worktree.projectId !== identity.projectId)
       throw new ApplicationError(
         'TASK_REVIEW_SCOPE',
-        'This task folder belongs to another project.',
+        'This task branch belongs to another project.',
         'Open the task from its project board.',
       )
-    await this.worktrees.verify(worktree, project.repoPath)
+    await this.worktrees.verify(worktree, project.repoPath, false)
     const projectBranch = await taskGit(project.repoPath, [
       'symbolic-ref',
       '--quiet',
@@ -243,11 +249,16 @@ export class NodeExecutionService {
       process.platform === 'win32'
         ? `'${worktree.path.replaceAll("'", "''")}'`
         : `'${worktree.path.replaceAll("'", "'\\''")}'`
+    const quotedBranch = `'${worktree.branch}'`
+    const checkoutCommand =
+      process.platform === 'win32'
+        ? `Set-Location -LiteralPath ${quotedPath} -ErrorAction Stop\ngit switch -- ${quotedBranch}`
+        : `cd -- ${quotedPath} && git switch -- ${quotedBranch}`
     const runCommand = !devCommand
       ? null
       : process.platform === 'win32'
-        ? `Set-Location -LiteralPath ${quotedPath} -ErrorAction Stop\n${devCommand}`
-        : `cd -- ${quotedPath} && (\n${devCommand}\n)`
+        ? `${checkoutCommand}\nif ($LASTEXITCODE -eq 0) {\n${devCommand}\n}`
+        : `${checkoutCommand} && (\n${devCommand}\n)`
     return {
       ...identity,
       taskTitle: task.title,
@@ -257,8 +268,27 @@ export class NodeExecutionService {
       projectBranch,
       devCommand,
       runCommand,
-      active: this.hasActiveTask(identity),
+      active: !!this.activeProject(identity.projectId),
+      targetBranch: worktree.sourceBranch,
+      checkoutCommand,
     }
+  }
+  async checkoutTask(raw: unknown) {
+    const identity = graphIdentitySchema.parse(raw)
+    const task = this.taskScope(identity)
+    if (this.activeProject(identity.projectId))
+      throw new ApplicationError(
+        'PROJECT_BUSY',
+        'An agent is working in this project.',
+        'Wait for it to finish before switching branches.',
+      )
+    const project = this.db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, identity.projectId))
+      .get()!
+    await this.worktrees.ensure(project, task)
+    this.emit(identity)
   }
   get(raw: unknown): NodeExecutionSnapshot {
     const identity = nodeIdentitySchema.parse(raw)
@@ -331,7 +361,11 @@ export class NodeExecutionService {
         'File snapshots are not available for this attempt yet.',
         'Wait for the run to settle, then inspect its results or collection error.',
       )
-    return this.worktrees.diff(run.worktree, run.changes, input.path)
+    return this.worktrees.diff(
+      this.worktrees.get(input.taskId) ?? run.worktree,
+      run.changes,
+      input.path,
+    )
   }
   private persist(run: NodeRun) {
     try {
@@ -376,19 +410,42 @@ export class NodeExecutionService {
         run.error = {
           code: 'INTERRUPTED',
           message: 'The app closed while this attempt was active.',
-          hint: 'Inspect the retained worktree and explicitly retry or continue the saved conversation.',
+          hint: 'Inspect the project branch and explicitly retry or continue the saved conversation.',
         }
         if (run.tests.status === 'running') run.tests.status = 'cancelled'
         this.persist(run)
         if (run.before && run.worktree) {
           try {
-            run.changes = await this.worktrees.changes(run.worktree, run.before)
+            run.changes = await this.worktrees.changes(
+              run.worktree,
+              run.before,
+              false,
+            )
           } catch (error) {
             run.inspectionError = applicationFailure(error)
           }
           this.persist(run)
         }
       }
+    for (const row of this.db.select().from(taskWorktrees).all()) {
+      if (row.document.mode === 'project') continue
+      const project = this.db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, row.projectId))
+        .get()
+      const task = this.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, row.taskId))
+        .get()
+      if (project && task)
+        try {
+          await this.worktrees.adopt(project, task)
+        } catch (error) {
+          console.error('Cannot release legacy task branch:', error)
+        }
+    }
     this.initialized = true
   }
   start(raw: unknown): { runId: string } {
@@ -403,7 +460,7 @@ export class NodeExecutionService {
       throw new ApplicationError(
         'STORAGE',
         'An attempt could not be persisted.',
-        'Restore app data access and restart before starting more work. The current worktree is retained.',
+        'Restore app data access and restart before starting more work. Your project files are retained.',
       )
     if (this.active.has(input.projectId))
       throw new ApplicationError(

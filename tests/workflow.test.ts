@@ -812,6 +812,7 @@ describe('explicit task branch integration', () => {
       ...f.identity,
       expectedRevision: f.snapshot().revision,
     })
+    git(f.project.repoPath, 'switch', 'main')
     writeFileSync(join(f.project.repoPath, 'new-local.txt'), 'new project work')
     commit(f.project.repoPath)
     const head = git(f.project.repoPath, 'rev-parse', 'HEAD')
@@ -841,7 +842,12 @@ describe('explicit task branch integration', () => {
     })
     expect(plan.status).toBe('ready')
     expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(before)
+    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(true)
+    const taskBranch = f.execution.worktrees.get(f.task.id)!.branch
+    git(f.project.repoPath, 'switch', 'main')
     expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(false)
+    git(f.project.repoPath, 'switch', taskBranch)
+    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(true)
     const command = {
       ...f.identity,
       expectedRevision: plan.workflowRevision,
@@ -864,6 +870,7 @@ describe('explicit task branch integration', () => {
     f.begin()
     await f.waitingReview()
     f.approve()
+    git(f.project.repoPath, 'switch', 'main')
     writeFileSync(join(f.project.repoPath, 'input.txt'), 'user change\n')
     commit(f.project.repoPath)
     const before = git(f.project.repoPath, 'rev-parse', 'HEAD')
@@ -900,13 +907,17 @@ describe('explicit task branch integration', () => {
       join(f.execution.worktrees.get(f.task.id)!.path, 'external.txt'),
       'not accepted',
     )
+    commit(f.project.repoPath)
     plan = await f.scheduler.previewIntegration({
       ...f.identity,
       expectedRevision: f.snapshot().revision,
     })
     expect(plan.status).toBe('blocked')
     expect(plan.message).toContain('changed after the accepted')
-    expect(existsSync(join(f.project.repoPath, 'external.txt'))).toBe(false)
+    expect(existsSync(join(f.project.repoPath, 'external.txt'))).toBe(true)
+    expect(() =>
+      git(f.project.repoPath, 'cat-file', '-e', 'main:external.txt'),
+    ).toThrow()
   })
   it('integrates a clean initially empty repository without requiring a manual first commit', async () => {
     const f = await fixture({ empty: true })
@@ -944,16 +955,21 @@ describe('explicit task branch integration', () => {
     const second = await worktrees.ensure(f.project, secondTask)
     expect(first.sourceHead).toBe(initialHead)
     expect(second.sourceHead).toBe(initialHead)
+    await worktrees.ensure(f.project, f.task)
     writeFileSync(join(first.path, 'first.txt'), 'First task result')
-    writeFileSync(join(second.path, 'second.txt'), 'Second task result')
     const firstResult = await worktrees.capture(
       first.path,
       'Accepted first todo',
     )
+    await worktrees.checkpoint(first, firstResult)
+    await worktrees.ensure(f.project, secondTask)
+    expect(existsSync(join(f.project.repoPath, 'first.txt'))).toBe(false)
+    writeFileSync(join(second.path, 'second.txt'), 'Second task result')
     const secondResult = await worktrees.capture(
       second.path,
       'Accepted second todo',
     )
+    await worktrees.checkpoint(second, secondResult)
     const integration = new BranchIntegrationService(worktrees)
     const firstPlan = await integration.preview(
       f.project,

@@ -49,6 +49,24 @@ async function fixture() {
   const a = await workspace.createProject({ path: join(root, 'alpha') })
   const b = await workspace.createProject({ path: join(root, 'beta') })
   writeFileSync(join(a.repoPath, 'keep.txt'), 'Keep the repository files')
+  execFileSync('git', ['-C', a.repoPath, 'add', '.'])
+  execFileSync(
+    'git',
+    [
+      '-C',
+      a.repoPath,
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@localhost',
+      '-c',
+      'commit.gpgsign=false',
+      'commit',
+      '-m',
+      'Save fixture files',
+    ],
+    { stdio: 'pipe' },
+  )
   const task = workspace.createTask({
     projectId: a.id,
     title: 'First task',
@@ -237,6 +255,24 @@ describe('confirmed project deletion', () => {
       effort: null,
     })
     const identity = { projectId: f.a.id, taskId: f.task.id }
+    execFileSync('git', ['-C', f.a.repoPath, 'add', '.'])
+    execFileSync(
+      'git',
+      [
+        '-C',
+        f.a.repoPath,
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@localhost',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-m',
+        'Save project skills',
+      ],
+      { stdio: 'pipe' },
+    )
     const graph = f.graphs.get(identity),
       node = graph.document.nodes.find((node) => node.type === 'agent')!
     f.workflow.startNode({
