@@ -18,6 +18,7 @@ import {
   type WorkspaceDatabase,
 } from '../src/main/db/database'
 import type { Task } from '../src/shared/workspace'
+import { migrations } from '../src/main/db/migrations'
 
 const directories: string[] = []
 const databases: WorkspaceDatabase[] = []
@@ -51,6 +52,72 @@ const identity = (task: Task) => ({
 })
 
 describe('persistent project application service', () => {
+  it('validates project default model/effort and preserves defaults when older callers omit them', async () => {
+    const f = fixture()
+    const service = new WorkspaceService(f.database, () => [
+      {
+        id: 'fixture-model',
+        name: 'Fixture',
+        isDefault: true,
+        efforts: ['low', 'high'],
+      },
+    ])
+    const project = await service.openRepository({
+      path: f.repository('defaults'),
+    })
+    const fields = {
+      name: project.name,
+      description: '',
+      instructions: '',
+      devCommand: '',
+      testCommand: '',
+    }
+    const input = {
+      ...fields,
+      projectId: project.id,
+      expectedRevision: project.revision,
+    }
+    expect(project).toMatchObject({ defaultModel: null, defaultEffort: null })
+    expect(() =>
+      service.updateProject({
+        ...input,
+        defaultModel: null,
+        defaultEffort: 'high',
+      }),
+    ).toThrow('Choose a default model')
+    expect(() =>
+      service.updateProject({
+        ...input,
+        defaultModel: 'fixture-model',
+        defaultEffort: 'ultra',
+      }),
+    ).toThrow('not supported')
+    expect(() =>
+      service.updateProject({
+        ...input,
+        defaultModel: 'unknown-model',
+        defaultEffort: null,
+      }),
+    ).toThrow('not supported')
+    const saved = service.updateProject({
+      ...input,
+      defaultModel: 'fixture-model',
+      defaultEffort: 'high',
+    })
+    const renamed = service.updateProject({
+      ...input,
+      expectedRevision: saved.revision,
+      name: 'Renamed',
+    })
+    expect(renamed).toMatchObject({
+      defaultModel: 'fixture-model',
+      defaultEffort: 'high',
+      repoPath: project.repoPath,
+    })
+    expect(() => service.updateProject(input)).toThrow(
+      'changed after it was opened',
+    )
+  })
   it('keeps two project boards independent and retains settings, tasks, ordering, and archive state after reopening SQLite', async () => {
     const { service, repository, database, file } = fixture()
     const a = await service.openRepository({ path: repository('project-a') })
@@ -63,6 +130,8 @@ describe('persistent project application service', () => {
       instructions: 'Follow repository conventions',
       devCommand: 'npm run dev',
       testCommand: 'npm test',
+      defaultModel: 'fixture-model',
+      defaultEffort: 'high' as const,
     }
     service.updateProject(settings)
     const first = service.createTask({
@@ -102,6 +171,8 @@ describe('persistent project application service', () => {
       instructions: settings.instructions,
       devCommand: settings.devCommand,
       testCommand: settings.testCommand,
+      defaultModel: settings.defaultModel,
+      defaultEffort: settings.defaultEffort,
     })
     expect(boardA.tasks).toHaveLength(2)
     expect(boardA.tasks.find((task) => task.id === edited.id)).toMatchObject({
@@ -118,7 +189,7 @@ describe('persistent project application service', () => {
       reopened.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 5 })
+    ).toEqual({ n: migrations.length })
     expect(readFileSync(file).subarray(0, 15).toString()).toBe(
       'SQLite format 3',
     )

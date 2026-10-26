@@ -27,9 +27,10 @@ import {
   Zap,
 } from 'lucide-react'
 import type { Project, Task, TaskStatus } from '../../shared/workspace'
-import type { Failure } from '../../shared/contracts'
-import { useAppStore } from './store'
+import type { Effort, Failure } from '../../shared/contracts'
+import { refreshDiagnostics, useAppStore } from './store'
 import { Modal } from './components/Modal'
+import { ManagerChat } from './ManagerChat'
 import {
   refreshWorkspace,
   useWorkspaceStore,
@@ -378,6 +379,7 @@ export function ProjectBoardPage() {
           </p>
         </div>
         <div className="heading-actions">
+          <ManagerChat projectId={project.id} taskId={null} />
           <button
             className="button secondary"
             onClick={() => setSettings(true)}
@@ -916,6 +918,13 @@ function ProjectSettings({
   const [instructions, setInstructions] = useState(project.instructions)
   const [devCommand, setDevCommand] = useState(project.devCommand)
   const [testCommand, setTestCommand] = useState(project.testCommand)
+  const [defaultModel, setDefaultModel] = useState(project.defaultModel ?? '')
+  const [defaultEffort, setDefaultEffort] = useState<Effort | ''>(
+    project.defaultEffort ?? '',
+  )
+  const models = useAppStore((state) => state.state?.diagnostics?.models)
+  const checkingModels = useAppStore((state) => state.checking)
+  const selectedModel = models?.find((model) => model.id === defaultModel)
   const busy = useWorkspaceStore((state) => state.pending > 0)
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -929,6 +938,8 @@ function ProjectSettings({
           instructions,
           devCommand,
           testCommand,
+          defaultModel: defaultModel || null,
+          defaultEffort: defaultEffort || null,
         }),
       )
       onClose()
@@ -962,6 +973,71 @@ function ProjectSettings({
             <FolderGit2 size={15} />
             <code>{project.repoPath}</code>
           </div>
+          <div className="command-fields">
+            <div>
+              <label htmlFor="project-default-model">Default model</label>
+              <select
+                id="project-default-model"
+                value={defaultModel}
+                onChange={(event) => {
+                  setDefaultModel(event.target.value)
+                  setDefaultEffort('')
+                }}
+              >
+                <option value="">Configured runtime default</option>
+                {defaultModel && !selectedModel && (
+                  <option value={defaultModel}>
+                    {defaultModel} (refresh to verify)
+                  </option>
+                )}
+                {models?.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="project-default-effort">
+                Default reasoning effort
+              </label>
+              <select
+                id="project-default-effort"
+                value={defaultEffort}
+                disabled={!defaultModel}
+                onChange={(event) =>
+                  setDefaultEffort(event.target.value as Effort | '')
+                }
+              >
+                <option value="">Model default</option>
+                {defaultEffort &&
+                  !selectedModel?.efforts.includes(defaultEffort) && (
+                    <option value={defaultEffort}>
+                      {defaultEffort} (refresh to verify)
+                    </option>
+                  )}
+                {selectedModel?.efforts.map((effort) => (
+                  <option key={effort} value={effort}>
+                    {effort}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="form-helper">
+            New manager turns and agent runs inherit these settings unless a
+            chat, node, or agent profile overrides them. Saved defaults also
+            apply after restarting the app.
+          </p>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={checkingModels}
+            onClick={() => void refreshDiagnostics()}
+          >
+            <RefreshCw size={13} className={checkingModels ? 'spin' : ''} />
+            Refresh model options
+          </button>
           <label htmlFor="project-description">Project brief</label>
           <textarea
             id="project-description"

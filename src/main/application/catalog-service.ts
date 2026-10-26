@@ -19,6 +19,7 @@ import {
   type SkillDocument,
 } from '../../shared/catalog'
 import type { ModelOption, RunInput } from '../../shared/contracts'
+import { resolveModelSettings } from '../../shared/model-settings'
 import type { WorkspaceDatabase } from '../db/database'
 import {
   agentProfiles,
@@ -345,21 +346,20 @@ export class CatalogService {
           .get()
         if (existing) {
           this.nameAvailable(input.projectId, pack.name, existing.id)
-          return this.commit(
-            () =>
-              this.db
-                .update(catalogSkills)
-                .set({
-                  name: pack.name,
-                  description: pack.description,
-                  contentHash: hashBytes(pack.files.get('SKILL.md')!.bytes),
-                  removedAt: null,
-                  revision: existing.revision + 1,
-                  updatedAt: new Date().toISOString(),
-                })
-                .where(eq(catalogSkills.id, existing.id))
-                .returning()
-                .get()!,
+          return this.commit(() =>
+            this.db
+              .update(catalogSkills)
+              .set({
+                name: pack.name,
+                description: pack.description,
+                contentHash: hashBytes(pack.files.get('SKILL.md')!.bytes),
+                removedAt: null,
+                revision: existing.revision + 1,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(catalogSkills.id, existing.id))
+              .returning()
+              .get()!,
           )
         }
         this.nameAvailable(input.projectId, pack.name)
@@ -446,23 +446,22 @@ export class CatalogService {
       const path = join(folder, input.file)
       await atomicSkillWrite(path, bytes, previous?.mode)
       try {
-        return this.commit(
-          () =>
-            this.db
-              .update(catalogSkills)
-              .set({
-                ...metadata,
-                contentHash: hashBytes(
-                  input.file === 'SKILL.md'
-                    ? input.content
-                    : pack.files.get('SKILL.md')!.bytes,
-                ),
-                revision: skill.revision + 1,
-                updatedAt: new Date().toISOString(),
-              })
-              .where(eq(catalogSkills.id, skill.id))
-              .returning()
-              .get()!,
+        return this.commit(() =>
+          this.db
+            .update(catalogSkills)
+            .set({
+              ...metadata,
+              contentHash: hashBytes(
+                input.file === 'SKILL.md'
+                  ? input.content
+                  : pack.files.get('SKILL.md')!.bytes,
+              ),
+              revision: skill.revision + 1,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(catalogSkills.id, skill.id))
+            .returning()
+            .get()!,
         )
       } catch (error) {
         if (previous)
@@ -491,18 +490,17 @@ export class CatalogService {
             'Edit or remove that profile before removing the skill from the active catalog.',
           )
       } else await readSkillPack(await this.folder(skill))
-      return this.commit(
-        () =>
-          this.db
-            .update(catalogSkills)
-            .set({
-              removedAt: input.active ? null : new Date().toISOString(),
-              revision: skill.revision + 1,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(eq(catalogSkills.id, skill.id))
-            .returning()
-            .get()!,
+      return this.commit(() =>
+        this.db
+          .update(catalogSkills)
+          .set({
+            removedAt: input.active ? null : new Date().toISOString(),
+            revision: skill.revision + 1,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(catalogSkills.id, skill.id))
+          .returning()
+          .get()!,
       )
     })
   }
@@ -575,18 +573,17 @@ export class CatalogService {
       this.revision(profile.revision, expectedRevision)
       this.checkProfileSkills(projectId, fields.skillIds)
       this.checkModel(fields.model, fields.effort)
-      return this.commit(
-        () =>
-          this.db
-            .update(agentProfiles)
-            .set({
-              ...fields,
-              revision: profile.revision + 1,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(eq(agentProfiles.id, id))
-            .returning()
-            .get()!,
+      return this.commit(() =>
+        this.db
+          .update(agentProfiles)
+          .set({
+            ...fields,
+            revision: profile.revision + 1,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(agentProfiles.id, id))
+          .returning()
+          .get()!,
       )
     })
   }
@@ -597,18 +594,17 @@ export class CatalogService {
       this.revision(profile.revision, input.expectedRevision)
       if (input.active)
         this.checkProfileSkills(profile.projectId, profile.skillIds)
-      return this.commit(
-        () =>
-          this.db
-            .update(agentProfiles)
-            .set({
-              removedAt: input.active ? null : new Date().toISOString(),
-              revision: profile.revision + 1,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(eq(agentProfiles.id, profile.id))
-            .returning()
-            .get()!,
+      return this.commit(() =>
+        this.db
+          .update(agentProfiles)
+          .set({
+            removedAt: input.active ? null : new Date().toISOString(),
+            revision: profile.revision + 1,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(agentProfiles.id, profile.id))
+          .returning()
+          .get()!,
       )
     })
   }
@@ -655,16 +651,10 @@ export class CatalogService {
           instructions: project.instructions,
           devCommand: project.devCommand,
           testCommand: project.testCommand,
+          defaultModel: project.defaultModel,
+          defaultEffort: project.defaultEffort,
         },
-        model:
-          (input.model !== undefined ? input.model : profile?.model) ??
-          undefined,
-        effort:
-          (input.effort !== undefined
-            ? input.effort
-            : input.model === undefined || input.model === profile?.model
-              ? profile?.effort
-              : undefined) ?? undefined,
+        ...resolveModelSettings(input, profile, project ?? undefined),
       }
       let bytes = 0
       for (const id of ids) {

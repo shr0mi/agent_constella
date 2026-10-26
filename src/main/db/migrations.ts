@@ -152,4 +152,54 @@ export const migrations = [
     CREATE INDEX workflow_decisions_task ON workflow_decisions(task_id);
   `,
   },
+  {
+    version: 6,
+    name: 'manager_chats_and_change_history',
+    sql: `
+    CREATE TABLE manager_chats (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE UNIQUE INDEX manager_chat_scope ON manager_chats(project_id, COALESCE(task_id, ''));
+    CREATE TABLE change_history (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    CREATE INDEX change_history_scope ON change_history(project_id, task_id);
+    CREATE TABLE manager_commands (
+      id TEXT PRIMARY KEY NOT NULL,
+      input_hash TEXT NOT NULL,
+      result TEXT NOT NULL CHECK(json_valid(result))
+    );
+    `,
+  },
+  {
+    version: 7,
+    name: 'project_model_defaults',
+    sql: `
+    ALTER TABLE projects ADD COLUMN default_model TEXT;
+    ALTER TABLE projects ADD COLUMN default_effort TEXT CHECK(default_effort IS NULL OR default_effort IN ('minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'persistent'));
+    `,
+  },
+  {
+    version: 8,
+    name: 'project_settings_change_history',
+    sql: `
+    ALTER TABLE change_history RENAME TO change_history_previous;
+    CREATE TABLE change_history (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    INSERT INTO change_history (id, project_id, task_id, document)
+      SELECT id, project_id, task_id, document FROM change_history_previous ORDER BY rowid;
+    DROP TABLE change_history_previous;
+    CREATE INDEX change_history_scope ON change_history(project_id, task_id);
+    `,
+  },
 ] as const

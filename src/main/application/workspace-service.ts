@@ -19,6 +19,8 @@ import type { WorkspaceDatabase } from '../db/database'
 import { projects, tasks, workspaceMeta, workflows } from '../db/schema'
 import { summarizeWorkflow } from '../../shared/workflow'
 import { ApplicationError } from './errors'
+import { recordChange } from './change-log'
+import type { ModelOption } from '../../shared/contracts'
 import {
   createProjectFolder,
   openProjectFolder,
@@ -29,7 +31,10 @@ import {
 // by IPC today and by project-scoped MCP tools later.
 export class WorkspaceService {
   private listeners = new Set<(snapshot: WorkspaceSnapshot) => void>()
-  constructor(private readonly database: WorkspaceDatabase) {}
+  constructor(
+    private readonly database: WorkspaceDatabase,
+    private readonly models: () => ModelOption[] = () => [],
+  ) {}
   private get db() {
     return this.database.db
   }
@@ -78,6 +83,10 @@ export class WorkspaceService {
     return () => this.listeners.delete(listener)
   }
   notify(): void {
+    if (this.database.sqlite.inTransaction) {
+      queueMicrotask(() => this.notify())
+      return
+    }
     const snapshot = this.getSnapshot()
     for (const listener of this.listeners) {
       try {
@@ -111,7 +120,37 @@ export class WorkspaceService {
   private commit<T>(action: () => T): T {
     const result = this.database.sqlite
       .transaction(() => {
+        const before = new Map(
+          this.db
+            .select()
+            .from(tasks)
+            .all()
+            .map((task) => [task.id, task]),
+        )
         const result = action()
+        for (const task of this.db.select().from(tasks).all()) {
+          const previous = before.get(task.id)
+          if (previous?.revision === task.revision) continue
+          const action = !previous
+            ? 'Create task'
+            : task.archivedAt !== previous.archivedAt
+              ? task.archivedAt
+                ? 'Archive task'
+                : 'Restore task'
+              : task.position !== previous.position ||
+                  task.status !== previous.status
+                ? 'Move task'
+                : 'Edit task'
+          recordChange(this.database, {
+            projectId: task.projectId,
+            taskId: task.id,
+            kind: 'task',
+            action,
+            before: previous ?? null,
+            after: task,
+            revision: task.revision,
+          })
+        }
         this.db
           .update(workspaceMeta)
           .set({ revision: sql`${workspaceMeta.revision} + 1` })
@@ -120,14 +159,7 @@ export class WorkspaceService {
         return result
       })
       .immediate()
-    const snapshot = this.getSnapshot()
-    this.listeners.forEach((listener) => {
-      try {
-        listener(snapshot)
-      } catch (error) {
-        console.error('Workspace change listener failed after commit:', error)
-      }
-    })
+    this.notify()
     return result
   }
 
@@ -262,8 +294,37 @@ export class WorkspaceService {
     const { projectId, expectedRevision, ...fields } =
       updateProjectSchema.parse(raw)
     return this.commit(() => {
-      this.checkRevision(this.project(projectId), expectedRevision)
-      return this.db
+      const current = this.project(projectId)
+      this.checkRevision(current, expectedRevision)
+      const model =
+        fields.defaultModel !== undefined
+          ? fields.defaultModel
+          : current.defaultModel
+      const effort =
+        fields.defaultEffort !== undefined
+          ? fields.defaultEffort
+          : current.defaultEffort
+      if (!model && effort)
+        throw new ApplicationError(
+          'MODEL_OPTIONS',
+          'Choose a default model before setting reasoning effort.',
+          'Select a model or use its default effort.',
+        )
+      const models = this.models()
+      if (
+        model &&
+        models.length &&
+        !models.some(
+          (option) =>
+            option.id === model && (!effort || option.efforts.includes(effort)),
+        )
+      )
+        throw new ApplicationError(
+          'MODEL_OPTIONS',
+          'This default model/effort pair is not supported by the current runtime.',
+          'Refresh model options and choose a supported combination.',
+        )
+      const updated = this.db
         .update(projects)
         .set({
           ...fields,
@@ -273,6 +334,16 @@ export class WorkspaceService {
         .where(eq(projects.id, projectId))
         .returning()
         .get()!
+      recordChange(this.database, {
+        projectId,
+        taskId: null,
+        kind: 'project',
+        action: 'Edit project settings',
+        before: current,
+        after: updated,
+        revision: updated.revision,
+      })
+      return updated
     })
   }
 

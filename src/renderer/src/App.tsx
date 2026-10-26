@@ -38,6 +38,7 @@ import {
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
 import { ProjectBoardPage, ProjectsPage } from './Projects'
 import { useWorkspaceStore } from './workspace-store'
+import { resolveModelSettings } from '../../shared/model-settings'
 import { CatalogPage } from './Catalogs'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
@@ -289,7 +290,7 @@ function Playground() {
   const { checking, setError } = useAppStore()
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('')
-  const [effort, setEffort] = useState<Effort | ''>('')
+  const [effort, setEffort] = useState<Effort | '' | '__default__'>('')
   const [sandbox, setSandbox] = useState<'workspace-write' | 'read-only'>(
     'workspace-write',
   )
@@ -312,7 +313,15 @@ function Playground() {
   const last = runs.at(-1)
   const active = last?.status === 'running' || last?.status === 'stopping'
   const models = state?.diagnostics?.models ?? []
-  const selectedModel = models.find((option) => option.id === model)
+  const project = projects?.find((project) => project.id === session?.projectId)
+  const modelOverride = model === '__configured__' ? null : model || undefined
+  const effortOverride = effort === '__default__' ? null : effort || undefined
+  const effective = resolveModelSettings(
+    { model: modelOverride, effort: effortOverride },
+    profile,
+    project,
+  )
+  const selectedModel = models.find((option) => option.id === effective.model)
   useEffect(() => {
     setProfileId('')
     setAdditionalSkills([])
@@ -350,8 +359,8 @@ function Playground() {
       await unwrap(
         window.constella!.run({
           prompt: message,
-          model: model || null,
-          effort: effort || null,
+          model: modelOverride,
+          effort: effortOverride,
           profileId: profileId || undefined,
           sandbox,
           skillIds: [
@@ -760,8 +769,17 @@ function Playground() {
                     setEffort('')
                   }}
                 >
-                  <option value="">Configured default</option>
-                  {model && !selectedModel && (
+                  <option value="">
+                    Agent/project default (
+                    {profile?.model ??
+                      project?.defaultModel ??
+                      'configured runtime'}
+                    )
+                  </option>
+                  <option value="__configured__">
+                    Configured runtime default
+                  </option>
+                  {model && model !== '__configured__' && !selectedModel && (
                     <option value={model}>{model} (unavailable)</option>
                   )}
                   {models.map((option) => (
@@ -781,10 +799,11 @@ function Playground() {
                   value={effort}
                   disabled={!selectedModel}
                   onChange={(event) =>
-                    setEffort(event.target.value as Effort | '')
+                    setEffort(event.target.value as Effort | '' | '__default__')
                   }
                 >
-                  <option value="">Model default</option>
+                  <option value="">Inherit agent/project effort</option>
+                  <option value="__default__">Model default</option>
                   {selectedModel?.efforts.map((option) => (
                     <option key={option} value={option}>
                       {option}

@@ -14,7 +14,6 @@ import {
   type Result,
 } from '../shared/contracts'
 import { catalogContextSchema } from '../shared/catalog'
-import { taskIdentitySchema } from '../shared/workspace'
 import { channels } from '../shared/ipc'
 import { applicationFailure } from './application/errors'
 import { WorkspaceService } from './application/workspace-service'
@@ -22,6 +21,10 @@ import { CatalogService } from './application/catalog-service'
 import { GraphService } from './application/graph-service'
 import { NodeExecutionService } from './application/node-execution-service'
 import { WorkflowService } from './application/workflow-service'
+import { ManagerTools } from './application/manager-tools'
+import { ManagerService } from './application/manager-service'
+import { LocalMcpServer } from './mcp/server'
+import { Codex } from '@openai/codex-sdk'
 import { graphIdentitySchema } from '../shared/graph'
 import { openWorkspaceDatabase, type WorkspaceDatabase } from './db/database'
 import { ConnectivityService } from './codex/service'
@@ -32,6 +35,8 @@ let window: BrowserWindow | null = null
 let service: ConnectivityService | undefined
 let execution: NodeExecutionService | undefined
 let workflow: WorkflowService | undefined
+let managers: ManagerService | undefined
+let mcp: LocalMcpServer | undefined
 let database: WorkspaceDatabase | undefined
 let closing = false
 
@@ -104,7 +109,10 @@ else {
       database = openWorkspaceDatabase(
         join(app.getPath('userData'), 'workspace.sqlite'),
       )
-      const workspace = new WorkspaceService(database)
+      const workspace = new WorkspaceService(
+        database,
+        () => service?.snapshot().diagnostics?.models ?? [],
+      )
       const catalog = new CatalogService(
         database,
         app.getPath('userData'),
@@ -137,6 +145,38 @@ else {
         workspace,
       )
       await workflow.initialize()
+      const managerTools = new ManagerTools(
+        database,
+        workspace,
+        graphs,
+        catalog,
+        workflow,
+        () => service?.snapshot().diagnostics?.models ?? [],
+      )
+      mcp = new LocalMcpServer(managerTools)
+      await mcp.start()
+      managers = new ManagerService(database, managerTools, mcp)
+      managers.initialize()
+      execution.setMcpConnection((identity) => {
+        const connection = mcp!.issue(identity, 'worker')
+        return {
+          client: new Codex(connection.options),
+          release: connection.release,
+        }
+      })
+      handle(channels.managerGet, (input) => managers!.get(input))
+      handle(channels.managerSend, (input) => managers!.send(input))
+      handle(channels.managerStop, (input) => managers!.stop(input))
+      handle(channels.managerHistory, (input) => managerTools.history(input))
+      handle(channels.managerUndo, async (input) => {
+        await managerTools.undo(input)
+        // Refresh history after its Undo marker is committed.
+        workspace.notify()
+      })
+      managers.subscribe((scope) => {
+        if (window && !window.isDestroyed())
+          window.webContents.send(channels.managerChanged, scope)
+      })
       handle(channels.workflowGet, (input) => workflow!.get(input))
       handle(channels.workflowStart, (input) => workflow!.start(input))
       handle(channels.workflowPause, (input) => workflow!.pause(input))
@@ -239,18 +279,9 @@ else {
       handle(channels.createTask, (input) => workspace.createTask(input))
       handle(channels.updateTask, (input) => workspace.updateTask(input))
       handle(channels.moveTask, (input) => workspace.moveTask(input))
-      handle(channels.archiveTask, async (input) => {
-        // Validate scope/revision before stopping anything, then let the shared
-        // workspace service revalidate the final mutation after cancellation.
-        const command = taskIdentitySchema.parse(input)
-        const task = workspace
-          .getBoard({ projectId: command.projectId })
-          .tasks.find((task) => task.id === command.taskId)
-        if (!task || task.revision !== command.expectedRevision)
-          return workspace.archiveTask(input)
-        await workflow!.archive(command)
-        return workspace.archiveTask(input)
-      })
+      handle(channels.archiveTask, (input) =>
+        managerTools.archiveDesktop(input),
+      )
       handle(channels.restoreTask, (input) => workspace.restoreTask(input))
       workspace.subscribe((snapshot) => {
         if (window && !window.isDestroyed())
@@ -315,11 +346,14 @@ else {
     void Promise.race([
       Promise.all([
         service.shutdown(),
+        managers?.shutdown(),
         workflow?.shutdown() ?? execution?.shutdown(),
       ]),
       deadline,
     ])
       .catch(() => {})
-      .finally(() => app.quit())
+      .finally(() => {
+        void mcp?.shutdown().finally(() => app.quit())
+      })
   })
 }

@@ -49,6 +49,7 @@ import {
 } from '../../shared/graph-validation'
 import type { AgentProfile, CatalogSnapshot } from '../../shared/catalog'
 import type { Effort, ModelOption } from '../../shared/contracts'
+import type { ProjectModelDefaults } from '../../shared/model-settings'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
@@ -57,6 +58,7 @@ import { executionAction, useExecutionSnapshot } from './execution-store'
 import { readGraphView, writeGraphView } from './graph-view'
 import { NodeWorkspace, nodeStatus } from './NodeWorkspace'
 import { ReviewPanel, WorkflowControls } from './WorkflowControls'
+import { ManagerChat } from './ManagerChat'
 import {
   workflowStatusLabel,
   type WorkflowNodeStatus,
@@ -182,6 +184,9 @@ function GraphEditor({
   const task = useWorkspaceStore((state) =>
     state.snapshot?.tasks.find((task) => task.id === taskId),
   )
+  const project = useWorkspaceStore((state) =>
+    state.snapshot?.projects.find((project) => project.id === projectId),
+  )
   const flow = useReactFlow<CanvasNode>()
   const dirty =
     !!draft && JSON.stringify(draft) !== JSON.stringify(saved?.document)
@@ -234,7 +239,7 @@ function GraphEditor({
   }, [refresh, projectId, taskId])
   useEffect(() => {
     if (catalog) void refresh()
-  }, [catalog?.revision, task?.revision, models, refresh])
+  }, [catalog?.revision, task?.revision, project?.revision, models, refresh])
   useEffect(() => {
     const prevent = (event: BeforeUnloadEvent) => {
       if (refs.current.dirty) event.preventDefault()
@@ -265,12 +270,21 @@ function GraphEditor({
     () =>
       draft && catalog
         ? validateGraph(draft, {
+            project: project ?? saved?.project,
             catalog,
             models: models ?? [],
             archived: !!(task?.archivedAt ?? saved?.task.archivedAt),
           })
         : undefined,
-    [draft, catalog, models, saved?.task.archivedAt, task?.archivedAt],
+    [
+      draft,
+      catalog,
+      models,
+      saved?.task.archivedAt,
+      task?.archivedAt,
+      project,
+      saved?.project,
+    ],
   )
   const editable =
     !busy &&
@@ -578,6 +592,20 @@ function GraphEditor({
           </p>
         </div>
         <div className="graph-actions">
+          <ManagerChat
+            projectId={projectId}
+            taskId={taskId}
+            selectedNodeId={
+              saved.document.nodes.some((node) => node.id === selectedNode)
+                ? selectedNode
+                : undefined
+            }
+            blockedReason={
+              dirty
+                ? 'Save your graph draft or discard it before asking the manager to edit.'
+                : undefined
+            }
+          />
           <button
             className="button secondary"
             disabled={busy}
@@ -860,6 +888,7 @@ function GraphEditor({
               node={node}
               catalog={catalog}
               models={models ?? []}
+              project={project ?? saved.project}
               disabled={!editable}
               onChange={updateNode}
               onRemove={() => removeNode(node.id)}
@@ -984,6 +1013,7 @@ function NodeSettings({
   node,
   catalog,
   models,
+  project,
   disabled,
   onChange,
   onRemove,
@@ -991,6 +1021,7 @@ function NodeSettings({
   node: WorkflowNode
   catalog: CatalogSnapshot
   models: ModelOption[]
+  project: ProjectModelDefaults
   disabled: boolean
   onChange: (node: WorkflowNode) => void
   onRemove: () => void
@@ -1041,8 +1072,8 @@ function NodeSettings({
             {!node.data.profileId && (
               <p className="helper">
                 Default Codex adds no custom role or profile skills. It uses
-                your task and project context, with model and effort defaults
-                unless overridden below.
+                your task and project context, including the project's model and
+                effort defaults unless overridden below.
               </p>
             )}
             <Link
@@ -1093,6 +1124,7 @@ function NodeSettings({
               node={node}
               profile={profile}
               models={models}
+              project={project}
               onChange={onChange}
             />
             <label htmlFor="graph-node-acceptance">Acceptance</label>
@@ -1194,14 +1226,16 @@ function NodeModelFields({
   node,
   profile,
   models,
+  project,
   onChange,
 }: {
   node: Extract<WorkflowNode, { type: 'agent' }>
   profile?: AgentProfile
   models: ModelOption[]
+  project: ProjectModelDefaults
   onChange: (node: WorkflowNode) => void
 }) {
-  const effective = resolveNodeModel(node, profile)
+  const effective = resolveNodeModel(node, profile, project)
   const option = models.find((model) => model.id === effective.model)
   const modelValue =
     node.data.model === undefined
@@ -1234,7 +1268,8 @@ function NodeModelFields({
         }
       >
         <option value="__inherit__">
-          Use agent default ({profile?.model ?? 'configured default'})
+          Inherit agent/project default (
+          {profile?.model ?? project.defaultModel ?? 'configured runtime'})
         </option>
         <option value="__default__">Configured default</option>
         {node.data.model &&
@@ -1269,7 +1304,7 @@ function NodeModelFields({
         }
       >
         <option value="__inherit__">
-          Use agent default when model matches
+          Inherit agent/project effort when model matches
         </option>
         <option value="__default__">Model default</option>
         {node.data.effort && !option?.efforts.includes(node.data.effort) && (

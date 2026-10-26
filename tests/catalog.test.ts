@@ -75,6 +75,71 @@ const identity = (item: CatalogSkill | AgentProfile) => ({
 })
 
 describe('scope-aware skill and agent catalogs', () => {
+  it('uses saved project defaults for new runs while preserving profile and explicit overrides', async () => {
+    const f = await fixture()
+    const fields = {
+      name: f.a.name,
+      description: '',
+      instructions: '',
+      devCommand: '',
+      testCommand: '',
+    }
+    const project = f.workspace.updateProject({
+      ...fields,
+      projectId: f.a.id,
+      expectedRevision: f.a.revision,
+      defaultModel: 'project-model',
+      defaultEffort: 'high',
+    })
+    const input = {
+      prompt: 'Run',
+      sandbox: 'workspace-write' as const,
+      skillIds: [],
+    }
+    const run = (override = {}) =>
+      f.catalog.resolveRun(
+        { ...input, ...override },
+        f.root,
+        randomUUID(),
+        f.a.id,
+      )
+    expect(await run()).toMatchObject({
+      model: 'project-model',
+      effort: 'high',
+      projectSnapshot: { defaultModel: 'project-model', defaultEffort: 'high' },
+    })
+    const profile = await f.catalog.createProfile({
+      ...profileInput(f.a.id),
+      model: 'profile-model',
+      effort: 'low',
+    })
+    expect(await run({ profileId: profile.id })).toMatchObject({
+      model: 'profile-model',
+      effort: 'low',
+    })
+    expect(
+      await run({ profileId: profile.id, model: 'override-model' }),
+    ).toMatchObject({ model: 'override-model', effort: undefined })
+    expect(await run({ model: null, effort: null })).toMatchObject({
+      model: undefined,
+      effort: undefined,
+    })
+    expect(await run({ effort: null })).toMatchObject({
+      model: 'project-model',
+      effort: undefined,
+    })
+    f.workspace.updateProject({
+      ...fields,
+      projectId: f.a.id,
+      expectedRevision: project.revision,
+      defaultModel: 'next-model',
+      defaultEffort: 'medium',
+    })
+    expect(await run()).toMatchObject({ model: 'next-model', effort: 'medium' })
+    expect(
+      await f.catalog.resolveRun(input, f.root, randomUUID(), f.b.id),
+    ).toMatchObject({ model: undefined, effort: undefined })
+  })
   it('can edit an imported UTF-8 BOM document without reporting a false external-change conflict', async () => {
     const { catalog, root } = await fixture()
     const source = join(root, 'bom-skill')
@@ -587,6 +652,6 @@ describe('scope-aware skill and agent catalogs', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 5 })
+    ).toEqual({ n: migrations.length })
   })
 })

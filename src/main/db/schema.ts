@@ -2,6 +2,7 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import type { GraphDocument } from '../../shared/graph'
 import type { NodeRun, TaskWorktree } from '../../shared/execution'
 import type { WorkflowRecord, WorkflowDecision } from '../../shared/workflow'
+import type { Effort } from '../../shared/contracts'
 
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -11,6 +12,8 @@ export const projects = sqliteTable('projects', {
   instructions: text('instructions').notNull().default(''),
   devCommand: text('dev_command').notNull().default(''),
   testCommand: text('test_command').notNull().default(''),
+  defaultModel: text('default_model'),
+  defaultEffort: text('default_effort').$type<Effort>(),
   revision: integer('revision').notNull().default(1),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),

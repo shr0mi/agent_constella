@@ -141,6 +141,8 @@ export class WorkflowService {
                     instructions: graph.project.instructions,
                     devCommand: graph.project.devCommand,
                     testCommand: graph.project.testCommand,
+                    defaultModel: graph.project.defaultModel,
+                    defaultEffort: graph.project.defaultEffort,
                   },
                   task: {
                     title: graph.task.title,

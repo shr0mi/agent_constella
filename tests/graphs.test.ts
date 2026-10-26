@@ -115,6 +115,38 @@ async function fixture() {
 }
 
 describe('persistent task graph application service', () => {
+  it('validates inherited project model/effort and keeps explicit node settings authoritative', async () => {
+    const f = await fixture()
+    const project = f.workspace.updateProject({
+      projectId: f.a.id,
+      expectedRevision: f.a.revision,
+      name: f.a.name,
+      description: '',
+      instructions: '',
+      devCommand: '',
+      testCommand: '',
+      defaultModel: 'fixture-model',
+      defaultEffort: 'high',
+    })
+    const node = agent(f.snapshot.document)
+    expect(resolveNodeModel(node, undefined, project)).toEqual({
+      model: 'fixture-model',
+      effort: 'high',
+    })
+    expect(f.graphs.get(identity(f.snapshot)).validation.valid).toBe(true)
+    f.setModels([{ ...models[0], efforts: ['low'] }])
+    expect(
+      f.graphs
+        .get(identity(f.snapshot))
+        .validation.issues.some((issue) => issue.code === 'MODEL_ASSIGNMENT'),
+    ).toBe(true)
+    node.data.model = null
+    expect(resolveNodeModel(node, undefined, project)).toEqual({
+      model: undefined,
+      effort: undefined,
+    })
+    expect(f.graphs.save(saveInput(f.snapshot)).validation.valid).toBe(true)
+  })
   it('creates one graph per task, stores settings, edges and positions, and reopens the same revision', async () => {
     const f = await fixture()
     expect(f.snapshot.document.nodes.map((node) => node.type)).toEqual([
@@ -505,7 +537,7 @@ describe('persistent task graph application service', () => {
       database.sqlite
         .prepare('SELECT COUNT(*) AS n FROM app_schema_migrations')
         .get(),
-    ).toEqual({ n: 5 })
+    ).toEqual({ n: migrations.length })
   })
 })
 

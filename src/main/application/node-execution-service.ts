@@ -41,6 +41,15 @@ interface ExecutionHooks {
 const clip = (text: string, limit = 24_000) =>
   text.length > limit ? `${text.slice(0, limit)}\n[truncated in app]` : text
 export class NodeExecutionService {
+  private mcpConnection?: (identity: GraphIdentity & { taskId: string }) => {
+    client: CodexClient
+    release: () => void
+  }
+  setMcpConnection(
+    connect: NonNullable<NodeExecutionService['mcpConnection']>,
+  ) {
+    this.mcpConnection = connect
+  }
   private active = new Map<string, Active>()
   private listeners = new Set<(identity: GraphIdentity) => void>()
   private volatile = new Map<string, NodeRun>()
@@ -510,6 +519,7 @@ export class NodeExecutionService {
     const { run, controller } = active,
       signal = controller.signal
     let streamCompleted = false
+    let releaseMcp: (() => void) | undefined
     try {
       await this.graphs.prepareStart({
         projectId: run.projectId,
@@ -575,9 +585,15 @@ export class NodeExecutionService {
         model: run.options.model ?? undefined,
         modelReasoningEffort: run.options.effort ?? undefined,
       }
+      const connection = this.mcpConnection?.({
+        projectId: run.projectId,
+        taskId: run.taskId,
+      })
+      releaseMcp = connection?.release
+      const client = connection?.client ?? this.client
       const thread = run.threadId
-        ? this.client.resumeThread(run.threadId, options)
-        : this.client.startThread(options)
+        ? client.resumeThread(run.threadId, options)
+        : client.startThread(options)
       const { events } = await thread.runStreamed(run.resolvedPrompt, {
         signal,
       })
@@ -631,6 +647,7 @@ export class NodeExecutionService {
             'Inspect this attempt and diagnostics. Retry or continue the saved node conversation; New conversation explicitly starts a fresh thread while retaining code and history.'
       }
     } finally {
+      releaseMcp?.()
       if (run.before && run.worktree) {
         try {
           run.changes = await this.worktrees.changes(run.worktree, run.before)

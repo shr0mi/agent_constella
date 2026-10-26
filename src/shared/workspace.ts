@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Result } from './contracts'
+import { effortSchema, type Effort, type Result } from './contracts'
 import type { WorkflowSummary } from './workflow'
 
 export const taskStatusSchema = z.enum(['todo', 'doing', 'done'])
@@ -15,6 +15,8 @@ export const projectFieldsSchema = z
     instructions: z.string().max(40_000),
     devCommand: z.string().trim().max(2000),
     testCommand: z.string().trim().max(2000),
+    defaultModel: z.string().trim().min(1).max(160).nullable().optional(),
+    defaultEffort: effortSchema.nullable().optional(),
   })
   .strict()
 export const updateProjectSchema = projectFieldsSchema.extend({
@@ -60,6 +62,8 @@ export interface Project {
   instructions: string
   devCommand: string
   testCommand: string
+  defaultModel: string | null
+  defaultEffort: Effort | null
   revision: number
   createdAt: string
   updatedAt: string

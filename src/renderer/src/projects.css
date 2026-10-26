@@ -704,6 +704,7 @@
   color: #80608e;
 }
 .workspace-form input,
+.workspace-form select,
 .workspace-form textarea {
   width: 100%;
   background: #241b2c;
@@ -720,6 +721,7 @@
   min-height: 70px;
 }
 .workspace-form input:focus,
+.workspace-form select:focus,
 .workspace-form textarea:focus {
   border-color: #a67bc2;
   box-shadow: 0 0 0 2px #b583db10;

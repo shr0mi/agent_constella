@@ -21,6 +21,7 @@
     "probe:codex": "node --import tsx scripts/probe-codex.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@openai/codex-sdk": "0.164.0",
     "@xyflow/react": "12.12.0",
     "better-sqlite3": "13.0.3",

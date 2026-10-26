@@ -1,5 +1,9 @@
 import type { AgentProfile, CatalogSnapshot } from './catalog'
 import type { ModelOption } from './contracts'
+import {
+  resolveModelSettings,
+  type ProjectModelDefaults,
+} from './model-settings'
 import type {
   GraphDocument,
   GraphIssue,
@@ -120,17 +124,9 @@ export function validateTopology(document: GraphDocument): GraphValidation {
 export function resolveNodeModel(
   node: Extract<WorkflowNode, { type: 'agent' }>,
   profile?: AgentProfile,
+  project?: ProjectModelDefaults,
 ) {
-  const model =
-    (node.data.model !== undefined ? node.data.model : profile?.model) ??
-    undefined
-  const effort =
-    (node.data.effort !== undefined
-      ? node.data.effort
-      : node.data.model === undefined || node.data.model === profile?.model
-        ? profile?.effort
-        : undefined) ?? undefined
-  return { model, effort }
+  return resolveModelSettings(node.data, profile, project)
 }
 
 export function validateGraph(
@@ -138,6 +134,7 @@ export function validateGraph(
   context: {
     catalog: CatalogSnapshot
     models: ModelOption[]
+    project?: ProjectModelDefaults
     archived?: boolean
   },
 ): GraphValidation {
@@ -200,7 +197,7 @@ export function validateGraph(
     }
     if (new Set(node.data.skillIds).size !== node.data.skillIds.length)
       issue('SKILL_DUPLICATE', 'Select each additional skill once.')
-    const { model, effort } = resolveNodeModel(node, profile)
+    const { model, effort } = resolveNodeModel(node, profile, context.project)
     if (!model && effort)
       issue(
         'MODEL_EFFORT',

@@ -149,6 +149,8 @@ export interface ProjectRunSnapshot {
   instructions: string
   devCommand: string
   testCommand: string
+  defaultModel?: string | null
+  defaultEffort?: Effort | null
 }
 export interface PreparedCatalogRun {
   skillSnapshots: SkillSnapshot[]

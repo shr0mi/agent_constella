@@ -50,6 +50,7 @@ it('loads the built preload with only the modules available in Electron’s sand
     'execution',
     'getState',
     'graphs',
+    'manager',
     'newSession',
     'onState',
     'run',

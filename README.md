@@ -1,6 +1,6 @@
 # AgentConstella
 
-A local desktop workspace for human + Codex workflows. The app includes repository projects, persistent Kanban boards, global/project catalogs, task graphs, real Codex conversations in task worktrees, serial dependency scheduling, human reviews, explicit branch integration, and a connectivity lab. MCP tools and manager chats remain in milestone 7.
+A local desktop workspace for human + Codex workflows. The app includes repository projects, persistent Kanban boards, global/project catalogs, task graphs, real Codex conversations in task worktrees, serial dependency scheduling, human reviews, explicit branch integration, project/task manager chats through local MCP tools, and a connectivity lab.
 
 ## Run
 
@@ -36,7 +36,7 @@ npm start
 ## Projects and Kanban
 
 1. Open **Projects**, then **Create project** to choose the name and location for a new folder. The app creates the folder, initializes Git on `main`, and opens its board. Use **Open folder** for an existing directory; the app reuses its repository or initializes Git if needed. Existing files are retained. Subfolders of a repository resolve to its root, and reopening the same path selects the existing project.
-2. Open **Project settings** to save the name, project brief, instructions, and development/test commands. The saved test command runs locally in the task worktree after successful node turns. The development command remains context only.
+2. Open **Project settings** to view the repository directory and save the name, project brief, instructions, development/test commands, and default model/reasoning effort. Manager chats and agent runs inherit the saved defaults, including after restart; explicit chat/node settings and profile model settings take precedence. Changing models resets the effort selector to that model's default. The saved test command runs locally in the task worktree after successful node turns. The development command remains context only.
 3. Create tasks with a title, description, and acceptance criteria. Click a card to edit it.
 4. Move unstarted tasks between **To Do**, **Doing**, and **Done** with their status selector or drag and drop. Once a workflow starts, its execution controls its column. Drag onto another card to place it before that card; the arrow controls also reorder tasks within their column.
 5. Archive tasks from a card or its editor. **Undo** restores the most recently archived task; **Archive** lists every archived task in the current project and lets you restore it to its former column.
@@ -96,6 +96,22 @@ Git 2.38+ is required for integration previews. Preview again if the target bran
 
 Quit Electron completely and restart `npm run dev` after upgrading so the workflow preload methods and migration 5 load. The manual milestone-6 checkpoint is left for the user.
 
+## Manager chats and Undo
+
+1. On a project board, open **Project manager** to plan or edit tasks. Each task graph has its own **Task manager**. These conversations and their Codex thread IDs persist independently of worker-node chats.
+2. Ask for a task and workflow, or ask to change an existing task, add/remove nodes and connections, edit prompts and acceptance criteria, or assign existing agent profiles, skills, models, effort, and acceptance settings. The board's Project manager can also update the project brief, instructions, development/run command, test command, name, and model/effort defaults. For example: “Set the test command to npm run test:unit and add to the instructions that all new UI must support keyboard navigation.” Each turn includes the current project brief, repository guidance, task/node selection, revisions, catalogs, and recent execution summaries. The manager fetches full live graph state before editing.
+3. Explicitly requested reversible edits save through the same validated application services as the UI. Saved board/graph changes update immediately. Save or discard a local graph draft before using its manager; drafts are retained if another session changes the graph. Active node runs must settle before graph edits can save.
+4. Open **Changes & Undo** to inspect actual before/after values and undo an edit. History also includes project-settings and task/graph edits made through the UI. Undo rejects newer conflicting revisions. Archiving stops active task execution; restoring or undoing metadata does not resume execution, restore acceptance, or roll back code.
+5. Start workflows, accept results, approve human reviews, and integrate branches through their desktop controls. Manager tools cannot perform these actions.
+
+The app hosts an authenticated MCP listener on an ephemeral loopback port. Each app-launched manager turn gets a temporary credential restricted to its project (and its task for graph managers); worker turns receive read-only task context tools. Credentials are revoked when a turn finishes or stops. No manual MCP configuration is needed. Existing Codex authentication and inherited runtime configuration still apply. See [the manager implementation notes](docs/manager-chats.md) for the transport, tool contracts, and limitations. The real Codex checkpoint remains for the user to verify.
+
+Quit Electron fully and restart after upgrading to load the manager preload bridge and migration 6.
+
+Project model/effort defaults use migration 7 and are stored per project. Existing projects retain the configured runtime default until you choose and save a default model in Project settings.
+
+Project-settings changes use migration 8 for history and Undo. They are available to the board project manager; task managers and workers can read the project settings. Saving development/test commands does not execute them.
+
 ## Connectivity lab
 
 - Refresh Connection to inspect login status, the pinned SDK/CLI versions, and runtime model/effort options.
@@ -129,7 +145,8 @@ The default probe only inspects login and runtime model options. `--live` uses y
 ```text
 src/main/             Electron window, validated IPC, Codex service
 src/main/codex/       Runtime discovery, lifecycle, skill resolution, atomic storage
-src/main/application/ Shared workspace/catalog/graph/execution/scheduler and Git services
+src/main/application/ Shared workspace/catalog/graph/execution/manager and Git services
+src/main/mcp/         Scoped local MCP transport and per-turn credentials
 src/main/db/          Drizzle schema, versioned SQL migrations, SQLite connection
 src/preload/          Narrow typed context bridge
 src/shared/           IPC contracts and Zod inputs
@@ -139,7 +156,7 @@ tests/                Lifecycle, failure, restart, and boundary tests
 docs/                 Integration findings and limitations
 ```
 
-Only the main process accesses Codex, SQLite, the filesystem, and credentials. The renderer runs with context isolation and sandboxing. Projects, tasks, graphs, catalog metadata, profiles, node threads, attempts, workflows, and human decisions live in `workspace.sqlite` in Electron's user data directory (`~/Library/Application Support/AgentConstella/` on macOS). Global skills live under `skills/`, run resource archives under `run-skills/`, and task checkouts under `task-worktrees/`. Connectivity lab metadata remains under `connectivity/` and its scratch files use the OS temporary directory. Codex thread rollouts remain in the active Codex home's session store. The application MCP server is planned for milestone 7.
+Only the main process accesses Codex, SQLite, the filesystem, and credentials. The renderer runs with context isolation and sandboxing. Projects, tasks, graphs, catalog metadata, profiles, node threads, attempts, workflows, human decisions, manager conversations, command receipts, and metadata change history live in `workspace.sqlite` in Electron's user data directory (`~/Library/Application Support/AgentConstella/` on macOS). Global skills live under `skills/`, run resource archives under `run-skills/`, and task checkouts under `task-worktrees/`. Connectivity lab metadata remains under `connectivity/` and its scratch files use the OS temporary directory. Codex thread rollouts remain in the active Codex home's session store.
 
 `npm test` runs Vitest with Electron's Node runtime, so database tests load the same native SQLite module as the desktop app without switching binaries for the system Node version. This does not open the desktop UI.
 

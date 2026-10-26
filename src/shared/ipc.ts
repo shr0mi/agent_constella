@@ -1,5 +1,11 @@
 // Keep the preload's runtime imports free of validation and server dependencies.
 export const channels = {
+  managerGet: 'constella:manager:get',
+  managerSend: 'constella:manager:send',
+  managerStop: 'constella:manager:stop',
+  managerHistory: 'constella:manager:history',
+  managerUndo: 'constella:manager:undo',
+  managerChanged: 'constella:manager:changed',
   state: 'constella:state',
   diagnostics: 'constella:diagnostics',
   run: 'constella:run',

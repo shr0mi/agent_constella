@@ -3,6 +3,7 @@ import type { WorkspaceBridge } from './workspace'
 import type { GraphBridge } from './graph'
 import type { ExecutionBridge } from './execution'
 import type { WorkflowBridge } from './workflow'
+import type { ManagerBridge } from './manager'
 import type {
   AgentProfile,
   CatalogBridge,
@@ -118,6 +119,7 @@ export interface SkillOption {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: Failure }
 
 export interface ConstellaBridge {
+  manager: ManagerBridge
   workflow: WorkflowBridge
   execution: ExecutionBridge
   graphs: GraphBridge

@@ -9,6 +9,7 @@ import './catalogs.css'
 import './graphs.css'
 import './nodes.css'
 import './workflows.css'
+import './manager.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

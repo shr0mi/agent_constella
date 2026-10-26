@@ -3,9 +3,25 @@ import type { AppState, ConstellaBridge, RunInput } from '../shared/contracts'
 import { channels } from '../shared/ipc'
 import type { WorkspaceSnapshot } from '../shared/workspace'
 import type { GraphIdentity } from '../shared/graph'
+import type { ManagerScope } from '../shared/manager'
 
 // Expose named operations only. The renderer cannot access ipcRenderer, credentials, or Node.
 const bridge: ConstellaBridge = {
+  manager: {
+    get: (input) => ipcRenderer.invoke(channels.managerGet, input),
+    send: (input) => ipcRenderer.invoke(channels.managerSend, input),
+    stop: (input) => ipcRenderer.invoke(channels.managerStop, input),
+    history: (input) => ipcRenderer.invoke(channels.managerHistory, input),
+    undo: (input) => ipcRenderer.invoke(channels.managerUndo, input),
+    onChange(callback) {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        scope: ManagerScope,
+      ): void => callback(scope)
+      ipcRenderer.on(channels.managerChanged, listener)
+      return () => ipcRenderer.removeListener(channels.managerChanged, listener)
+    },
+  },
   workflow: {
     get: (input) => ipcRenderer.invoke(channels.workflowGet, input),
     start: (input) => ipcRenderer.invoke(channels.workflowStart, input),

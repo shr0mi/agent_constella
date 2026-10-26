@@ -23,6 +23,7 @@ import {
   workspaceMeta,
 } from '../db/schema'
 import { ApplicationError } from './errors'
+import { recordChange } from './change-log'
 import type { CatalogService } from './catalog-service'
 
 const digest = (value: unknown) =>
@@ -47,6 +48,19 @@ export class GraphService {
     return () => this.listeners.delete(listener)
   }
   private notify(identity: GraphIdentity) {
+    if (this.database.sqlite.inTransaction) {
+      queueMicrotask(() => {
+        if (
+          this.db
+            .select()
+            .from(taskGraphs)
+            .where(eq(taskGraphs.taskId, identity.taskId))
+            .get()
+        )
+          this.notify(identity)
+      })
+      return
+    }
     this.listeners.forEach((listener) => {
       try {
         listener(identity)
@@ -114,6 +128,7 @@ export class GraphService {
     const row = this.row(identity)
     const document = graphDocumentSchema.parse(row.document)
     const validation = validateGraph(document, {
+      project,
       catalog: this.catalog.getSnapshot({ projectId: identity.projectId }),
       models: this.models(),
       archived: !!task.archivedAt,
@@ -191,7 +206,7 @@ export class GraphService {
     let appliedRevision = 0
     this.database.sqlite
       .transaction(() => {
-        const { task } = this.scope(identity)
+        const { project, task } = this.scope(identity)
         if (task.archivedAt)
           throw new ApplicationError(
             'TASK_ARCHIVED',
@@ -226,6 +241,7 @@ export class GraphService {
             'Your local draft is retained. Reload the saved graph to review newer changes before saving again.',
           )
         const validation = validateGraph(input.document, {
+          project,
           catalog: this.catalog.getSnapshot({ projectId: input.projectId }),
           models: this.models(),
         })
@@ -240,6 +256,14 @@ export class GraphService {
           )
         const now = new Date().toISOString()
         appliedRevision = row.revision + 1
+        recordChange(this.database, {
+          ...identity,
+          kind: 'graph',
+          action: 'Edit graph',
+          before: row.document,
+          after: input.document,
+          revision: appliedRevision,
+        })
         this.db
           .update(taskGraphs)
           .set({
@@ -355,8 +379,9 @@ export class GraphService {
     }
   }
   validateDocument(identity: GraphIdentity, document: GraphDocument) {
-    const { task } = this.scope(identity)
+    const { project, task } = this.scope(identity)
     return validateGraph(document, {
+      project,
       catalog: this.catalog.getSnapshot({ projectId: identity.projectId }),
       models: this.models(),
       archived: !!task.archivedAt,

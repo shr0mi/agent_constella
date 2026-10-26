@@ -18,6 +18,8 @@ const project = {
   instructions: '',
   devCommand: '',
   testCommand: '',
+  defaultModel: null,
+  defaultEffort: null,
   revision: 1,
   createdAt: now,
   updatedAt: now,
@@ -139,6 +141,22 @@ ipcMain.handle('constella:diagnostics', () => result(diagnostics))
 ipcMain.handle('constella:workspace:snapshot', () =>
   result({ revision: 1, projects: [project], tasks: [task] }),
 )
+ipcMain.handle('constella:workspace:update-project', (event, input) => {
+  assert.equal(input.projectId, project.id)
+  assert.equal(input.expectedRevision, project.revision)
+  const {
+    projectId: _projectId,
+    expectedRevision: _expectedRevision,
+    ...fields
+  } = input
+  Object.assign(project, fields, { revision: project.revision + 1 })
+  event.sender.send('constella:workspace:changed', {
+    revision: project.revision,
+    projects: [project],
+    tasks: [task],
+  })
+  return result(project)
+})
 ipcMain.handle('constella:catalog:snapshot', () =>
   result({ projectId: project.id, revision: 1, skills, profiles }),
 )
@@ -587,6 +605,31 @@ app
     // View preferences survive route navigation without saving the graph.
     await run('document.querySelector(".graph-back").click()')
     await waitFor('!!document.querySelector(".project-board-page")')
+    await click('Project settings')
+    await waitFor('!!document.querySelector("#project-default-model")')
+    assert.equal(
+      await run(
+        'document.querySelector(".settings-repository code").textContent',
+      ),
+      project.repoPath,
+    )
+    await select('#project-default-model', 'fixture-model')
+    await select('#project-default-effort', 'high')
+    await click('Save settings')
+    await waitFor('!document.querySelector("dialog[open]")')
+    assert.equal(project.defaultModel, 'fixture-model')
+    assert.equal(project.defaultEffort, 'high')
+    await click('Project settings')
+    await waitFor('!!document.querySelector("#project-default-model")')
+    assert.equal(
+      await run('document.querySelector("#project-default-model").value'),
+      'fixture-model',
+    )
+    assert.equal(
+      await run('document.querySelector("#project-default-effort").value'),
+      'high',
+    )
+    await click('Cancel')
     await run(`location.hash = ${JSON.stringify(route)}`)
     await waitFor('document.querySelectorAll(".workflow-node").length === 4')
     assert.deepEqual(
@@ -670,6 +713,8 @@ app
           canvasEdges: 3,
           scopedAssignments: true,
           savedSettings: true,
+          projectDefaultsPersisted: true,
+          projectDirectoryShown: true,
           cycleRejected: true,
           reviewHumanOnly: true,
           nodeAndEdgeEditing: true,
