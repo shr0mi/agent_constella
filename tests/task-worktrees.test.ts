@@ -175,6 +175,94 @@ describe('readable task branches', () => {
     )
     expect(f.service.get(b.id)).toBeNull()
   })
+  it('resumes a selected task branch with staged, unstaged and untracked files intact', async () => {
+    const f = await fixture(),
+      task = f.task('Continue unfinished work')
+    const worktree = await f.service.ensure(f.project, task)
+    writeFileSync(join(worktree.path, 'local.txt'), 'staged')
+    git(worktree.path, 'add', '.')
+    writeFileSync(join(worktree.path, 'local.txt'), 'unstaged')
+    writeFileSync(join(worktree.path, 'new.txt'), 'untracked')
+    const head = git(worktree.path, 'rev-parse', 'HEAD'),
+      index = git(worktree.path, 'diff', '--cached'),
+      status = git(worktree.path, 'status', '--porcelain')
+    expect(await f.service.ensure(f.project, task)).toEqual(worktree)
+    expect(git(worktree.path, 'rev-parse', 'HEAD')).toBe(head)
+    expect(git(worktree.path, 'diff', '--cached')).toBe(index)
+    expect(git(worktree.path, 'status', '--porcelain')).toBe(status)
+    expect(readFileSync(join(worktree.path, 'local.txt'), 'utf8')).toBe(
+      'unstaged',
+    )
+    expect(readFileSync(join(worktree.path, 'new.txt'), 'utf8')).toBe(
+      'untracked',
+    )
+  })
+  it('allows only an explicit return to an existing equivalent task branch with local files intact', async () => {
+    const f = await fixture(),
+      task = f.task('Recover unfinished work')
+    const worktree = await f.service.ensure(f.project, task)
+    git(worktree.path, 'switch', 'main')
+    writeFileSync(join(worktree.path, 'local.txt'), 'staged')
+    git(worktree.path, 'add', '.')
+    writeFileSync(join(worktree.path, 'local.txt'), 'unstaged')
+    writeFileSync(join(worktree.path, 'new.txt'), 'untracked')
+    const index = git(worktree.path, 'diff', '--cached'),
+      status = git(worktree.path, 'status', '--porcelain')
+    await expect(f.service.ensure(f.project, task)).rejects.toThrow(
+      'uncommitted or untracked changes on main',
+    )
+    expect(git(worktree.path, 'branch', '--show-current')).toBe('main')
+    expect(
+      await f.service.ensure(f.project, task, undefined, {
+        preserveLocalChanges: true,
+      }),
+    ).toEqual(worktree)
+    expect(git(worktree.path, 'branch', '--show-current')).toBe(
+      worktree.branch,
+    )
+    expect(git(worktree.path, 'diff', '--cached')).toBe(index)
+    expect(git(worktree.path, 'status', '--porcelain')).toBe(status)
+    expect(readFileSync(join(worktree.path, 'local.txt'), 'utf8')).toBe(
+      'unstaged',
+    )
+    expect(readFileSync(join(worktree.path, 'new.txt'), 'utf8')).toBe(
+      'untracked',
+    )
+  })
+  it('keeps dirty switches blocked when the existing task has different committed files', async () => {
+    const f = await fixture(),
+      task = f.task('Different task content')
+    const worktree = await f.service.ensure(f.project, task)
+    writeFileSync(join(worktree.path, 'task.txt'), 'saved task work')
+    await f.service.checkpoint(
+      worktree,
+      await f.service.capture(worktree.path, 'Save task'),
+    )
+    git(worktree.path, 'switch', 'main')
+    writeFileSync(join(worktree.path, 'local.txt'), 'keep local work')
+    await expect(
+      f.service.ensure(f.project, task, undefined, {
+        preserveLocalChanges: true,
+      }),
+    ).rejects.toThrow('uncommitted or untracked')
+    expect(git(worktree.path, 'branch', '--show-current')).toBe('main')
+    expect(readFileSync(join(worktree.path, 'local.txt'), 'utf8')).toBe(
+      'keep local work',
+    )
+    expect(existsSync(join(worktree.path, 'task.txt'))).toBe(false)
+  })
+  it('still blocks unfinished Git operations when already on the task branch', async () => {
+    const f = await fixture(),
+      task = f.task('Unfinished merge')
+    const worktree = await f.service.ensure(f.project, task)
+    writeFileSync(
+      join(worktree.path, '.git', 'MERGE_HEAD'),
+      git(worktree.path, 'rev-parse', 'HEAD'),
+    )
+    await expect(f.service.ensure(f.project, task)).rejects.toThrow(
+      'Finish the existing Git operation',
+    )
+  })
   it('avoids branch namespace collisions and reports an occupied codex prefix', async () => {
     const f = await fixture()
     git(f.project.repoPath, 'branch', 'codex/task/subtask')

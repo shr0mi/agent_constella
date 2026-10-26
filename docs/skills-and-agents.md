@@ -4,6 +4,22 @@ Implemented on 25 October 2026. The desktop checkpoint remains for user verifica
 
 ## Available workflows
 
+The app seeds four editable global skills and two global profiles on startup:
+
+| Agent | Included skills |
+| --- | --- |
+| Default Codex | None; remains the initial choice for new task nodes |
+| frontend-master | frontend-design (Anthropic), vercel-react-best-practices (Vercel) |
+| backend-sensei | api-design-principles, architecture-patterns (wshobson/agents) |
+
+The app bundles actual upstream skill packs from anthropics/skills, vercel-labs/agent-skills, and wshobson/agents. Copies retain upstream instructions, reference files, examples, and license declarations. Vercel's React-specific rules apply when working in React/Next.js; they do not require changing an existing stack. Profiles inherit project/runtime model and effort defaults. Source repositories, pinned commits, and licenses appear on skill cards and in each installed SOURCE.md. See [third-party notices](../THIRD_PARTY_NOTICES.md).
+
+The pinned packs and per-file SHA-256 hashes live in `src/main/application/bundled-skills/manifest.json`. The main build copies all packs next to its output bundle; startup validates them and installs editable global copies without network access. Downloaded examples are not executed during installation. A catalog-name collision changes only the installed frontmatter name and records that adaptation in SOURCE.md; instruction bodies and resources stay intact.
+
+Stable IDs preserve later edits, renames, removals, and missing user-deleted files. Unregistered folders and existing user names are never overwritten. Default Codex remains the existing null profile with no assigned skills. No starter is selected automatically, and no schema migration or model download is required.
+
+For databases containing the earlier app-authored starter set, initialization switches only untouched starter profiles whose old skills are also unchanged. It archives unused pristine old skills while retaining their files and historical run snapshots. Custom edits, removals, active profile references, and explicit graph skill assignments are preserved. Changed or missing files are treated as user-owned rather than overwritten. This conversion is idempotent, and all source files remain editable afterward.
+
 **Skills** and **Agents** have Global and Project tabs. Project scope includes a repository-project selector, and each project board links to its scoped catalogs. The lab has its own project/profile selectors. Scope is stored explicitly as a nullable project ID rather than inferred from names.
 
 | Item                  | Global                              | Project                                            |

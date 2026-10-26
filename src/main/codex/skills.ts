@@ -31,6 +31,7 @@ export function resolvePrompt(
   if (workspaceKind === 'task')
     sections.push(
       `Source quality defaults: Follow applicable AGENTS.md guidance, explicit project/user requirements, and the repository's existing coding style and formatter configuration. Keep handwritten source readable: use normal indentation, spacing, and line breaks; do not compress whole functions, multiple statements, or CSS rules into long single lines. Compact or minified output is appropriate only for build artifacts or an explicit task requirement. Before finishing, inspect your edited source files and run the project's existing formatter on those files when available. If no formatter is configured, write idiomatic, consistently formatted source without adding a new formatting tool or dependency solely for this purpose. Leave unrelated and generated/vendor files alone. Report any formatting check you could not run; passing functional tests alone does not establish formatting quality.`,
+      `Task prerequisites: Separate tasks start from the project base branch. Files from other task branches are available only after integration. If the request explicitly requires an existing plan or other source file that is missing, report that missing prerequisite and ask for the prerequisite task to be integrated before continuing implementation. Do not invent substitute requirements or switch branches to retrieve another task's files.`,
     )
   if (context?.projectSnapshot) {
     const project = context.projectSnapshot

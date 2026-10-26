@@ -25,9 +25,18 @@ import {
   agentProfiles,
   catalogSkills,
   projects,
+  taskGraphs,
   workspaceMeta,
 } from '../db/schema'
 import { ApplicationError } from './errors'
+import {
+  legacyProfileSkills,
+  legacyStarters,
+  nameBundledSkill,
+  readBundledSkill,
+  starterProfiles,
+  starterSkills,
+} from './starter-catalog'
 import {
   atomicSkillWrite,
   decodeText,
@@ -54,6 +63,178 @@ export class CatalogService {
     private readonly appData: string,
     private readonly models: () => ModelOption[] = () => [],
   ) {}
+  initialize(): Promise<void> {
+    return this.serial(async () => {
+      const pristineLegacy = new Set<string>()
+      for (const legacy of legacyStarters) {
+        const item = this.db
+          .select()
+          .from(catalogSkills)
+          .where(eq(catalogSkills.id, legacy.id))
+          .get()
+        if (
+          !item ||
+          item.projectId ||
+          item.removedAt ||
+          item.revision !== 1 ||
+          item.name !== legacy.name ||
+          item.contentHash !== legacy.hash
+        )
+          continue
+        try {
+          const pack = await readSkillPack(await this.folder(item))
+          if (
+            pack.files.size === 1 &&
+            hashBytes(pack.files.get('SKILL.md')!.bytes) === legacy.hash
+          )
+            pristineLegacy.add(item.id)
+        } catch {
+          /* Missing or externally changed user files are preserved. */
+        }
+      }
+      for (const starter of starterSkills) {
+        if (
+          this.db
+            .select()
+            .from(catalogSkills)
+            .where(eq(catalogSkills.id, starter.id))
+            .get()
+        )
+          continue
+        const root = await this.root(null)
+        let name: string,
+          suffix = 0
+        do {
+          name =
+            suffix === 0
+              ? starter.name
+              : `constella-${starter.name}${suffix === 1 ? '' : `-${suffix}`}`
+          suffix++
+        } while (
+          this.db
+            .select()
+            .from(catalogSkills)
+            .where(
+              and(
+                isNull(catalogSkills.projectId),
+                eq(catalogSkills.name, name),
+              ),
+            )
+            .get() ||
+          (await lstat(join(root, name))
+            .then(() => true)
+            .catch((error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return false
+              throw error
+            }))
+        )
+        const pack = nameBundledSkill(await readBundledSkill(starter), name)
+        await this.install(null, pack, starter.id)
+      }
+      for (const starter of starterProfiles) {
+        const existing = this.db
+          .select()
+          .from(agentProfiles)
+          .where(eq(agentProfiles.id, starter.id))
+          .get()
+        if (existing) {
+          const previous = legacyProfileSkills[starter.id]
+          if (
+            !existing.projectId &&
+            !existing.removedAt &&
+            existing.revision === 1 &&
+            existing.name === starter.name &&
+            existing.roleInstructions === starter.roleInstructions &&
+            existing.styleGuide === starter.styleGuide &&
+            !existing.model &&
+            !existing.effort &&
+            JSON.stringify(existing.skillIds) === JSON.stringify(previous) &&
+            previous.every((id) => pristineLegacy.has(id))
+          )
+            this.commit(() =>
+              this.db
+                .update(agentProfiles)
+                .set({
+                  skillIds: [...starter.skillIds],
+                  revision: 2,
+                  updatedAt: new Date().toISOString(),
+                })
+                .where(eq(agentProfiles.id, starter.id))
+                .run(),
+            )
+          continue
+        }
+        // Never restore a user-removed skill just to complete an interrupted seed.
+        if (starter.skillIds.some((id) => this.skill(id, null).removedAt))
+          continue
+        const occupied = new Set(
+          this.db
+            .select()
+            .from(agentProfiles)
+            .where(isNull(agentProfiles.projectId))
+            .all()
+            .map((profile) => profile.name.toLowerCase()),
+        )
+        let name: string = starter.name,
+          suffix = 1
+        while (occupied.has(name.toLowerCase())) {
+          name = `${starter.name} (starter${suffix === 1 ? '' : ` ${suffix}`})`
+          suffix++
+        }
+        this.commit(() => {
+          const now = new Date().toISOString()
+          this.db
+            .insert(agentProfiles)
+            .values({
+              id: starter.id,
+              projectId: null,
+              name,
+              roleInstructions: starter.roleInstructions,
+              styleGuide: starter.styleGuide,
+              skillIds: [...starter.skillIds],
+              model: null,
+              effort: null,
+              revision: 1,
+              removedAt: null,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .run()
+        })
+      }
+      for (const id of pristineLegacy) {
+        const referenced =
+          this.db
+            .select()
+            .from(agentProfiles)
+            .where(isNull(agentProfiles.removedAt))
+            .all()
+            .some((profile) => profile.skillIds.includes(id)) ||
+          this.db
+            .select()
+            .from(taskGraphs)
+            .all()
+            .some((graph) =>
+              graph.document.nodes.some(
+                (node) =>
+                  node.type === 'agent' && node.data.skillIds.includes(id),
+              ),
+            )
+        if (!referenced)
+          this.commit(() =>
+            this.db
+              .update(catalogSkills)
+              .set({
+                removedAt: new Date().toISOString(),
+                revision: 2,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(catalogSkills.id, id))
+              .run(),
+          )
+      }
+    })
+  }
   private get db() {
     return this.database.db
   }
@@ -144,7 +325,21 @@ export class CatalogService {
         .from(catalogSkills)
         .where(skillsScope)
         .orderBy(asc(catalogSkills.name))
-        .all(),
+        .all()
+        .map((skill) => {
+          const source = starterSkills.find((source) => source.id === skill.id)
+          return source
+            ? {
+                ...skill,
+                source: {
+                  repository: source.repository,
+                  revision: source.revision,
+                  url: source.url,
+                  license: source.license,
+                },
+              }
+            : skill
+        }),
       profiles: this.db
         .select()
         .from(agentProfiles)
@@ -262,13 +457,14 @@ export class CatalogService {
     projectId: string | null,
     folderPath: string,
     pack: SkillPack,
+    id: string = randomUUID(),
   ): CatalogSkill {
     return this.commit(() => {
       const now = new Date().toISOString()
       return this.db
         .insert(catalogSkills)
         .values({
-          id: randomUUID(),
+          id,
           projectId,
           name: pack.name,
           description: pack.description,
@@ -286,6 +482,7 @@ export class CatalogService {
   private async install(
     projectId: string | null,
     pack: SkillPack,
+    id?: string,
   ): Promise<CatalogSkill> {
     this.nameAvailable(projectId, pack.name)
     const folder = join(await this.root(projectId), pack.name)
@@ -302,7 +499,7 @@ export class CatalogService {
     }
     try {
       await writeSkillPack(folder, pack)
-      return this.insertSkill(projectId, folder, pack)
+      return this.insertSkill(projectId, folder, pack, id)
     } catch (error) {
       await rm(folder, { recursive: true, force: true })
       throw error

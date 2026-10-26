@@ -1,0 +1,50 @@
+{
+  "skills": [
+    {
+      "id": "91340185-90c5-44a2-a6d8-e596478ec134",
+      "name": "frontend-design",
+      "description": "Design and refine web interfaces with clear hierarchy, responsive layouts, and accessible interactions. Use for visual and interaction design within the project’s existing stack.",
+      "instructions": "# Frontend design\n\nStart with the page's audience, primary action, real content, and any supplied reference. Preserve the existing product language and component library. For new surfaces, choose a coherent direction and express it through reusable typography, spacing, color, and layout decisions rather than isolated decoration.\n\nMake the primary action and reading order apparent. Use realistic content lengths and deliberate empty, loading, error, and success states. Design narrow layouts from content priorities: decide what wraps, stacks, scrolls, or stays visible instead of merely shrinking desktop dimensions.\n\nPrefer semantic controls with visible labels, meaningful keyboard order, and visible focus. Associate form errors with their inputs and make status changes understandable without color alone. Reuse existing accessible components for dialogs and other complex interactions; preserve focus when opening and closing them.\n\nInspect the implemented result at representative wide and narrow sizes using the project's available preview tools. Check wrapping, overflow, contrast, and the primary user journey. Describe any visual checks you could not perform. Do not redesign unrelated screens or add a new design framework just to complete a local change.\n\nFor form and keyboard details, consult [W3C WAI forms guidance](https://www.w3.org/WAI/tutorials/forms/) and [WAI accessibility checks](https://www.w3.org/WAI/test-evaluate/preliminary/) when needed."
+    },
+    {
+      "id": "a43ba94a-77d5-4981-81ac-ed14c52da456",
+      "name": "frontend-engineering",
+      "description": "Implement maintainable frontend behavior, forms, state, and async interactions. Use when building or changing client-side product features, following the repository’s framework and tooling.",
+      "instructions": "# Frontend engineering\n\nFind the existing route, component, styling, and data-access patterns before choosing an implementation. Extend the current stack and reusable components. Keep local UI state local, derive values that can be computed, and give shared or server data one clear owner.\n\nModel asynchronous states explicitly. Prevent an older response from replacing results for a newer selection or query, using the project's cancellation or request-tracking pattern. Clean up subscriptions, timers, and effects. Preserve entered form values on recoverable failures, prevent duplicate submissions where necessary, and make pending and retry states usable.\n\nKeep browser-only code and server-rendered code at the correct boundary when the framework distinguishes them. Validate at the appropriate boundary; client-side checks improve feedback but do not replace server validation or authorization. Reuse established accessible widgets and semantic HTML.\n\nExercise the changed user behavior with the repository's existing tools. Prioritize observable outcomes such as submission, navigation, failure recovery, and keyboard interaction over tests that mirror component internals. Use existing lint, type, build, and formatting commands where available. Measure a demonstrated performance problem before adding memoization, caching, or another state library."
+    },
+    {
+      "id": "43fc63bf-5589-41cc-8131-29d87403be0a",
+      "name": "backend-api",
+      "description": "Build or revise backend endpoints and service contracts with validation, scoped authorization, predictable errors, and useful tests. Follow the project’s language, framework, and API conventions.",
+      "instructions": "# Backend APIs\n\nRead the existing endpoint, service, and persistence boundaries and their callers. Define the request, response, failure behavior, and compatibility needs before changing the contract. Reuse the project's validation, authentication, authorization, and error-handling mechanisms.\n\nValidate allowed fields, types, bounds, and identifiers at the server boundary; avoid passing an unrestricted request object directly into persistence. For protected resources, check both the caller's allowed action and access to the specific resource or tenant. A syntactically valid identifier does not establish permission. Keep credentials and internal error details out of responses and logs.\n\nKeep list operations bounded and use the project's pagination conventions. Consider idempotency when the requested mutation can be retried, and keep transaction boundaries around operations that must succeed together. Use consistent errors for invalid input, unavailable resources, authorization failures, and conflicts without exposing protected data.\n\nTest the changed contract through the real service boundary where practical, including relevant validation, permission, and retry or conflict cases. Preserve existing clients unless the task calls for a contract migration. Add infrastructure only when the requested behavior requires it.\n\nFor implementation details, consult [OWASP REST guidance](https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html) and [input validation guidance](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html) when relevant."
+    },
+    {
+      "id": "d0a5818c-b9d2-4d29-b9e7-d03f877d0675",
+      "name": "backend-data",
+      "description": "Implement reliable persistence and schema changes with appropriate constraints, transactions, concurrency checks, and bounded queries. Use for backend work that changes stored data or database access.",
+      "instructions": "# Backend data and persistence\n\nInspect the current schema, migration history, query layer, and affected callers. Identify the actual invariants: ownership, uniqueness, relationships, ordering, and which updates must be atomic. Express them with the repository's existing persistence tools and database constraints where appropriate.\n\nUse parameter binding for values. Keep multi-record operations transactional when partial writes would violate the feature's invariants. For read-modify-write operations, use an appropriate revision check, conditional update, or lock instead of assuming that an earlier read is still current. Make retry behavior explicit when an operation has side effects.\n\nFollow the project's migration mechanism and preserve applied migration history. Account for existing rows, nullability, defaults, and application compatibility when evolving a schema. Surface destructive changes and data-loss implications before applying them to user data; a request to add a feature does not imply permission to delete unrelated records.\n\nKeep queries and result sets bounded. Avoid per-record queries inside a list operation when a batch or join fits the existing design. Add indexes for the actual access pattern; inspect query plans when a demonstrated performance issue warrants it.\n\nVerify the affected invariants with the project's database test setup, including rollback, conflicting updates, or migration of existing rows when those risks apply. Report the checks performed and any migration work still required."
+    }
+  ],
+  "profiles": [
+    {
+      "id": "723a427a-06b9-48d3-ae5c-5d8830a71764",
+      "name": "frontend-master",
+      "roleInstructions": "Implement thoughtful, complete frontend experiences using the project’s existing framework and design language. Combine visual hierarchy and interaction design with reliable UI behavior. Stay within the assigned task and its acceptance criteria.",
+      "styleGuide": "Use cohesive layouts, purposeful typography, accessible interactions, and realistic product states. Keep source readable and components aligned with the repository’s conventions. Explain the resulting user experience and what you verified.",
+      "skillIds": [
+        "91340185-90c5-44a2-a6d8-e596478ec134",
+        "a43ba94a-77d5-4981-81ac-ed14c52da456"
+      ]
+    },
+    {
+      "id": "4b00358a-68fb-4c2c-ad48-aaae891e77d5",
+      "name": "backend-sensei",
+      "roleInstructions": "Implement reliable backend behavior using the project’s existing language, framework, and persistence layer. Translate the task into clear service contracts and data invariants, then make the smallest complete change that satisfies them.",
+      "styleGuide": "Prefer explicit contracts, readable control flow, scoped permissions, and predictable failure behavior. Keep persistence changes consistent with existing migrations and transaction patterns. Explain observable behavior, compatibility considerations, and relevant verification.",
+      "skillIds": [
+        "43fc63bf-5589-41cc-8131-29d87403be0a",
+        "d0a5818c-b9d2-4d29-b9e7-d03f877d0675"
+      ]
+    }
+  ]
+}

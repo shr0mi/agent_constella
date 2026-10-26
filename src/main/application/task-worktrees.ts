@@ -170,11 +170,12 @@ export class TaskWorktreeService {
     project: Project,
     task: Task,
     signal?: AbortSignal,
+    options: { preserveLocalChanges?: boolean } = {},
   ): Promise<TaskWorktree> {
     const previous = this.preparing.get(project.id) ?? Promise.resolve()
     const pending = previous
       .catch(() => {})
-      .then(() => this.prepare(project, task, signal))
+      .then(() => this.prepare(project, task, signal, options))
     this.preparing.set(project.id, pending)
     try {
       return await pending
@@ -184,10 +185,17 @@ export class TaskWorktreeService {
     }
   }
   async assertClean(path: string) {
-    if ((await taskGit(path, ['status', '--porcelain=v1', '-z'])).length)
+    await this.assertNoOperation(path)
+    const status = await taskGit(path, ['status', '--short'])
+    if (status.length) {
+      const branch = (await taskGit(path, ['branch', '--show-current'])).trim()
+      const entries = status.trimEnd().split('\n')
       throw new Error(
-        'The project has uncommitted or untracked changes. Commit or stash your edits before switching task branches. Your files and index have been preserved.',
+        `The project has uncommitted or untracked changes on ${branch || 'a detached checkout'}.\n${entries.slice(0, 12).join('\n')}${entries.length > 12 ? '\n…' : ''}\nCommit or stash your edits before switching task branches. If these are unfinished task files, restore that task if archived, then use Review task → Switch to task branch and retry. Returning with local changes requires both branches to have identical committed files. Archiving does not clear local changes. Your files and index have been preserved.`,
       )
+    }
+  }
+  private async assertNoOperation(path: string) {
     for (const name of [
       'MERGE_HEAD',
       'CHERRY_PICK_HEAD',
@@ -273,6 +281,7 @@ export class TaskWorktreeService {
     project: Project,
     task: Task,
     signal?: AbortSignal,
+    options: { preserveLocalChanges?: boolean } = {},
   ): Promise<TaskWorktree> {
     try {
       const source = await resolveRepository(project.repoPath)
@@ -280,7 +289,47 @@ export class TaskWorktreeService {
         throw new Error('The project repository root changed.')
       signal?.throwIfAborted()
       let worktree = await this.adopt(project, task)
-      await this.assertClean(source)
+      if (worktree) {
+        if (
+          worktree.taskId !== task.id ||
+          worktree.projectId !== project.id ||
+          worktree.path !== source ||
+          !worktree.branch.startsWith('codex/')
+        )
+          throw new Error(
+            'Stored task branch ownership does not match this project.',
+          )
+        await this.verify(worktree, source, false)
+      }
+      const selectedBranch = (
+        await taskGit(source, ['branch', '--show-current'], { signal })
+      ).trim()
+      const sameTaskBranch =
+        worktree?.state === 'ready' && worktree.branch === selectedBranch
+      // An explicit review action can return unfinished files to their task
+      // without stashing or changing the index. Identical committed trees keep
+      // this from carrying edits across different versions of the project.
+      const equivalentBranch =
+        !sameTaskBranch &&
+        !!selectedBranch &&
+        worktree?.state === 'ready' &&
+        options.preserveLocalChanges &&
+        (await taskGit(
+          source,
+          ['rev-parse', 'HEAD^{tree}', `refs/heads/${worktree.branch}^{tree}`],
+          { signal },
+        )
+          .then((value) => {
+            const trees = value.trim().split('\n')
+            return trees.length === 2 && trees[0] === trees[1]
+          })
+          .catch((error) => {
+            if (signal?.aborted) throw error
+            return false
+          }))
+      if (sameTaskBranch || equivalentBranch)
+        await this.assertNoOperation(source)
+      else await this.assertClean(source)
       await ensureInitialCommit(source)
       if (!worktree) {
         let sourceBranch = (
@@ -379,7 +428,8 @@ export class TaskWorktreeService {
           'The reserved task branch now contains different work. Its files and history have been preserved.',
         )
       }
-      await taskGit(source, ['switch', worktree.branch], { signal })
+      if (!sameTaskBranch)
+        await taskGit(source, ['switch', worktree.branch], { signal })
       await this.verify(worktree, source)
       worktree.state = 'ready'
       this.save(worktree)
@@ -413,8 +463,10 @@ export class TaskWorktreeService {
       (checkedOut && actualBranch !== worktree.branch) ||
       root !== (await realpath(worktree.path))
     )
-      throw new Error(
+      throw new ApplicationError(
+        'TASK_BRANCH_CHANGED',
         'The task branch or project root changed during the operation. Select the task branch and retry.',
+        `Expected ${worktree.branch}; the current branch is ${actualBranch || 'a detached checkout'}. After active work stops, use Review task → Switch to task branch, then retry the node. Local edits can be kept when both branches have identical committed files. Avoid switching branches during an agent run or its checks.`,
       )
     if (source) {
       if (worktree.mode === 'project' && (await realpath(source)) !== root)

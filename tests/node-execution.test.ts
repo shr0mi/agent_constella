@@ -901,11 +901,13 @@ describe('node execution in the project directory', () => {
       f.execution.get({ ...f.identity, nodeId: secondId }).runs,
     ).toHaveLength(1)
   })
-  it('preserves files and refuses to commit progress when the branch changes during an agent turn', async () => {
+  it('preserves files after a branch change and recovers through an explicit checkout and same-thread retry', async () => {
+    let turn = 0
     const f = await fixture((options) =>
       (async function* (): AsyncGenerator<ThreadEvent> {
         yield* successful(options)
-        git(options.workingDirectory!, 'switch', '-c', 'changed-in-ide')
+        if (++turn === 1)
+          git(options.workingDirectory!, 'switch', '-c', 'changed-in-ide')
       })(),
     )
     const base = git(f.project.repoPath, 'rev-parse', 'main')
@@ -925,6 +927,31 @@ describe('node execution in the project directory', () => {
     )
     expect(git(f.project.repoPath, 'status', '--porcelain')).toContain(
       'answer.txt',
+    )
+    f.start('retry')
+    await f.execution.waitForIdle()
+    expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain(
+      'uncommitted or untracked',
+    )
+    expect(f.transport.calls).toHaveLength(1)
+    await f.execution.checkoutTask({
+      projectId: f.project.id,
+      taskId: f.task.id,
+    })
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
+      run.worktree!.branch,
+    )
+    expect(readFileSync(join(f.project.repoPath, 'answer.txt'), 'utf8')).toBe(
+      'first revision',
+    )
+    f.start('retry')
+    await f.execution.waitForIdle()
+    const recovered = f.execution.get(f.identity).runs.at(-1)!
+    expect(recovered.status).toBe('completed')
+    expect(f.transport.calls[1].resumed).toBe(run.threadId)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(
+      recovered.changes?.after.commit,
     )
   })
   it('selects an existing task branch for follow-ups but never recreates deleted branches or runs archived tasks', async () => {

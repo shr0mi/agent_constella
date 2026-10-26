@@ -172,6 +172,12 @@ export function WorkflowControls({
             )
           )}
         </div>
+        {workflow.phase === 'idle' && !worktreeReady && (
+          <p className="workflow-integration-hint">
+            New tasks start from the base branch. If this task needs files from
+            another completed task, integrate that task’s branch first.
+          </p>
+        )}
         {workflow.phase === 'completed' && (
           <p className="workflow-integration-hint">
             {workflow.integration?.status === 'integrated'

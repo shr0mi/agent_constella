@@ -90,6 +90,12 @@ export type CreateProfileInput = z.input<typeof createProfileSchema>
 export type UpdateProfileInput = z.input<typeof updateProfileSchema>
 
 export interface CatalogSkill {
+  source?: {
+    repository: string
+    revision: string
+    url: string
+    license: string
+  }
   id: string
   projectId: string | null
   name: string

@@ -49,6 +49,16 @@ The manual desktop checkpoint is left for the user. See [the persistence impleme
 
 ## Skills and agent profiles
 
+The app includes editable global starters, available after startup in every project:
+
+| Agent | Skills |
+| --- | --- |
+| Default Codex | None; stays the default for new tasks |
+| frontend-master | Anthropic frontend-design; Vercel React best practices |
+| backend-sensei | wshobson API design principles and architecture patterns |
+
+Select a profile on an agent node to use its skills. The app vendors the actual upstream SKILL.md files, references, and licenses at pinned commits; source details appear on skill cards and in each skill’s SOURCE.md. React-specific guidance applies to React/Next.js projects. Profiles inherit project model/effort defaults. You can customize or remove them; restarts preserve those choices. See [the upstream sources and notices](THIRD_PARTY_NOTICES.md).
+
 1. Open **Skills** and select **Global** or **Project**. Project scope includes a project selector; each board also links to its project catalogs.
 2. **Create skill** makes a folder containing a valid `SKILL.md`. Global folders live in app data under `skills/`; project folders live in that repository's `.agents/skills/`.
 3. **Import folder** copies a folder containing `SKILL.md` and its visible resources into the selected scope. Importing an existing native project skill from its destination registers it without copying over its files. Symbolic-link resources are rejected. Importing never runs scripts.
@@ -87,6 +97,8 @@ Keep your IDE open on the project directory. Runs save progress as commits on re
 Older task worktrees are converted on startup: their latest files are saved on the task branch, the old checkout is detached to release that branch, and the folder is kept as a backup. Existing branch names and history remain available. A changed or missing legacy checkout fails visibly instead of discarding work.
 
 ## Scheduling, reviews, and integration
+
+Separate tasks start from the base branch. Integrate a completed prerequisite task before starting work that needs its files, such as `project_plan.md`. Archiving keeps task branches and local files. If a branch change interrupts an attempt, restore the task if archived, then use **Review task → Switch to task branch** and retry. The explicit switch preserves local edits when both branches have identical committed files; retries on the selected task branch also retain edits. Different branch content and unfinished Git operations still require resolving local changes first.
 
 1. Save a valid graph, then click **Start workflow**. Start completes immediately; ready agent nodes execute serially within the project. A join waits for **every** predecessor to complete and be accepted. Other projects can run independently.
 2. **Auto accept** nodes complete after successful execution, checks, and code collection. **Accept manually** nodes wait at **Awaiting acceptance**; open the conversation, inspect the result, and click **Accept latest result**. A failed, stopped, interrupted, or stale result cannot release downstream work.

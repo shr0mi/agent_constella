@@ -2,10 +2,16 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const { tsImport } = require('tsx/esm/api')
 const { execFileSync } = require('node:child_process')
-const { mkdtempSync, rmSync, writeFileSync, existsSync } = require('node:fs')
+const {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  existsSync,
+  readFileSync,
+} = require('node:fs')
 const { tmpdir } = require('node:os')
 const { join, resolve } = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { randomUUID, createHash } = require('node:crypto')
 const assert = require('node:assert/strict')
 const root = resolve(__dirname, '..'),
   data = mkdtempSync(join(tmpdir(), 'constella-workflow-ui-'))
@@ -17,6 +23,7 @@ let window,
   scheduler,
   database,
   openedProjectFolders = 0,
+  taskReadRevision = 0,
   ending = false
 const deadline = setTimeout(() => {
   console.error('Workflow UI timed out', errors)
@@ -94,6 +101,19 @@ app
     const identity = { projectId: project.id, taskId: task.id }
     const catalog = new CatalogService(database, appData),
       graphs = new GraphService(database, catalog)
+    await catalog.initialize()
+    const bundledDirectory = join(root, 'out/main/bundled-skills')
+    const sources = JSON.parse(
+      readFileSync(join(bundledDirectory, 'manifest.json'), 'utf8'),
+    )
+    for (const source of sources)
+      for (const [file, expected] of Object.entries(source.files))
+        assert.equal(
+          createHash('sha256')
+            .update(readFileSync(join(bundledDirectory, source.folder, file)))
+            .digest('hex'),
+          expected,
+        )
     const initial = graphs.get(identity)
     const make = (type, title, x, y) => {
       const node = makeWorkflowNode(type, randomUUID(), { x, y })
@@ -236,10 +256,11 @@ app
     handle(channels.graphGet, (input) => graphs.get(input))
     handle(channels.graphSave, (input) => graphs.save(input))
     handle(channels.graphPrepare, (input) => graphs.prepareStart(input))
-    handle(channels.taskExecution, (input) => ({
-      ...execution.getTask(input),
-      workflow: scheduler.get(input),
-    }))
+    handle(channels.taskExecution, (input) => {
+      const workflow = scheduler.get(input)
+      taskReadRevision = workflow.revision
+      return { ...execution.getTask(input), workflow }
+    })
     handle(channels.taskReview, (input) => execution.getReview(input))
     handle(channels.taskCheckout, (input) => scheduler.checkoutTask(input))
     handle(channels.taskOpenWorktree, async (input) => {
@@ -318,6 +339,24 @@ app
     await until(
       'document.querySelectorAll(".workflow-node").length===6 && !!document.querySelector(".workflow-controls .workflow-progress")',
     )
+    await run('location.hash="/agents"')
+    await until('document.querySelectorAll(".catalog-card").length===2')
+    assert.deepEqual(
+      await run(
+        'Array.from(document.querySelectorAll(".catalog-card h2"), item=>item.textContent).sort()',
+      ),
+      ['backend-sensei', 'frontend-master'],
+    )
+    await run('location.hash="/skills"')
+    await until('document.querySelectorAll(".catalog-card").length===4')
+    assert.equal(
+      await run('document.querySelectorAll(".catalog-source").length'),
+      4,
+    )
+    await run(`location.hash=${JSON.stringify(route)}`)
+    await until(
+      'document.querySelectorAll(".workflow-node").length===6 && !!document.querySelector(".workflow-controls .workflow-progress")',
+    )
     assert.equal(
       await run(
         'document.querySelectorAll(".workflow-node.state-pending").length',
@@ -340,6 +379,19 @@ app
       'document.querySelectorAll(".graph-structure > button")[3].click()',
     )
     await until('!!document.querySelector(".graph-run-node")')
+    await until(
+      'document.querySelector("#graph-node-profile")?.options.length===3',
+    )
+    assert.equal(
+      await run('document.querySelector("#graph-node-profile").value'),
+      '',
+    )
+    assert.deepEqual(
+      await run(
+        'Array.from(document.querySelector("#graph-node-profile").options, option=>option.textContent)',
+      ),
+      ['Default Codex', 'backend-sensei · Global', 'frontend-master · Global'],
+    )
     assert(await run('document.querySelector(".graph-run-node").disabled'))
     await run(
       'document.querySelectorAll(".graph-structure > button")[1].click()',
@@ -472,6 +524,19 @@ app
     )
     await set('#review-note', 'Refine the implementation before approval.')
     await set('#review-target', a.id, 'select')
+    // Checkout releases the project slot and wakes scheduling. Wait for the
+    // debounced snapshot to reach the renderer before making a versioned decision.
+    await scheduler.waitForIdle()
+    for (
+      let n = 0;
+      n < 400 && taskReadRevision !== scheduler.get(identity).revision;
+      n++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    assert.equal(taskReadRevision, scheduler.get(identity).revision)
+    await run(
+      'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))',
+    )
     await click('Request changes & revise')
     for (let n = 0; n < 400; n++) {
       if (
@@ -570,6 +635,9 @@ app
         {
           result: 'PASS',
           realServices: true,
+          starterCatalogsVisible: true,
+          upstreamResourcesBundled: true,
+          defaultCodexSkillFree: true,
           canvasChangesNeedNoSave: true,
           individualNodeRun: true,
           branchJoin: true,

@@ -291,9 +291,17 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
                     'Add role instructions to guide this agent.'}
               </p>
               {'folderPath' in item ? (
-                <code className="catalog-folder" title={item.folderPath}>
-                  {item.folderPath}
-                </code>
+                <>
+                  <code className="catalog-folder" title={item.folderPath}>
+                    {item.folderPath}
+                  </code>
+                  {item.source && (
+                    <p className="catalog-source" title={item.source.url}>
+                      Source: {item.source.repository} · {item.source.license} ·{' '}
+                      {item.source.revision.slice(0, 8)}
+                    </p>
+                  )}
+                </>
               ) : (
                 <div className="profile-card-tags">
                   <span>

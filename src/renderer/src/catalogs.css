@@ -401,3 +401,10 @@
     transition: none;
   }
 }
+.catalog-source {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #b6a2c8;
+  overflow-wrap: anywhere;
+  margin: 9px 0 0;
+}

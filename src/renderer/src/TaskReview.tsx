@@ -107,6 +107,12 @@ function TaskReviewDialog({
           branch in your IDE, or switch to it below, then run the product as
           usual.
         </p>
+        <p>
+          To recover unfinished task files, switch back to their task branch
+          here, then retry the failed node. Local edits are kept when the current
+          and task branches have identical committed files. Archiving a task
+          keeps its branch and local files.
+        </p>
         {loading ? (
           <p>
             <LoaderCircle size={14} className="spin" /> Loading task branch…

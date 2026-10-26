@@ -119,6 +119,7 @@ else {
         app.getPath('userData'),
         () => service?.snapshot().diagnostics?.models ?? [],
       )
+      await catalog.initialize()
       const graphs = new GraphService(
         database,
         catalog,

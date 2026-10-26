@@ -287,7 +287,9 @@ export class NodeExecutionService {
       .from(projects)
       .where(eq(projects.id, identity.projectId))
       .get()!
-    await this.worktrees.ensure(project, task)
+    await this.worktrees.ensure(project, task, undefined, {
+      preserveLocalChanges: true,
+    })
     this.emit(identity)
   }
   get(raw: unknown): NodeExecutionSnapshot {
