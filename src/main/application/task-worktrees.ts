@@ -13,7 +13,7 @@ import type {
   TaskWorktree,
 } from '../../shared/execution'
 import { ApplicationError } from './errors'
-import { resolveRepository } from './repository'
+import { ensureInitialCommit, resolveRepository } from './repository'
 
 const exec = promisify(execFile)
 export async function taskGit(
@@ -64,6 +64,33 @@ const gitFailure = (message: string, error: unknown) =>
     `${message}\n${error instanceof Error ? error.message : String(error)}`,
     'Your files are preserved. Check Git and folder access, then retry. The app will not reset or delete a task worktree.',
   )
+function readableTaskBranch(title: string, existing: string[]) {
+  const occupied = existing.map((name) => name.normalize('NFKC').toLowerCase())
+  if (occupied.includes('codex'))
+    throw new Error(
+      'A branch named codex blocks the codex/ task branch namespace. Rename that branch before starting a new task.',
+    )
+  const words = title
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+  const slug =
+    Array.from(words).slice(0, 60).join('').replace(/-+$/, '') || 'task'
+  const base = `codex/${slug}`
+  let branch = base,
+    suffix = 2
+  while (
+    occupied.some(
+      (name) =>
+        name === branch ||
+        name.startsWith(`${branch}/`) ||
+        branch.startsWith(`${name}/`),
+    )
+  )
+    branch = `${base}-${suffix++}`
+  return branch
+}
 export class TaskWorktreeService {
   constructor(
     private readonly database: WorkspaceDatabase,
@@ -154,12 +181,12 @@ export class TaskWorktreeService {
         project.id,
         task.id,
       )
-      const branch = `codex/constella-${task.id}`
       if (
         worktree &&
-        (worktree.projectId !== project.id ||
+        (worktree.taskId !== task.id ||
+          worktree.projectId !== project.id ||
           resolve(worktree.path) !== resolve(path) ||
-          worktree.branch !== branch)
+          !worktree.branch.startsWith('codex/'))
       )
         throw new Error(
           'Stored task worktree ownership does not match this task.',
@@ -169,6 +196,9 @@ export class TaskWorktreeService {
           throw new Error(
             'The task worktree path is already occupied and is not registered to this task.',
           )
+        // Also cover projects registered by earlier app versions, before they
+        // create any new task baselines from an unborn project branch.
+        await ensureInitialCommit(source)
         const snapshot = await this.capture(
           source,
           `AgentConstella task baseline ${task.id}`,
@@ -181,6 +211,31 @@ export class TaskWorktreeService {
         )
           .then((value) => value.trim())
           .catch(() => null)
+        const existing = (
+          await taskGit(source, [
+            'for-each-ref',
+            '--format=%(refname:strip=2)',
+            'refs/heads',
+          ])
+        )
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+        // Choose and reserve together without awaiting, so concurrent task
+        // preparations cannot claim the same readable name before Git creates it.
+        const reserved = this.database.db
+          .select()
+          .from(taskWorktrees)
+          .all()
+          .filter(
+            (row) =>
+              row.projectId === project.id || row.document.state === 'creating',
+          )
+          .map((row) => row.document.branch)
+        const branch = readableTaskBranch(task.title, [
+          ...existing,
+          ...reserved,
+        ])
         worktree = {
           taskId: task.id,
           projectId: project.id,
@@ -194,6 +249,7 @@ export class TaskWorktreeService {
         }
         this.save(worktree)
       }
+      const branch = worktree.branch
       const exists = await lstat(path).catch(() => null)
       if (!exists) {
         if (worktree.state === 'ready')
@@ -210,6 +266,15 @@ export class TaskWorktreeService {
         )
           .then(() => true)
           .catch(() => false)
+        if (
+          hasBranch &&
+          (
+            await taskGit(source, ['rev-parse', `refs/heads/${branch}`])
+          ).trim() !== worktree.baseRevision
+        )
+          throw new Error(
+            'The reserved task branch now contains different work. Its files and history have been preserved.',
+          )
         await taskGit(
           source,
           [

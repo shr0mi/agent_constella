@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -260,6 +261,21 @@ describe('persistent project application service', () => {
         encoding: 'utf8',
       }),
     ).toBe('')
+    expect(
+      execFileSync('git', ['-C', path, 'rev-list', '--count', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('1')
+    expect(
+      execFileSync('git', ['-C', path, 'log', '-1', '--format=%s'], {
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('Initialize AgentConstella project')
+    expect(
+      execFileSync('git', ['-C', path, 'ls-tree', '-r', 'HEAD'], {
+        encoding: 'utf8',
+      }),
+    ).toBe('')
     expect((await service.openFolder({ path })).id).toBe(project.id)
     database.close()
     const reopened = openWorkspaceDatabase(file)
@@ -268,6 +284,90 @@ describe('persistent project application service', () => {
       new WorkspaceService(reopened).getBoard({ projectId: project.id })
         .project,
     ).toEqual(project)
+  })
+
+  it('creates a common initial commit without committing existing staged/untracked files or running user hooks', async () => {
+    const { service, repository } = fixture(),
+      path = repository('unborn')
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-C', path, ...args], { encoding: 'utf8' }).trim()
+    const branch = git('symbolic-ref', 'HEAD')
+    writeFileSync(join(path, 'staged.txt'), 'staged version')
+    git('add', 'staged.txt')
+    writeFileSync(join(path, 'staged.txt'), 'working version')
+    writeFileSync(join(path, 'untracked.txt'), 'keep untracked')
+    writeFileSync(
+      join(path, '.git', 'hooks', 'pre-commit'),
+      '#!/bin/sh\nexit 1\n',
+      { mode: 0o755 },
+    )
+    writeFileSync(
+      join(path, '.git', 'hooks', 'reference-transaction'),
+      '#!/bin/sh\nexit 1\n',
+      { mode: 0o755 },
+    )
+    git('config', 'commit.gpgSign', 'true')
+    git('config', 'gpg.program', '/missing-signing-program')
+    const index = readFileSync(join(path, '.git', 'index'))
+    const project = await service.openFolder({ path })
+    expect(readFileSync(join(path, '.git', 'index'))).toEqual(index)
+    expect(readFileSync(join(path, 'staged.txt'), 'utf8')).toBe(
+      'working version',
+    )
+    expect(readFileSync(join(path, 'untracked.txt'), 'utf8')).toBe(
+      'keep untracked',
+    )
+    expect(git('symbolic-ref', 'HEAD')).toBe(branch)
+    expect(git('ls-tree', '-r', 'HEAD')).toBe('')
+    expect(git('show', ':staged.txt')).toBe('staged version')
+    expect(git('log', '-1', '--format=%an <%ae>')).toBe(
+      'AgentConstella <constella@localhost>',
+    )
+    const head = git('rev-parse', 'HEAD')
+    expect((await service.openRepository({ path })).id).toBe(project.id)
+    expect(git('rev-parse', 'HEAD')).toBe(head)
+    expect(git('rev-list', '--count', 'HEAD')).toBe('1')
+  })
+
+  it('shares one initial commit when an unborn repository is opened concurrently', async () => {
+    const { service, repository } = fixture(),
+      path = repository('parallel-open')
+    const [a, b] = await Promise.all([
+      service.openFolder({ path }),
+      service.openRepository({ path }),
+    ])
+    expect(a.id).toBe(b.id)
+    expect(
+      execFileSync('git', ['-C', path, 'rev-list', '--count', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('1')
+  })
+
+  it('preserves a failed initialization and can retry after a branch lock is removed', async () => {
+    const { service, repository } = fixture(),
+      path = repository('locked')
+    const branch = execFileSync('git', ['-C', path, 'symbolic-ref', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim()
+    const lock = join(path, '.git', `${branch}.lock`)
+    writeFileSync(lock, 'external lock')
+    writeFileSync(join(path, 'keep.txt'), 'Keep these files')
+    await expect(service.openFolder({ path })).rejects.toMatchObject({
+      code: 'GIT_INITIAL_COMMIT_FAILED',
+    })
+    expect(service.getSnapshot().projects).toEqual([])
+    expect(readFileSync(join(path, 'keep.txt'), 'utf8')).toBe(
+      'Keep these files',
+    )
+    rmSync(lock)
+    const project = await service.openFolder({ path })
+    expect(project.repoPath).toBe(realpathSync(path))
+    expect(
+      execFileSync('git', ['-C', path, 'rev-list', '--count', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim(),
+    ).toBe('1')
   })
 
   it('initializes an existing non-Git folder while preserving its files and reuses existing repositories', async () => {

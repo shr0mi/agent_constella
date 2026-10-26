@@ -8,17 +8,33 @@ const execute = promisify(execFile)
 
 async function git(args: string[]) {
   try {
-    return await execute('git', args, {
-      timeout: 10_000,
-      windowsHide: true,
-      env: {
-        ...process.env,
-        LC_ALL: 'C',
-        GIT_DIR: undefined,
-        GIT_COMMON_DIR: undefined,
-        GIT_WORK_TREE: undefined,
+    const invocation = execute(
+      'git',
+      ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgSign=false', ...args],
+      {
+        timeout: 10_000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          LC_ALL: 'C',
+          GIT_DIR: undefined,
+          GIT_COMMON_DIR: undefined,
+          GIT_WORK_TREE: undefined,
+          GIT_INDEX_FILE: undefined,
+          GIT_OBJECT_DIRECTORY: undefined,
+          GIT_ALTERNATE_OBJECT_DIRECTORIES: undefined,
+          GIT_CONFIG_COUNT: '0',
+          GIT_AUTHOR_NAME: 'AgentConstella',
+          GIT_AUTHOR_EMAIL: 'constella@localhost',
+          GIT_COMMITTER_NAME: 'AgentConstella',
+          GIT_COMMITTER_EMAIL: 'constella@localhost',
+        },
       },
-    })
+    )
+    // mktree needs EOF; other commands can exit immediately without reading.
+    // Close the stream without writing an empty payload to an exited child.
+    invocation.child.stdin?.end()
+    return await invocation
   } catch (error) {
     if (
       (error as NodeJS.ErrnoException).code === 'ENOENT' &&
@@ -30,6 +46,62 @@ async function git(args: string[]) {
         'Install Git and make it available to the desktop app, then try again.',
       )
     throw error
+  }
+}
+
+const initializingHistory = new Map<string, Promise<void>>()
+
+// Every task needs a common committed ancestor, even when the project starts
+// empty. Plumbing commands leave the working files and the user's index alone.
+export function ensureInitialCommit(directory: string): Promise<void> {
+  const pending = initializingHistory.get(directory)
+  if (pending) return pending
+  const operation = createInitialCommit(directory).finally(() => {
+    if (initializingHistory.get(directory) === operation)
+      initializingHistory.delete(directory)
+  })
+  initializingHistory.set(directory, operation)
+  return operation
+}
+
+async function createInitialCommit(directory: string): Promise<void> {
+  const hasCommit = async () => {
+    try {
+      await git(['-C', directory, 'rev-parse', '--verify', 'HEAD^{commit}'])
+      return true
+    } catch (error) {
+      if (error instanceof ApplicationError) throw error
+      return false
+    }
+  }
+  try {
+    if (await hasCommit()) return
+    await git(['-C', directory, 'symbolic-ref', '--quiet', 'HEAD'])
+    const tree = (await git(['-C', directory, 'mktree'])).stdout.trim()
+    const commit = (
+      await git([
+        '-C',
+        directory,
+        'commit-tree',
+        tree,
+        '-m',
+        'Initialize AgentConstella project',
+      ])
+    ).stdout.trim()
+    try {
+      // An empty expected old value prevents overwriting a commit created by
+      // another Git client while initialization was in progress.
+      await git(['-C', directory, 'update-ref', 'HEAD', commit, ''])
+    } catch (error) {
+      if (!(await hasCommit())) throw error
+    }
+  } catch (error) {
+    if (error instanceof ApplicationError) throw error
+    throw new ApplicationError(
+      'GIT_INITIAL_COMMIT_FAILED',
+      `Git could not create the shared initial commit in ${directory}.`,
+      'The folder, files, index, and existing history are preserved. Check Git access or repository locks, then open the folder again before running tasks.',
+    )
   }
 }
 
@@ -117,9 +189,10 @@ async function initializeRepository(directory: string): Promise<string> {
 
 export async function openProjectFolder(path: string): Promise<string> {
   const directory = await directoryPath(path)
-  return (
+  const repository =
     (await findRepository(directory)) ?? (await initializeRepository(directory))
-  )
+  await ensureInitialCommit(repository)
+  return repository
 }
 
 export async function createProjectFolder(path: string): Promise<string> {
@@ -147,7 +220,9 @@ export async function createProjectFolder(path: string): Promise<string> {
       'Choose an existing parent directory where you have write access, then try again.',
     )
   }
-  return initializeRepository(await directoryPath(path))
+  const directory = await initializeRepository(await directoryPath(path))
+  await ensureInitialCommit(directory)
+  return directory
 }
 
 export async function resolveRepository(path: string): Promise<string> {

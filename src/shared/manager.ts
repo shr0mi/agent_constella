@@ -16,12 +16,19 @@ export const managerScopeSchema = z
   .strict()
 export type ManagerScope = z.infer<typeof managerScopeSchema>
 export const managerSendSchema = managerScopeSchema.extend({
+  chatId: z.uuid().optional(),
   message: z.string().trim().min(1).max(32_000),
   selectedNodeId: z.uuid().nullable().optional(),
   model: z.string().trim().min(1).max(160).nullable().optional(),
   effort: effortSchema.nullable().optional(),
 })
 export type ManagerSend = z.infer<typeof managerSendSchema>
+export const newManagerChatSchema = managerScopeSchema.extend({
+  expectedChatId: z.uuid(),
+})
+export const selectManagerChatSchema = newManagerChatSchema.extend({
+  chatId: z.uuid(),
+})
 export const graphChangesSchema = z
   .object({
     taskId: z.uuid(),
@@ -65,8 +72,17 @@ export interface ManagerTurn {
 }
 export interface ManagerChat extends ManagerScope {
   id: string
+  createdAt: string
   threadId?: string
   turns: ManagerTurn[]
+}
+export interface ManagerChatSummary extends ManagerScope {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  turnCount: number
+  current: boolean
 }
 interface ChangeMetadata {
   projectId: string
@@ -95,6 +111,13 @@ export const undoChangeSchema = managerScopeSchema.extend({
 })
 export interface ManagerBridge {
   get(input: ManagerScope): Promise<Result<ManagerChat>>
+  list(input: ManagerScope): Promise<Result<ManagerChatSummary[]>>
+  newChat(
+    input: z.infer<typeof newManagerChatSchema>,
+  ): Promise<Result<ManagerChat>>
+  selectChat(
+    input: z.infer<typeof selectManagerChatSchema>,
+  ): Promise<Result<ManagerChat>>
   send(input: ManagerSend): Promise<Result<{ turnId: string }>>
   stop(input: ManagerScope): Promise<Result<void>>
   history(input: ManagerScope): Promise<Result<ChangeEntry[]>>

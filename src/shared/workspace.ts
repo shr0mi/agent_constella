@@ -24,6 +24,10 @@ export const updateProjectSchema = projectFieldsSchema.extend({
   expectedRevision: z.number().int().positive(),
 })
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>
+export const deleteProjectSchema = projectIdSchema.extend({
+  expectedRevision: z.number().int().positive(),
+})
+export type DeleteProjectInput = z.infer<typeof deleteProjectSchema>
 
 export const taskFieldsSchema = z
   .object({
@@ -97,6 +101,7 @@ export interface WorkspaceBridge {
   chooseRepository(): Promise<Result<Project | null>>
   chooseNewProject(): Promise<Result<Project | null>>
   updateProject(input: UpdateProjectInput): Promise<Result<Project>>
+  deleteProject(input: DeleteProjectInput): Promise<Result<boolean>>
   createTask(input: CreateTaskInput): Promise<Result<Task>>
   updateTask(input: UpdateTaskInput): Promise<Result<Task>>
   moveTask(input: MoveTaskInput): Promise<Result<Task>>

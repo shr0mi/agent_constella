@@ -105,6 +105,12 @@ export function toActivity(item: ThreadItem): Activity {
 }
 
 export class ConnectivityService {
+  hasActiveProject(projectId: string) {
+    return (
+      this.resetting ||
+      (!!this.active && this.state.session.projectId === projectId)
+    )
+  }
   private state!: AppState
   private active?: { controller: AbortController; done?: Promise<void> }
   private resetting = false

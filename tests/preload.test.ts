@@ -108,6 +108,16 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(removeListener).toHaveBeenCalledWith(graphChannel, graphListener)
   await bridge.execution.getTask(graphIdentity)
   expect(invoke).toHaveBeenLastCalledWith('constella:node:task', graphIdentity)
+  await bridge.execution.getReview(graphIdentity)
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:task:review',
+    graphIdentity,
+  )
+  await bridge.execution.openWorktree(graphIdentity)
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:task:open-worktree',
+    graphIdentity,
+  )
   const nodeIdentity = { ...graphIdentity, nodeId: 'node' }
   await bridge.execution.get(nodeIdentity)
   expect(invoke).toHaveBeenLastCalledWith('constella:node:get', nodeIdentity)
@@ -133,4 +143,22 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(workflowCallback).toHaveBeenCalledExactlyOnceWith(graphIdentity)
   removeWorkflowListener()
   expect(removeListener).toHaveBeenCalledWith(workflowChannel, workflowListener)
+  const scope = { projectId: 'project', taskId: null }
+  const deletion = { projectId: 'project', expectedRevision: 1 }
+  await bridge.workspace.deleteProject(deletion)
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:workspace:delete-project',
+    deletion,
+  )
+  await bridge.manager.list(scope)
+  expect(invoke).toHaveBeenLastCalledWith('constella:manager:list', scope)
+  const fresh = { ...scope, expectedChatId: 'old-chat' }
+  await bridge.manager.newChat(fresh)
+  expect(invoke).toHaveBeenLastCalledWith('constella:manager:new-chat', fresh)
+  const selection = { ...fresh, chatId: 'saved-chat' }
+  await bridge.manager.selectChat(selection)
+  expect(invoke).toHaveBeenLastCalledWith(
+    'constella:manager:select-chat',
+    selection,
+  )
 })

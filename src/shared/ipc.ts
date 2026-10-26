@@ -1,6 +1,9 @@
 // Keep the preload's runtime imports free of validation and server dependencies.
 export const channels = {
   managerGet: 'constella:manager:get',
+  managerList: 'constella:manager:list',
+  managerNewChat: 'constella:manager:new-chat',
+  managerSelectChat: 'constella:manager:select-chat',
   managerSend: 'constella:manager:send',
   managerStop: 'constella:manager:stop',
   managerHistory: 'constella:manager:history',
@@ -16,6 +19,7 @@ export const channels = {
   chooseRepository: 'constella:workspace:choose-repository',
   chooseNewProject: 'constella:workspace:choose-new-project',
   updateProject: 'constella:workspace:update-project',
+  deleteProject: 'constella:workspace:delete-project',
   createTask: 'constella:workspace:create-task',
   updateTask: 'constella:workspace:update-task',
   moveTask: 'constella:workspace:move-task',
@@ -39,6 +43,8 @@ export const channels = {
   graphChanged: 'constella:graph:changed',
   nodeGet: 'constella:node:get',
   taskExecution: 'constella:node:task',
+  taskReview: 'constella:task:review',
+  taskOpenWorktree: 'constella:task:open-worktree',
   nodeStart: 'constella:node:start',
   nodeStop: 'constella:node:stop',
   nodeRun: 'constella:node:run',

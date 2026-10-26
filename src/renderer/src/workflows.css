@@ -280,6 +280,67 @@
   font-size: 11px;
   margin-top: 14px;
 }
+.workflow-integration-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #b9a3ca;
+}
+.task-review-content {
+  padding: 23px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: #b9a3ca;
+}
+.task-review-content > p {
+  margin: 0 0 18px;
+}
+.task-review-content dl {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 9px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #60506d;
+  border-radius: 6px;
+}
+.task-review-content dt {
+  color: #8f779f;
+}
+.task-review-content dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.task-review-content code,
+.task-review-command {
+  font: 11px/1.8 monospace;
+}
+.task-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.task-review-content h3 {
+  margin: 24px 0 10px;
+  font-size: 13px;
+  color: #d4bce7;
+}
+.task-review-command {
+  padding: 14px;
+  background: #211827;
+  border: 1px solid #493453;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.task-review-notice {
+  color: #d7b77d;
+}
+.task-review-content .task-review-next {
+  margin-top: 24px;
+}
 .task-workflow-badge {
   display: flex;
   align-items: center;

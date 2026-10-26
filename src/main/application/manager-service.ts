@@ -2,7 +2,10 @@ import { Codex, type CodexOptions } from '@openai/codex-sdk'
 import { randomUUID } from 'node:crypto'
 import {
   managerSendSchema,
+  newManagerChatSchema,
+  selectManagerChatSchema,
   type ManagerChat,
+  type ManagerChatSummary,
   type ManagerScope,
   type ManagerTurn,
 } from '../../shared/manager'
@@ -23,6 +26,11 @@ export class ManagerService {
   private active = new Map<string, Active>()
   private listeners = new Set<(scope: ManagerScope) => void>()
   private closing = false
+  hasActiveProject(projectId: string) {
+    return [...this.active.keys()].some((key) =>
+      key.startsWith(`${projectId}:`),
+    )
+  }
   constructor(
     private readonly database: WorkspaceDatabase,
     readonly tools: ManagerTools,
@@ -33,10 +41,10 @@ export class ManagerService {
   ) {}
   initialize() {
     const rows = this.database.sqlite
-      .prepare('SELECT document FROM manager_chats')
-      .all() as { document: string }[]
+      .prepare('SELECT document, created_at FROM manager_chats')
+      .all() as { document: string; created_at: string }[]
     for (const row of rows) {
-      const chat = JSON.parse(row.document) as ManagerChat
+      const chat = this.read(row)
       let changed = false
       for (const turn of chat.turns)
         if (turn.status === 'running' || turn.status === 'stopping') {
@@ -57,6 +65,10 @@ export class ManagerService {
     return () => this.listeners.delete(listener)
   }
   notify(scope: ManagerScope) {
+    if (this.database.sqlite.inTransaction) {
+      queueMicrotask(() => this.notify(scope))
+      return
+    }
     for (const listener of this.listeners) {
       try {
         listener(scope)
@@ -68,24 +80,145 @@ export class ManagerService {
   private key(scope: ManagerScope) {
     return `${scope.projectId}:${scope.taskId ?? 'board'}`
   }
+  private read(row: { document: string; created_at: string }): ManagerChat {
+    return { ...JSON.parse(row.document), createdAt: row.created_at }
+  }
+  private fresh(scope: ManagerScope): ManagerChat {
+    return {
+      ...scope,
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      turns: [],
+    }
+  }
   get(raw: unknown): ManagerChat {
     const scope = this.tools.scope(raw)
     const row = this.database.sqlite
       .prepare(
-        'SELECT document FROM manager_chats WHERE project_id = ? AND task_id IS ?',
+        'SELECT document, created_at FROM manager_chats WHERE project_id = ? AND task_id IS ? AND is_current = 1',
       )
-      .get(scope.projectId, scope.taskId) as { document: string } | undefined
-    if (row) return JSON.parse(row.document) as ManagerChat
-    const chat: ManagerChat = { ...scope, id: randomUUID(), turns: [] }
+      .get(scope.projectId, scope.taskId) as
+      { document: string; created_at: string } | undefined
+    if (row) return this.read(row)
+    const chat = this.fresh(scope)
     this.persist(chat)
     return chat
   }
-  private persist(chat: ManagerChat) {
-    this.database.sqlite
+  list(raw: unknown): ManagerChatSummary[] {
+    const scope = this.tools.scope(raw)
+    const rows = this.database.sqlite
       .prepare(
-        'INSERT INTO manager_chats (id, project_id, task_id, document) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET document = excluded.document',
+        `
+      SELECT id, is_current, created_at,
+        substr(json_extract(document, '$.turns[0].message'), 1, 100) AS title,
+        json_array_length(document, '$.turns') AS turn_count,
+        COALESCE(json_extract(document, '$.turns[#-1].finishedAt'), json_extract(document, '$.turns[#-1].startedAt'), created_at) AS updated_at
+      FROM manager_chats WHERE project_id = ? AND task_id IS ?
+      ORDER BY is_current DESC, rowid DESC
+    `,
       )
-      .run(chat.id, chat.projectId, chat.taskId, JSON.stringify(chat))
+      .all(scope.projectId, scope.taskId) as {
+      id: string
+      is_current: number
+      created_at: string
+      title: string | null
+      turn_count: number
+      updated_at: string
+    }[]
+    return rows.map((row) => ({
+      ...scope,
+      id: row.id,
+      current: row.is_current === 1,
+      title: row.title?.trim() || 'New conversation',
+      turnCount: row.turn_count,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+  }
+  private switchable(scope: ManagerScope, expectedChatId: string) {
+    if (this.closing || this.active.has(this.key(scope)))
+      throw new ApplicationError(
+        'MANAGER_BUSY',
+        'This manager has an active turn.',
+        'Stop it or wait for it to finish before changing conversations.',
+      )
+    const current = this.get(scope)
+    if (current.id !== expectedChatId)
+      throw new ApplicationError(
+        'STALE_MANAGER_CHAT',
+        'The selected manager conversation changed.',
+        'Review the current conversation before trying again. Your draft is retained.',
+      )
+    return current
+  }
+  newChat(raw: unknown): ManagerChat {
+    const input = newManagerChatSchema.parse(raw)
+    const scope = this.tools.scope({
+      projectId: input.projectId,
+      taskId: input.taskId,
+    })
+    return this.database.sqlite
+      .transaction(() => {
+        this.switchable(scope, input.expectedChatId)
+        const chat = this.fresh(scope)
+        this.database.sqlite
+          .prepare(
+            'UPDATE manager_chats SET is_current = 0 WHERE project_id = ? AND task_id IS ? AND is_current = 1',
+          )
+          .run(scope.projectId, scope.taskId)
+        this.persist(chat)
+        return chat
+      })
+      .immediate()
+  }
+  selectChat(raw: unknown): ManagerChat {
+    const input = selectManagerChatSchema.parse(raw)
+    const scope = this.tools.scope({
+      projectId: input.projectId,
+      taskId: input.taskId,
+    })
+    return this.database.sqlite
+      .transaction(() => {
+        const current = this.switchable(scope, input.expectedChatId)
+        if (current.id === input.chatId) return current
+        const row = this.database.sqlite
+          .prepare(
+            'SELECT document, created_at FROM manager_chats WHERE id = ? AND project_id = ? AND task_id IS ?',
+          )
+          .get(input.chatId, scope.projectId, scope.taskId) as
+          { document: string; created_at: string } | undefined
+        if (!row)
+          throw new ApplicationError(
+            'MANAGER_CHAT_NOT_FOUND',
+            'This conversation does not belong to this manager or no longer exists.',
+            'Choose a saved conversation from this project or task.',
+          )
+        this.database.sqlite
+          .prepare(
+            'UPDATE manager_chats SET is_current = 0 WHERE project_id = ? AND task_id IS ? AND is_current = 1',
+          )
+          .run(scope.projectId, scope.taskId)
+        this.database.sqlite
+          .prepare('UPDATE manager_chats SET is_current = 1 WHERE id = ?')
+          .run(input.chatId)
+        this.notify(scope)
+        return this.read(row)
+      })
+      .immediate()
+  }
+  private persist(chat: ManagerChat) {
+    const document = JSON.stringify(chat)
+    const updated = this.database.sqlite
+      .prepare(
+        'UPDATE manager_chats SET document = ? WHERE id = ? AND project_id = ? AND task_id IS ?',
+      )
+      .run(document, chat.id, chat.projectId, chat.taskId)
+    if (!updated.changes)
+      this.database.sqlite
+        .prepare(
+          'INSERT INTO manager_chats (id, project_id, task_id, document, created_at) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(chat.id, chat.projectId, chat.taskId, document, chat.createdAt)
     this.notify({ projectId: chat.projectId, taskId: chat.taskId })
   }
   async send(raw: unknown) {
@@ -100,6 +233,13 @@ export class ManagerService {
         'MANAGER_BUSY',
         'This manager already has an active turn.',
         'Stop it or wait for it to finish.',
+      )
+    const chat = this.get(scope)
+    if (input.chatId && input.chatId !== chat.id)
+      throw new ApplicationError(
+        'STALE_MANAGER_CHAT',
+        'The selected manager conversation changed.',
+        'Review the current conversation before sending again. Your draft is retained.',
       )
     const active: Active = { controller: new AbortController() }
     this.active.set(key, active)
@@ -125,7 +265,6 @@ export class ManagerService {
           'Refresh model options and select a supported model/effort.',
         )
       active.controller.signal.throwIfAborted()
-      const chat = this.get(scope)
       const turn: ManagerTurn = {
         id: randomUUID(),
         message: input.message,

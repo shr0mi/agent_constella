@@ -3,6 +3,7 @@ import {
   Bot,
   History,
   LoaderCircle,
+  Plus,
   Send,
   Square,
   Undo2,
@@ -11,6 +12,7 @@ import {
 import type {
   ChangeEntry,
   ManagerChat as Chat,
+  ManagerChatSummary,
   ManagerScope,
 } from '../../shared/manager'
 import type { Effort, Result } from '../../shared/contracts'
@@ -113,6 +115,7 @@ function ManagerPanel({
   onClose: () => void
 }) {
   const [chat, setChat] = useState<Chat>()
+  const [chats, setChats] = useState<ManagerChatSummary[]>([])
   const [history, setHistory] = useState<ChangeEntry[]>([])
   const [tab, setTab] = useState<'chat' | 'history'>('chat')
   const [message, setMessage] = useState('')
@@ -151,15 +154,17 @@ function ManagerPanel({
     const id = ++request.current
     try {
       const api = window.constella?.manager
-      if (!api)
+      if (!api?.list || !api.newChat || !api.selectChat)
         throw new Error('Manager chat is unavailable. Restart the desktop app.')
       const results = await Promise.all([
         value(api.get(scope)),
         value(api.history(scope)),
+        value(api.list(scope)),
       ])
       if (alive.current && id === request.current) {
         setChat(results[0])
         setHistory(results[1])
+        setChats(results[2])
       }
     } catch (error) {
       if (alive.current) setError(String(error))
@@ -203,6 +208,7 @@ function ManagerPanel({
       await refresh()
     } catch (error) {
       if (alive.current) setError(String(error))
+      await refresh()
     } finally {
       if (alive.current) setPending(false)
     }
@@ -217,19 +223,85 @@ function ManagerPanel({
           <Bot size={18} />
           <strong>{scope.taskId ? 'Task manager' : 'Project manager'}</strong>
         </div>
-        <button
-          className="icon-button"
-          aria-label="Close manager chat"
-          onClick={onClose}
-        >
-          <X size={17} />
-        </button>
+        <div className="manager-header-actions">
+          <button
+            className="button secondary"
+            disabled={pending || active || !chat || chat.turns.length === 0}
+            title={
+              active
+                ? 'Stop the current turn before starting a new chat.'
+                : 'Start a fresh conversation and keep this one in saved chats.'
+            }
+            onClick={() => {
+              if (!chat) return
+              void act(async () => {
+                const next = await value(
+                  window.constella!.manager.newChat({
+                    ...scope,
+                    expectedChatId: chat.id,
+                  }),
+                )
+                setChat(next)
+                setMessage('')
+                setModel('')
+                setEffort('')
+                setTab('chat')
+              })
+            }}
+          >
+            <Plus size={13} />
+            New chat
+          </button>
+          <button
+            className="icon-button"
+            aria-label="Close manager chat"
+            onClick={onClose}
+          >
+            <X size={17} />
+          </button>
+        </div>
       </header>
       <p className="manager-caption">
         Plan and edit your{' '}
         {scope.taskId ? 'task workflow' : 'project board and settings'}. Changes
         save immediately and appear in history.
       </p>
+      {chat && chats.length > 1 && (
+        <div className="manager-conversation-picker">
+          <label htmlFor="manager-conversation">Saved chats</label>
+          <select
+            id="manager-conversation"
+            aria-label="Saved manager chats"
+            value={chat.id}
+            disabled={pending || active}
+            onChange={(event) => {
+              const chatId = event.target.value
+              void act(async () => {
+                const next = await value(
+                  window.constella!.manager.selectChat({
+                    ...scope,
+                    expectedChatId: chat.id,
+                    chatId,
+                  }),
+                )
+                setChat(next)
+                setMessage('')
+                setModel('')
+                setEffort('')
+                setTab('chat')
+              })
+            }}
+          >
+            {chats.map((conversation) => (
+              <option key={conversation.id} value={conversation.id}>
+                {conversation.title} ·{' '}
+                {new Date(conversation.createdAt).toLocaleDateString()}
+              </option>
+            ))}
+          </select>
+          <small>Each message uses the current saved project state.</small>
+        </div>
+      )}
       <nav aria-label="Manager views">
         <button
           className={tab === 'chat' ? 'selected' : ''}
@@ -323,11 +395,19 @@ function ManagerPanel({
             className="manager-composer"
             onSubmit={(event) => {
               event.preventDefault()
-              if (!message.trim() || active || pending || blockedReason) return
+              if (
+                !chat ||
+                !message.trim() ||
+                active ||
+                pending ||
+                blockedReason
+              )
+                return
               void act(async () => {
                 await value(
                   window.constella!.manager.send({
                     ...scope,
+                    chatId: chat.id,
                     message,
                     selectedNodeId: selectedNodeId ?? null,
                     model: modelOverride,

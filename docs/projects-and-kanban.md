@@ -4,7 +4,7 @@ Implemented on 25 October 2026. The desktop checkpoint remains pending user veri
 
 ## Implemented behavior
 
-- **Create project** uses a native name/location dialog to create a new folder, initialize Git on `main`, register the project, and open its board. Existing destination files/folders are never overwritten; users can open them instead.
+- **Create project** uses a native name/location dialog to create a new folder, initialize Git on `main` with an empty initial commit, register the project, and open its board. Existing destination files/folders are never overwritten; users can open them instead.
 - **Open folder** selects an existing directory and reuses its repository or initializes Git when the folder has none. Existing files are kept. Git discovery resolves repository roots and symlinks and accepts existing Git worktrees. Bare repositories, broken Git metadata, inaccessible folders, and missing Git produce visible errors. Canonical paths prevent duplicate projects; reopening a registered repository selects it.
 - Project settings persist the name, canonical path, brief, project instructions, development command, and test command. The repository path is fixed at registration. Saving command text never executes it.
 - Every project has an independent To Do / Doing / Done board. Tasks persist their title, description, acceptance criteria, status, column position, revision, timestamps, and optional archive timestamp.
@@ -14,9 +14,19 @@ Implemented on 25 October 2026. The desktop checkpoint remains pending user veri
 
 ## Database and migrations
 
-The main process opens `workspace.sqlite` in Electron's user data directory, outside project repositories. On macOS this is `~/Library/Application Support/AgentConstella/workspace.sqlite`. The connection uses SQLite WAL, foreign keys, and a 5-second busy timeout. Repository opening performs Git discovery, and new/non-Git project folders additionally receive Git initialization. Existing project files are retained. Initialization does not make a commit, create a remote, or publish anything; later worktree execution must handle a new repository's unborn branch.
+The main process opens `workspace.sqlite` in Electron's user data directory, outside project repositories. On macOS this is `~/Library/Application Support/AgentConstella/workspace.sqlite`. The connection uses SQLite WAL, foreign keys, and a 5-second busy timeout. Repository opening performs Git discovery, and new/non-Git project folders additionally receive Git initialization. Any current project branch without a commit receives an empty `Initialize AgentConstella project` commit, giving all future task branches a shared ancestor. Existing working files, staged changes, and committed history are preserved. Initialization uses Git plumbing with app-local author identity, disabled hooks/signing, and an atomic ref creation; it does not stage files, create a remote, or publish anything. Concurrent opens share the same initialization operation, and a competing external commit is preserved rather than overwritten.
 
 If folder creation or Git initialization fails, no project row is registered. Missing Git is checked before creating a new directory. If Git initialization succeeds but database registration fails, the folder is retained and the error explains how to retry using Open folder.
+
+An initial-commit failure also leaves the folder and index intact and prevents registration until retry succeeds. New task worktrees recheck this invariant for projects registered by older versions. This prevention does not rewrite already-created unrelated task branches; those require a separate repair.
+
+## Deleting a project
+
+**Project settings → Delete project** opens a native confirmation dialog with Cancel as the default. It names the project and repository and describes the permanent removal of its app metadata. The trusted desktop handler supplies the confirmation callback; MCP tools cannot delete projects or supply a confirmation flag. The application service requires the live project revision, rejects active manager/worker/integration operations and pending catalog changes, and rechecks after the dialog before deleting in one SQLite transaction.
+
+Foreign-key cascades remove the selected project's tasks, graph revisions/commands, worktree registrations, node threads/runs, workflows/decisions, manager chats, change history, and local catalog entries. Global skills/profiles and other projects stay available. Migration 10 binds manager command receipts to their projects, backfilling supported legacy result shapes so those receipts are also removed. Cancellation, stale state, and transaction failures leave the project records intact. A committed removal publishes a new workspace snapshot and returns the UI to Projects. An idle scratch lab selection for the removed project is cleared so it can continue without the deleted project context.
+
+Deletion never removes repository files, skill folders, Git refs, or task worktree directories, including unintegrated code. Deleting app metadata has no Undo. Reopening the same repository creates a new project entry with an empty board; preserved folders/branches remain available on disk.
 
 `src/main/db/schema.ts` declares the Drizzle tables. `src/main/db/migrations.ts` contains append-only versioned SQL embedded in the main bundle, avoiding runtime dependencies on copied migration assets. `openWorkspaceDatabase` applies pending migrations transactionally and records each version, name, SHA-256 checksum, and application time in `app_schema_migrations`.
 

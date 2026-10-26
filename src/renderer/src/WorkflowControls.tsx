@@ -15,17 +15,20 @@ import { workflowStatusLabel } from '../../shared/workflow'
 import { workflowAction } from './execution-store'
 import { useAppStore } from './store'
 import { Modal } from './components/Modal'
+import { TaskReviewButton } from './TaskReview'
 
 export function WorkflowControls({
   workflow,
   graphRevision,
   blocked,
   onInspect,
+  worktreeReady = false,
 }: {
   workflow?: WorkflowSnapshot
   graphRevision: number
   blocked: boolean
   onInspect: (id: string) => void
+  worktreeReady?: boolean
 }) {
   const [pending, setPending] = useState(false),
     [integrationOpen, setIntegrationOpen] = useState(false)
@@ -89,6 +92,7 @@ export function WorkflowControls({
           </div>
         </div>
         <div className="workflow-control-actions">
+          <TaskReviewButton identity={identity} available={worktreeReady} />
           {issue ? (
             <button
               className="button secondary"
@@ -168,6 +172,13 @@ export function WorkflowControls({
             )
           )}
         </div>
+        {workflow.phase === 'completed' && (
+          <p className="workflow-integration-hint">
+            {workflow.integration?.status === 'integrated'
+              ? 'Accepted work has been integrated into the project folder.'
+              : 'Work accepted. Use Integrate branch to update the project folder; until then, review the product in its task folder.'}
+          </p>
+        )}
         {(workflow.error || issue || workflow.phase === 'paused') && (
           <p className="workflow-blocker">
             {workflow.error?.message ??
@@ -200,11 +211,13 @@ export function ReviewPanel({
   nodeId,
   onInspect,
   disabled = false,
+  worktreeReady = false,
 }: {
   workflow: WorkflowSnapshot
   nodeId: string
   onInspect: (id: string) => void
   disabled?: boolean
+  worktreeReady?: boolean
 }) {
   const [note, setNote] = useState(''),
     [target, setTarget] = useState(''),
@@ -248,6 +261,10 @@ export function ReviewPanel({
             ? 'Inspect the accepted upstream results, then approve or request a revision. This gate always waits for your decision.'
             : 'Every upstream dependency must complete and be accepted before this review can be decided.'}
       </p>
+      <TaskReviewButton
+        identity={{ projectId: workflow.projectId, taskId: workflow.taskId }}
+        available={worktreeReady}
+      />
       {evidence.map((result) => (
         <details key={result.nodeId}>
           <summary>

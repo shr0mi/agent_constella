@@ -44,6 +44,10 @@ import {
 
 export class CatalogService {
   private queue: Promise<unknown> = Promise.resolve()
+  private pendingOperations = 0
+  hasPendingOperations() {
+    return this.pendingOperations > 0
+  }
   private listeners = new Set<() => void>()
   constructor(
     private readonly database: WorkspaceDatabase,
@@ -54,6 +58,7 @@ export class CatalogService {
     return this.database.db
   }
   private serial<T>(action: () => Promise<T> | T): Promise<T> {
+    this.pendingOperations++
     const result = this.queue
       .catch(() => {})
       .then(action)
@@ -69,6 +74,9 @@ export class CatalogService {
             'Check that the skill folder and resources still exist and are accessible, then reload the catalog item.',
           )
         throw error
+      })
+      .finally(() => {
+        this.pendingOperations--
       })
     this.queue = result
     return result

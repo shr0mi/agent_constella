@@ -202,4 +202,33 @@ export const migrations = [
     CREATE INDEX change_history_scope ON change_history(project_id, task_id);
     `,
   },
+  {
+    version: 9,
+    name: 'manager_conversation_history',
+    sql: `
+    DROP INDEX manager_chat_scope;
+    ALTER TABLE manager_chats ADD COLUMN is_current INTEGER NOT NULL DEFAULT 1 CHECK(is_current IN (0, 1));
+    ALTER TABLE manager_chats ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+    UPDATE manager_chats SET created_at = COALESCE(json_extract(document, '$.turns[0].startedAt'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+    CREATE UNIQUE INDEX manager_chat_scope ON manager_chats(project_id, COALESCE(task_id, '')) WHERE is_current = 1;
+    CREATE INDEX manager_chat_history ON manager_chats(project_id, task_id);
+    `,
+  },
+  {
+    version: 10,
+    name: 'project_scoped_manager_receipts',
+    sql: `
+    ALTER TABLE manager_commands ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE;
+    UPDATE manager_commands SET project_id = (
+      SELECT id FROM projects WHERE id = COALESCE(
+        json_extract(manager_commands.result, '$.projectId'),
+        json_extract(manager_commands.result, '$.task.projectId'),
+        json_extract(manager_commands.result, '$.project.id'),
+        (SELECT id FROM projects WHERE id = json_extract(manager_commands.result, '$.id')),
+        (SELECT project_id FROM change_history WHERE id = json_extract(manager_commands.result, '$.undone'))
+      )
+    );
+    CREATE INDEX manager_commands_project ON manager_commands(project_id);
+    `,
+  },
 ] as const

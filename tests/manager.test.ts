@@ -25,7 +25,11 @@ import { ManagerTools } from '../src/main/application/manager-tools'
 import { ManagerService } from '../src/main/application/manager-service'
 import { LocalMcpServer } from '../src/main/mcp/server'
 import { makeWorkflowNode, type GraphSnapshot } from '../src/shared/graph'
-import type { ChangeEntry, ManagerScope } from '../src/shared/manager'
+import type {
+  ChangeEntry,
+  ManagerChat,
+  ManagerScope,
+} from '../src/shared/manager'
 import { migrations } from '../src/main/db/migrations'
 import type { Project } from '../src/shared/workspace'
 
@@ -154,6 +158,251 @@ async function fixture() {
   }
 }
 const command = () => randomUUID()
+
+function seededChat(
+  f: Awaited<ReturnType<typeof fixture>>,
+  manager: ManagerService,
+  scope: ManagerScope,
+  message: string,
+) {
+  const chat = manager.get(scope)
+  chat.threadId = `saved-${chat.id}`
+  chat.turns.push({
+    id: command(),
+    message,
+    context: '{}',
+    startedAt: new Date().toISOString(),
+    status: 'completed',
+    items: [],
+  })
+  f.database.sqlite
+    .prepare('UPDATE manager_chats SET document = ? WHERE id = ?')
+    .run(JSON.stringify(chat), chat.id)
+  return chat
+}
+
+describe('manager conversation selection', () => {
+  it('starts independent fresh board/task chats, retains prior chats after restart and leaves all project metadata intact', async () => {
+    const f = await fixture(),
+      server = new LocalMcpServer(f.tools)
+    const manager = new ManagerService(f.database, f.tools, server)
+    managers.push(manager)
+    const board = seededChat(f, manager, f.board, 'Earlier board conversation')
+    const task = seededChat(f, manager, f.scope, 'Earlier task conversation')
+    const workspace = f.workspace.getSnapshot(),
+      history = f.tools.history(f.board)
+    const freshBoard = manager.newChat({ ...f.board, expectedChatId: board.id })
+    expect(freshBoard.id).not.toBe(board.id)
+    expect(freshBoard).toMatchObject({
+      turns: [],
+      createdAt: expect.any(String),
+    })
+    expect(freshBoard.threadId).toBeUndefined()
+    expect(manager.get(f.scope)).toEqual(task)
+    const freshTask = manager.newChat({ ...f.scope, expectedChatId: task.id })
+    expect(freshTask.id).not.toBe(task.id)
+    expect(freshTask.threadId).toBeUndefined()
+    expect(manager.list(f.board).map((chat) => chat.id)).toEqual([
+      freshBoard.id,
+      board.id,
+    ])
+    expect(manager.list(f.scope).map((chat) => chat.id)).toEqual([
+      freshTask.id,
+      task.id,
+    ])
+    const restarted = new ManagerService(f.database, f.tools, server)
+    restarted.initialize()
+    expect(restarted.get(f.board)).toEqual(freshBoard)
+    expect(restarted.get(f.scope)).toEqual(freshTask)
+    expect(
+      restarted.selectChat({
+        ...f.board,
+        expectedChatId: freshBoard.id,
+        chatId: board.id,
+      }),
+    ).toEqual(board)
+    expect(
+      restarted.selectChat({
+        ...f.scope,
+        expectedChatId: freshTask.id,
+        chatId: task.id,
+      }),
+    ).toEqual(task)
+    expect(f.workspace.getSnapshot()).toEqual(workspace)
+    expect(f.tools.history(f.board)).toEqual(history)
+  })
+  it('rejects stale selections and messages and prevents selecting another project or task conversation', async () => {
+    const f = await fixture(),
+      manager = new ManagerService(
+        f.database,
+        f.tools,
+        new LocalMcpServer(f.tools),
+      )
+    managers.push(manager)
+    const board = manager.get(f.board),
+      task = manager.get(f.scope)
+    const other = manager.get({ projectId: f.other.id, taskId: null })
+    const fresh = manager.newChat({ ...f.board, expectedChatId: board.id })
+    expect(() =>
+      manager.newChat({ ...f.board, expectedChatId: board.id }),
+    ).toThrow('conversation changed')
+    expect(() =>
+      manager.selectChat({
+        ...f.board,
+        expectedChatId: board.id,
+        chatId: board.id,
+      }),
+    ).toThrow('conversation changed')
+    expect(() =>
+      manager.selectChat({
+        ...f.board,
+        expectedChatId: fresh.id,
+        chatId: task.id,
+      }),
+    ).toThrow('does not belong')
+    expect(() =>
+      manager.selectChat({
+        ...f.board,
+        expectedChatId: fresh.id,
+        chatId: other.id,
+      }),
+    ).toThrow('does not belong')
+    await expect(
+      manager.send({
+        ...f.board,
+        chatId: board.id,
+        message: 'Must not reach the wrong chat.',
+      }),
+    ).rejects.toMatchObject({ code: 'STALE_MANAGER_CHAT' })
+    expect(manager.list(f.board)).toHaveLength(2)
+    expect(manager.get(f.board)).toEqual(fresh)
+    expect(manager.get(f.scope)).toEqual(task)
+  })
+  it.each(['board', 'task'] as const)(
+    'uses a fresh thread after New chat and live project context when resuming a saved %s chat',
+    async (kind) => {
+      const f = await fixture(),
+        server = new LocalMcpServer(f.tools)
+      servers.push(server)
+      await server.start()
+      const calls: { prompt: string; resumed?: string }[] = []
+      const thread = (resumed?: string) => ({
+        async runStreamed(prompt: string) {
+          calls.push({ prompt, resumed })
+          return {
+            events: (async function* (): AsyncGenerator<ThreadEvent> {
+              yield {
+                type: 'thread.started',
+                thread_id: resumed ?? `fresh-${calls.length}`,
+              }
+              yield {
+                type: 'turn.completed',
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  cached_input_tokens: 0,
+                  cache_write_input_tokens: 0,
+                  reasoning_output_tokens: 0,
+                },
+              }
+            })(),
+          }
+        },
+      })
+      const manager = new ManagerService(f.database, f.tools, server, () => ({
+        startThread: () => thread(),
+        resumeThread: (id) => thread(id),
+      }))
+      managers.push(manager)
+      const scope = kind === 'board' ? f.board : f.scope
+      const old = manager.get(scope)
+      await manager.send({
+        ...scope,
+        chatId: old.id,
+        message: 'First conversation.',
+      })
+      await manager.stop(scope)
+      const oldThread = manager.get(scope).threadId
+      const fresh = manager.newChat({ ...scope, expectedChatId: old.id })
+      await manager.send({
+        ...scope,
+        chatId: fresh.id,
+        message: 'Fresh conversation.',
+      })
+      await manager.stop(scope)
+      expect(calls[1].resumed).toBeUndefined()
+      expect(manager.get(scope).threadId).not.toBe(oldThread)
+      const project = f.workspace.getBoard({ projectId: f.project.id }).project
+      await f.tools.call(f.board, 'project_update', {
+        expectedRevision: project.revision,
+        commandId: command(),
+        description: 'The current saved project brief.',
+      })
+      f.workspace.updateTask({
+        projectId: f.project.id,
+        taskId: f.task.id,
+        expectedRevision: f.task.revision,
+        title: f.task.title,
+        description: 'The current saved task objective.',
+        acceptanceCriteria: '',
+      })
+      manager.selectChat({ ...scope, expectedChatId: fresh.id, chatId: old.id })
+      await manager.send({
+        ...scope,
+        chatId: old.id,
+        message: 'Continue this earlier conversation.',
+      })
+      await manager.stop(scope)
+      expect(calls[2].resumed).toBe(oldThread)
+      expect(calls[2].prompt).toContain('The current saved project brief.')
+      expect(calls[2].prompt).toContain('The current saved task objective.')
+      expect(manager.get(scope).turns).toHaveLength(2)
+      expect(
+        manager.list(scope).find((chat) => chat.id === fresh.id)?.turnCount,
+      ).toBe(1)
+    },
+  )
+  it('blocks new/saved conversation switches while a manager turn is preparing', async () => {
+    const f = await fixture(),
+      manager = new ManagerService(
+        f.database,
+        f.tools,
+        new LocalMcpServer(f.tools),
+      )
+    managers.push(manager)
+    const old = manager.get(f.board),
+      fresh = manager.newChat({ ...f.board, expectedChatId: old.id })
+    const context = await f.tools.context(f.board)
+    let ready!: (packet: typeof context) => void
+    vi.spyOn(f.tools, 'context').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          ready = resolve
+        }),
+    )
+    const sending = manager.send({
+      ...f.board,
+      chatId: fresh.id,
+      message: 'Preparing a manager turn.',
+    })
+    expect(() =>
+      manager.newChat({ ...f.board, expectedChatId: fresh.id }),
+    ).toThrow('active turn')
+    expect(() =>
+      manager.selectChat({
+        ...f.board,
+        expectedChatId: fresh.id,
+        chatId: old.id,
+      }),
+    ).toThrow('active turn')
+    await manager.stop(f.board)
+    ready(context)
+    await expect(sending).rejects.toThrow()
+    expect(
+      manager.newChat({ ...f.board, expectedChatId: fresh.id }).turns,
+    ).toEqual([])
+  })
+})
 
 describe('manager metadata commands', () => {
   it('edits only requested project settings, publishes saved state and handles identical retries once', async () => {
@@ -345,7 +594,7 @@ describe('manager metadata commands', () => {
       f.workspace.getBoard({ projectId: restored.id }).project.instructions,
     ).toBe('Later UI instructions')
   })
-  it('preserves version 7 task history while migrating to project-level history', async () => {
+  it('preserves version 7 task history and manager conversations while upgrading', async () => {
     const root = mkdtempSync(join(tmpdir(), 'constella-history-upgrade-'))
     roots.push(root)
     const file = join(root, 'old.sqlite'),
@@ -406,9 +655,63 @@ describe('manager metadata commands', () => {
         'INSERT INTO change_history (id, project_id, task_id, document) VALUES (?, ?, ?, ?)',
       )
       .run(changeId, projectId, taskId, JSON.stringify(entry))
+    const legacyChat: Omit<ManagerChat, 'createdAt'> = {
+      id: command(),
+      projectId,
+      taskId,
+      threadId: 'legacy-manager-thread',
+      turns: [
+        {
+          id: command(),
+          message: 'Earlier manager conversation',
+          context: '{}',
+          startedAt: '2026-10-25T12:00:00.000Z',
+          status: 'completed',
+          items: [],
+        },
+      ],
+    }
+    original
+      .prepare(
+        'INSERT INTO manager_chats (id, project_id, task_id, document) VALUES (?, ?, ?, ?)',
+      )
+      .run(legacyChat.id, projectId, taskId, JSON.stringify(legacyChat))
+    const legacyReceipts = [
+      { projectId },
+      { task: { projectId } },
+      { project: { id: projectId } },
+      { id: projectId, repoPath: root },
+      { undone: changeId },
+    ].map((result) => ({ id: command(), result }))
+    for (const receipt of legacyReceipts)
+      original
+        .prepare(
+          'INSERT INTO manager_commands (id, input_hash, result) VALUES (?, ?, ?)',
+        )
+        .run(receipt.id, 'legacy-input', JSON.stringify(receipt.result))
     original.close()
     const upgraded = openWorkspaceDatabase(file)
     databases.push(upgraded)
+    for (const receipt of legacyReceipts)
+      expect(
+        upgraded.sqlite
+          .prepare('SELECT project_id FROM manager_commands WHERE id = ?')
+          .get(receipt.id),
+      ).toEqual({ project_id: projectId })
+    const preservedChat = upgraded.sqlite
+      .prepare(
+        'SELECT document, is_current, created_at FROM manager_chats WHERE id = ?',
+      )
+      .get(legacyChat.id) as {
+      document: string
+      is_current: number
+      created_at: string
+    }
+    expect(JSON.parse(preservedChat.document)).toEqual(legacyChat)
+    expect(preservedChat).toMatchObject({
+      is_current: 1,
+      created_at: legacyChat.turns[0].startedAt,
+    })
     expect(
       JSON.parse(
         (

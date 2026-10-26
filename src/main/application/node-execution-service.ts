@@ -2,7 +2,7 @@ import { Codex, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk'
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
-import { nodeRuns, nodeThreads, tasks } from '../db/schema'
+import { nodeRuns, nodeThreads, projects, tasks } from '../db/schema'
 import { toActivity, type CodexClient } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
 import { applicationFailure, ApplicationError } from './errors'
@@ -21,8 +21,11 @@ import {
   type StartNodeInput,
 } from '../../shared/execution'
 import { graphIdentitySchema, type GraphIdentity } from '../../shared/graph'
-import type { TaskExecutionSnapshot } from '../../shared/execution'
-import { TaskWorktreeService } from './task-worktrees'
+import type {
+  TaskExecutionSnapshot,
+  TaskReviewContext,
+} from '../../shared/execution'
+import { taskGit, TaskWorktreeService } from './task-worktrees'
 import { runChecks } from './run-checks'
 
 interface Active {
@@ -203,6 +206,58 @@ export class NodeExecutionService {
           }
         : null,
       persistenceError: this.persistenceError,
+    }
+  }
+  async getReview(raw: unknown): Promise<TaskReviewContext> {
+    const identity = graphIdentitySchema.parse(raw)
+    const task = this.taskScope(identity)
+    const project = this.db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, identity.projectId))
+      .get()!
+    const worktree = this.worktrees.get(identity.taskId)
+    if (!worktree || worktree.state !== 'ready')
+      throw new ApplicationError(
+        'TASK_REVIEW_UNAVAILABLE',
+        'The task folder is not ready yet.',
+        'Run an agent node first, then open its task folder to review the product.',
+      )
+    if (worktree.projectId !== identity.projectId)
+      throw new ApplicationError(
+        'TASK_REVIEW_SCOPE',
+        'This task folder belongs to another project.',
+        'Open the task from its project board.',
+      )
+    await this.worktrees.verify(worktree, project.repoPath)
+    const projectBranch = await taskGit(project.repoPath, [
+      'symbolic-ref',
+      '--quiet',
+      '--short',
+      'HEAD',
+    ])
+      .then((value) => value.trim())
+      .catch(() => null)
+    const devCommand = project.devCommand.trim()
+    const quotedPath =
+      process.platform === 'win32'
+        ? `'${worktree.path.replaceAll("'", "''")}'`
+        : `'${worktree.path.replaceAll("'", "'\\''")}'`
+    const runCommand = !devCommand
+      ? null
+      : process.platform === 'win32'
+        ? `Set-Location -LiteralPath ${quotedPath} -ErrorAction Stop\n${devCommand}`
+        : `cd -- ${quotedPath} && (\n${devCommand}\n)`
+    return {
+      ...identity,
+      taskTitle: task.title,
+      path: worktree.path,
+      branch: worktree.branch,
+      projectPath: project.repoPath,
+      projectBranch,
+      devCommand,
+      runCommand,
+      active: this.hasActiveTask(identity),
     }
   }
   get(raw: unknown): NodeExecutionSnapshot {

@@ -9,6 +9,10 @@ import type { ManagerScope } from '../shared/manager'
 const bridge: ConstellaBridge = {
   manager: {
     get: (input) => ipcRenderer.invoke(channels.managerGet, input),
+    list: (input) => ipcRenderer.invoke(channels.managerList, input),
+    newChat: (input) => ipcRenderer.invoke(channels.managerNewChat, input),
+    selectChat: (input) =>
+      ipcRenderer.invoke(channels.managerSelectChat, input),
     send: (input) => ipcRenderer.invoke(channels.managerSend, input),
     stop: (input) => ipcRenderer.invoke(channels.managerStop, input),
     history: (input) => ipcRenderer.invoke(channels.managerHistory, input),
@@ -43,6 +47,9 @@ const bridge: ConstellaBridge = {
   },
   execution: {
     getTask: (input) => ipcRenderer.invoke(channels.taskExecution, input),
+    getReview: (input) => ipcRenderer.invoke(channels.taskReview, input),
+    openWorktree: (input) =>
+      ipcRenderer.invoke(channels.taskOpenWorktree, input),
     get: (input) => ipcRenderer.invoke(channels.nodeGet, input),
     start: (input) => ipcRenderer.invoke(channels.nodeStart, input),
     stop: (input) => ipcRenderer.invoke(channels.nodeStop, input),
@@ -95,6 +102,7 @@ const bridge: ConstellaBridge = {
     chooseRepository: () => ipcRenderer.invoke(channels.chooseRepository),
     chooseNewProject: () => ipcRenderer.invoke(channels.chooseNewProject),
     updateProject: (input) => ipcRenderer.invoke(channels.updateProject, input),
+    deleteProject: (input) => ipcRenderer.invoke(channels.deleteProject, input),
     createTask: (input) => ipcRenderer.invoke(channels.createTask, input),
     updateTask: (input) => ipcRenderer.invoke(channels.updateTask, input),
     moveTask: (input) => ipcRenderer.invoke(channels.moveTask, input),

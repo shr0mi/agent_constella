@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
   createTaskSchema,
+  deleteProjectSchema,
   moveTaskSchema,
   projectIdSchema,
   repositoryInputSchema,
@@ -23,6 +24,7 @@ import { recordChange } from './change-log'
 import type { ModelOption } from '../../shared/contracts'
 import {
   createProjectFolder,
+  ensureInitialCommit,
   openProjectFolder,
   resolveRepository,
 } from './repository'
@@ -30,6 +32,10 @@ import {
 // This service owns the rules. It has no Electron dependency and can be called
 // by IPC today and by project-scoped MCP tools later.
 export class WorkspaceService {
+  private deletionGuard?: (projectId: string) => string | undefined
+  setProjectDeletionGuard(guard: (projectId: string) => string | undefined) {
+    this.deletionGuard = guard
+  }
   private listeners = new Set<(snapshot: WorkspaceSnapshot) => void>()
   constructor(
     private readonly database: WorkspaceDatabase,
@@ -240,7 +246,9 @@ export class WorkspaceService {
 
   async openRepository(raw: unknown): Promise<Project> {
     const { path } = repositoryInputSchema.parse(raw)
-    return this.registerRepository(await resolveRepository(path))
+    const repository = await resolveRepository(path)
+    await ensureInitialCommit(repository)
+    return this.registerRepository(repository)
   }
 
   async openFolder(raw: unknown): Promise<Project> {
@@ -345,6 +353,40 @@ export class WorkspaceService {
       })
       return updated
     })
+  }
+
+  async deleteProject(
+    raw: unknown,
+    confirm: (project: Project) => Promise<boolean>,
+    origin?: 'desktop-human',
+  ): Promise<boolean> {
+    if (origin !== 'desktop-human')
+      throw new ApplicationError(
+        'HUMAN_ONLY',
+        'Only a confirmed desktop action can delete a project.',
+        'Use Delete project in Project settings.',
+      )
+    const input = deleteProjectSchema.parse(raw)
+    const check = () => {
+      const project = this.project(input.projectId)
+      this.checkRevision(project, input.expectedRevision)
+      const busy = this.deletionGuard?.(input.projectId)
+      if (busy)
+        throw new ApplicationError(
+          'PROJECT_BUSY',
+          busy,
+          'Stop active work or wait for it to finish, then try deleting the project again.',
+        )
+      return project
+    }
+    if (!(await confirm(check()))) return false
+    // Recheck after the confirmation dialog: work or settings may have changed
+    // while it was open. Never hold a database transaction across user input.
+    this.commit(() => {
+      check()
+      this.db.delete(projects).where(eq(projects.id, input.projectId)).run()
+    })
+    return true
   }
 
   createTask(raw: unknown): Task {

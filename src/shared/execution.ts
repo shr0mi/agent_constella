@@ -61,12 +61,7 @@ export interface FileDiff {
 export interface TestResult {
   command: string
   status:
-    | 'not-run'
-    | 'running'
-    | 'passed'
-    | 'failed'
-    | 'cancelled'
-    | 'timed-out'
+    'not-run' | 'running' | 'passed' | 'failed' | 'cancelled' | 'timed-out'
   output: string
   truncated: boolean
   exitCode: number | null
@@ -113,6 +108,16 @@ export interface TaskExecutionSnapshot extends GraphIdentity {
   nodeStates: { nodeId: string; runId: string; status: NodeRun['status'] }[]
   persistenceError?: Failure
 }
+export interface TaskReviewContext extends GraphIdentity {
+  taskTitle: string
+  path: string
+  branch: string
+  projectPath: string
+  projectBranch: string | null
+  devCommand: string
+  runCommand: string | null
+  active: boolean
+}
 export interface NodeExecutionSnapshot extends NodeIdentity {
   workflow?: WorkflowSnapshot
   worktree: TaskWorktree | null
@@ -123,6 +128,8 @@ export interface NodeExecutionSnapshot extends NodeIdentity {
 }
 export interface ExecutionBridge {
   getTask(input: GraphIdentity): Promise<Result<TaskExecutionSnapshot>>
+  getReview(input: GraphIdentity): Promise<Result<TaskReviewContext>>
+  openWorktree(input: GraphIdentity): Promise<Result<void>>
   get(input: NodeIdentity): Promise<Result<NodeExecutionSnapshot>>
   start(input: StartNodeInput): Promise<Result<{ runId: string }>>
   stop(input: NodeIdentity): Promise<Result<void>>

@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Bot,
   FileDiff as FileDiffIcon,
+  FolderOpen,
   GitBranch,
   LoaderCircle,
   Play,
@@ -652,6 +653,25 @@ export function NodeWorkspace({
             {snapshot?.worktree?.path ??
               'A task worktree will be created from current project files, respecting .gitignore.'}
           </span>
+          {snapshot?.worktree && (
+            <button
+              className="icon-button"
+              disabled={pending}
+              onClick={() =>
+                void act(() =>
+                  executionAction((api) =>
+                    api.openWorktree({
+                      projectId: graph.project.id,
+                      taskId: graph.task.id,
+                    }),
+                  ),
+                )
+              }
+              aria-label="Open task folder"
+            >
+              <FolderOpen size={13} /> Open folder
+            </button>
+          )}
           {snapshot?.worktree && (
             <button
               className="icon-button"

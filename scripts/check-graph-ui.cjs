@@ -136,11 +136,31 @@ let snapshot = {
 }
 let saves = 0,
   prepares = 0
+let projectDeleted = false,
+  confirmProjectDeletion = false,
+  deletionRequests = 0
 ipcMain.handle('constella:state', () => result(state))
 ipcMain.handle('constella:diagnostics', () => result(diagnostics))
 ipcMain.handle('constella:workspace:snapshot', () =>
-  result({ revision: 1, projects: [project], tasks: [task] }),
+  result({
+    revision: project.revision,
+    projects: projectDeleted ? [] : [project],
+    tasks: projectDeleted ? [] : [task],
+  }),
 )
+ipcMain.handle('constella:workspace:delete-project', (event, input) => {
+  assert.equal(input.projectId, project.id)
+  assert.equal(input.expectedRevision, project.revision)
+  deletionRequests++
+  if (!confirmProjectDeletion) return result(false)
+  projectDeleted = true
+  event.sender.send('constella:workspace:changed', {
+    revision: project.revision + 1,
+    projects: [],
+    tasks: [],
+  })
+  return result(true)
+})
 ipcMain.handle('constella:workspace:update-project', (event, input) => {
   assert.equal(input.projectId, project.id)
   assert.equal(input.expectedRevision, project.revision)
@@ -161,6 +181,87 @@ ipcMain.handle('constella:catalog:snapshot', () =>
   result({ projectId: project.id, revision: 1, skills, profiles }),
 )
 ipcMain.handle('constella:graph:get', () => result(snapshot))
+const managerConversations = new Map()
+const managerSelections = new Map()
+const managerScopeKey = (scope) =>
+  `${scope.projectId}:${scope.taskId ?? 'board'}`
+function managerChat(scope) {
+  const key = managerScopeKey(scope)
+  if (!managerConversations.has(key)) {
+    const chat = {
+      projectId: scope.projectId,
+      taskId: scope.taskId ?? null,
+      id: randomUUID(),
+      createdAt: now,
+      threadId: randomUUID(),
+      turns: [
+        {
+          id: randomUUID(),
+          message: scope.taskId
+            ? 'Earlier task conversation'
+            : 'Earlier project conversation',
+          context: '{}',
+          startedAt: now,
+          status: 'completed',
+          items: [],
+        },
+      ],
+    }
+    managerConversations.set(key, [chat])
+    managerSelections.set(key, chat.id)
+  }
+  return managerConversations
+    .get(key)
+    .find((chat) => chat.id === managerSelections.get(key))
+}
+ipcMain.handle('constella:manager:get', (_event, scope) =>
+  result(managerChat(scope)),
+)
+ipcMain.handle('constella:manager:history', () => result([]))
+ipcMain.handle('constella:manager:list', (_event, scope) => {
+  const current = managerChat(scope)
+  return result(
+    managerConversations.get(managerScopeKey(scope)).map((chat) => ({
+      ...scope,
+      id: chat.id,
+      title: chat.turns[0]?.message ?? 'New conversation',
+      createdAt: chat.createdAt,
+      updatedAt: chat.createdAt,
+      turnCount: chat.turns.length,
+      current: chat.id === current.id,
+    })),
+  )
+})
+ipcMain.handle('constella:manager:new-chat', (event, input) => {
+  assert.equal(managerChat(input).id, input.expectedChatId)
+  const chat = {
+    projectId: input.projectId,
+    taskId: input.taskId ?? null,
+    id: randomUUID(),
+    createdAt: now,
+    turns: [],
+  }
+  managerConversations.get(managerScopeKey(input)).push(chat)
+  managerSelections.set(managerScopeKey(input), chat.id)
+  event.sender.send('constella:manager:changed', {
+    projectId: input.projectId,
+    taskId: input.taskId,
+  })
+  return result(chat)
+})
+ipcMain.handle('constella:manager:select-chat', (event, input) => {
+  assert.equal(managerChat(input).id, input.expectedChatId)
+  const chat = managerConversations
+    .get(managerScopeKey(input))
+    .find((chat) => chat.id === input.chatId)
+  assert(chat)
+  managerSelections.set(managerScopeKey(input), chat.id)
+  event.sender.send('constella:manager:changed', {
+    projectId: input.projectId,
+    taskId: input.taskId,
+  })
+  return result(chat)
+})
 const attempts = []
 let activeRun = null,
   threadId
@@ -402,6 +503,28 @@ app
       run(
         `{ const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,${JSON.stringify(value)}); el.dispatchEvent(new Event('input',{bubbles:true})); }`,
       )
+    async function checkManagerChats(label, scope) {
+      await click(label)
+      await waitFor('document.querySelectorAll(".manager-turn").length === 1')
+      const original = managerChat(scope)
+      await click('New chat')
+      await waitFor(
+        'document.querySelectorAll(".manager-turn").length === 0 && document.querySelectorAll("#manager-conversation option").length === 2',
+      )
+      assert.notEqual(managerChat(scope).id, original.id)
+      assert.equal(managerChat(scope).threadId, undefined)
+      await select('#manager-conversation', original.id)
+      await waitFor('document.querySelectorAll(".manager-turn").length === 1')
+      assert.equal(managerChat(scope).id, original.id)
+      assert.equal(
+        await run('document.querySelector(".manager-user p").textContent'),
+        original.turns[0].message,
+      )
+      await run(
+        `document.querySelector('[aria-label="Close manager chat"]').click()`,
+      )
+      await waitFor('!document.querySelector(".manager-panel")')
+    }
     await waitFor('document.querySelectorAll(".workflow-node").length === 4')
     await waitFor(
       'document.querySelector(".graph-validation strong").textContent === "Graph is valid"',
@@ -605,6 +728,10 @@ app
     // View preferences survive route navigation without saving the graph.
     await run('document.querySelector(".graph-back").click()')
     await waitFor('!!document.querySelector(".project-board-page")')
+    await checkManagerChats('Project manager', {
+      projectId: project.id,
+      taskId: null,
+    })
     await click('Project settings')
     await waitFor('!!document.querySelector("#project-default-model")')
     assert.equal(
@@ -632,6 +759,10 @@ app
     await click('Cancel')
     await run(`location.hash = ${JSON.stringify(route)}`)
     await waitFor('document.querySelectorAll(".workflow-node").length === 4')
+    await checkManagerChats('Task manager', {
+      projectId: project.id,
+      taskId: task.id,
+    })
     assert.deepEqual(
       await run(
         `JSON.parse(localStorage.getItem(${JSON.stringify(viewKey)})).positions[${JSON.stringify(nodes[1].id)}]`,
@@ -704,6 +835,34 @@ app
         process.env.CONSTELLA_GRAPH_SCREENSHOT,
         (await window.webContents.capturePage()).toPNG(),
       )
+    await waitFor(
+      '!document.querySelector(".node-workspace > header button").disabled',
+    )
+    await run(
+      'document.querySelector(".node-workspace > header button").click()',
+    )
+    await waitFor('!document.querySelector(".node-workspace")')
+    await run('document.querySelector(".graph-back").click()')
+    await waitFor('!!document.querySelector(".project-board-page")')
+    await click('Project settings')
+    await waitFor('!!document.querySelector("#project-name")')
+    await click('Delete project')
+    await waitFor(
+      '!!document.querySelector("dialog[open]") && !Array.from(document.querySelectorAll("dialog[open] button")).find(button => button.textContent.trim() === "Delete project").disabled',
+    )
+    assert.equal(deletionRequests, 1)
+    assert.equal(projectDeleted, false)
+    confirmProjectDeletion = true
+    await click('Delete project')
+    await waitFor(
+      '!!document.querySelector(".projects-page") && document.querySelectorAll(".project-card").length === 0',
+    )
+    assert.equal(deletionRequests, 2)
+    assert.equal(projectDeleted, true)
+    assert.equal(
+      await run('document.querySelectorAll(".sidebar-projects a").length'),
+      0,
+    )
     assert.deepEqual(errors, [])
     console.log(
       JSON.stringify(
@@ -715,6 +874,11 @@ app
           savedSettings: true,
           projectDefaultsPersisted: true,
           projectDirectoryShown: true,
+          newProjectManagerChat: true,
+          newTaskManagerChat: true,
+          savedManagerChats: true,
+          projectDeletionCancelled: true,
+          projectDeletedFromWorkspace: true,
           cycleRejected: true,
           reviewHumanOnly: true,
           nodeAndEdgeEditing: true,

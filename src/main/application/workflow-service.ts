@@ -42,6 +42,13 @@ export class WorkflowService {
   private syncing = new Set<string>()
   private operations = new Set<string>()
   private stopping = false
+  hasActiveProject(projectId: string) {
+    return (
+      this.operations.has(projectId) ||
+      this.pumping.has(projectId) ||
+      !!this.execution.activeProject(projectId)
+    )
+  }
   constructor(
     private readonly database: WorkspaceDatabase,
     readonly graphs: GraphService,

@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { join, dirname } from 'node:path'
@@ -15,7 +16,7 @@ import {
 } from '../shared/contracts'
 import { catalogContextSchema } from '../shared/catalog'
 import { channels } from '../shared/ipc'
-import { applicationFailure } from './application/errors'
+import { applicationFailure, ApplicationError } from './application/errors'
 import { WorkspaceService } from './application/workspace-service'
 import { CatalogService } from './application/catalog-service'
 import { GraphService } from './application/graph-service'
@@ -157,6 +158,17 @@ else {
       await mcp.start()
       managers = new ManagerService(database, managerTools, mcp)
       managers.initialize()
+      workspace.setProjectDeletionGuard((projectId) => {
+        if (workflow!.hasActiveProject(projectId))
+          return 'A worker run, workflow transition, or integration is active in this project.'
+        if (managers!.hasActiveProject(projectId))
+          return 'A manager conversation is active in this project.'
+        if (service?.hasActiveProject(projectId))
+          return 'The connectivity lab is using this project.'
+        if (catalog.hasPendingOperations())
+          return 'Catalog changes are still in progress.'
+        return undefined
+      })
       execution.setMcpConnection((identity) => {
         const connection = mcp!.issue(identity, 'worker')
         return {
@@ -165,6 +177,9 @@ else {
         }
       })
       handle(channels.managerGet, (input) => managers!.get(input))
+      handle(channels.managerList, (input) => managers!.list(input))
+      handle(channels.managerNewChat, (input) => managers!.newChat(input))
+      handle(channels.managerSelectChat, (input) => managers!.selectChat(input))
       handle(channels.managerSend, (input) => managers!.send(input))
       handle(channels.managerStop, (input) => managers!.stop(input))
       handle(channels.managerHistory, (input) => managerTools.history(input))
@@ -200,6 +215,17 @@ else {
         ...execution!.getTask(input),
         workflow: workflow!.get(input),
       }))
+      handle(channels.taskReview, (input) => execution!.getReview(input))
+      handle(channels.taskOpenWorktree, async (input) => {
+        const context = await execution!.getReview(input)
+        const error = await shell.openPath(context.path)
+        if (error)
+          throw new ApplicationError(
+            'OPEN_TASK_FOLDER',
+            error,
+            'Copy the task folder path and open it in your IDE or file manager.',
+          )
+      })
       handle(channels.nodeGet, (input) => {
         const snapshot = execution!.get(input)
         return {
@@ -255,7 +281,7 @@ else {
         const selection = await dialog.showOpenDialog(window!, {
           title: 'Open a project folder',
           message:
-            'Choose a project folder. Git will be initialized if the folder is not already a repository.',
+            'Choose a project folder. The app initializes Git if needed and adds an empty initial commit when the project has no commits. Existing files are preserved.',
           buttonLabel: 'Open folder',
           properties: ['openDirectory', 'createDirectory'],
         })
@@ -266,7 +292,7 @@ else {
         const selection = await dialog.showSaveDialog(window!, {
           title: 'Create a project folder',
           message:
-            'Choose a name and location for the new project folder. Git will be initialized on the main branch.',
+            'Choose a name and location for the new project folder. The app initializes Git on main with an empty initial commit so task branches share a common starting point.',
           nameFieldLabel: 'Project folder name:',
           defaultPath: join(app.getPath('documents'), 'untitled-project'),
           buttonLabel: 'Create project',
@@ -276,6 +302,45 @@ else {
         return workspace.createProject({ path: selection.filePath })
       })
       handle(channels.updateProject, (input) => workspace.updateProject(input))
+      handle(channels.deleteProject, async (input) => {
+        let deletedId: string | undefined
+        const deleted = await workspace.deleteProject(
+          input,
+          async (project) => {
+            const choice = await dialog.showMessageBox(window!, {
+              type: 'warning',
+              title: 'Delete project',
+              message: `Delete “${project.name}”?`,
+              detail: `This permanently removes this project's settings, tasks, graphs, saved conversations, run records, history, and local catalog entries from AgentConstella. This cannot be undone.\n\nRepository: ${project.repoPath}\n\nRepository files, skill folders, Git branches, and task worktree folders are kept on disk.`,
+              buttons: ['Cancel', 'Delete project'],
+              defaultId: 0,
+              cancelId: 0,
+              noLink: true,
+            })
+            if (choice.response !== 1) return false
+            deletedId = project.id
+            return true
+          },
+          'desktop-human',
+        )
+        if (
+          deleted &&
+          service &&
+          service.snapshot().session.projectId === deletedId
+        ) {
+          // The scratch lab's archived conversations are independent of project
+          // records. Clear its selection so future lab turns remain usable.
+          try {
+            await service.newSession()
+          } catch (error) {
+            console.error(
+              'Could not clear the deleted project from the scratch lab:',
+              error,
+            )
+          }
+        }
+        return deleted
+      })
       handle(channels.createTask, (input) => workspace.createTask(input))
       handle(channels.updateTask, (input) => workspace.updateTask(input))
       handle(channels.moveTask, (input) => workspace.moveTask(input))

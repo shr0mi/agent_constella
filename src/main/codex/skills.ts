@@ -28,6 +28,10 @@ export function resolvePrompt(
   workspaceKind: 'lab' | 'task' = 'lab',
 ): string {
   const sections: string[] = []
+  if (workspaceKind === 'task')
+    sections.push(
+      `Source quality defaults: Follow applicable AGENTS.md guidance, explicit project/user requirements, and the repository's existing coding style and formatter configuration. Keep handwritten source readable: use normal indentation, spacing, and line breaks; do not compress whole functions, multiple statements, or CSS rules into long single lines. Compact or minified output is appropriate only for build artifacts or an explicit task requirement. Before finishing, inspect your edited source files and run the project's existing formatter on those files when available. If no formatter is configured, write idiomatic, consistently formatted source without adding a new formatting tool or dependency solely for this purpose. Leave unrelated and generated/vendor files alone. Report any formatting check you could not run; passing functional tests alone does not establish formatting quality.`,
+    )
   if (context?.projectSnapshot) {
     const project = context.projectSnapshot
     sections.push(

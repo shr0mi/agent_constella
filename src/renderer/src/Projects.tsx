@@ -23,6 +23,7 @@ import {
   Search,
   Settings2,
   Target,
+  Trash2,
   X,
   Zap,
 } from 'lucide-react'
@@ -911,6 +912,7 @@ function ProjectSettings({
   project: Project
   onClose: () => void
 }) {
+  const navigate = useNavigate()
   const [failure, setFailure] = useState<Failure>()
   const [expectedRevision] = useState(project.revision)
   const [name, setName] = useState(project.name)
@@ -926,6 +928,20 @@ function ProjectSettings({
   const checkingModels = useAppStore((state) => state.checking)
   const selectedModel = models?.find((model) => model.id === defaultModel)
   const busy = useWorkspaceStore((state) => state.pending > 0)
+  async function deleteProject() {
+    setFailure(undefined)
+    try {
+      const deleted = await workspaceAction((api) =>
+        api.deleteProject({ projectId: project.id, expectedRevision }),
+      )
+      if (deleted) {
+        onClose()
+        navigate('/projects', { replace: true })
+      }
+    } catch {
+      setFailure(useAppStore.getState().error)
+    }
+  }
   async function save(event: FormEvent) {
     event.preventDefault()
     try {
@@ -1088,6 +1104,16 @@ function ProjectSettings({
         </fieldset>
         {failure && <FormFailure failure={failure} />}
         <footer>
+          <button
+            className="button subtle-danger"
+            type="button"
+            disabled={busy}
+            onClick={() => void deleteProject()}
+            title="Delete this project's saved app data. A confirmation dialog opens before deletion."
+          >
+            <Trash2 size={14} />
+            Delete project
+          </button>
           <span />
           <button
             className="button secondary"

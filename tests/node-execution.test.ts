@@ -249,6 +249,54 @@ async function until(condition: () => boolean) {
 }
 
 describe('node execution in task worktrees', () => {
+  it('provides current verified review context without creating a checkout or running the development command', async () => {
+    const f = await fixture()
+    const identity = { projectId: f.project.id, taskId: f.task.id }
+    await expect(f.execution.getReview(identity)).rejects.toThrow('not ready')
+    expect(f.execution.worktrees.get(f.task.id)).toBeNull()
+    const head = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    const index = git(f.project.repoPath, 'ls-files', '--stage')
+    f.start()
+    await f.execution.waitForIdle()
+    const worktree = f.execution.worktrees.get(f.task.id)!
+    const project = f.workspace.updateProject({
+      projectId: f.project.id,
+      expectedRevision: f.project.revision,
+      name: f.project.name,
+      description: f.project.description,
+      instructions: f.project.instructions,
+      devCommand:
+        "node -e \"require('fs').writeFileSync('SHOULD_NOT_RUN', '1')\"",
+      testCommand: '',
+    })
+    const review = await f.execution.getReview(identity)
+    expect(review).toMatchObject({
+      ...identity,
+      taskTitle: f.task.title,
+      path: worktree.path,
+      branch: 'codex/build-an-answer',
+      projectPath: f.project.repoPath,
+      projectBranch: git(f.project.repoPath, 'branch', '--show-current'),
+      devCommand: project.devCommand,
+      active: false,
+    })
+    expect(review.runCommand).toContain(worktree.path)
+    expect(review.runCommand).toContain(project.devCommand)
+    expect(existsSync(join(worktree.path, 'SHOULD_NOT_RUN'))).toBe(false)
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(head)
+    expect(git(f.project.repoPath, 'ls-files', '--stage')).toBe(index)
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
+    await expect(
+      f.execution.getReview({ ...identity, path: '/tmp' }),
+    ).rejects.toThrow()
+    await expect(
+      f.execution.getReview({ ...identity, projectId: randomUUID() }),
+    ).rejects.toThrow()
+    git(worktree.path, 'switch', '-c', 'user-switched-branch')
+    await expect(f.execution.getReview(identity)).rejects.toThrow(
+      'branch or root changed',
+    )
+  })
   it('runs Default Codex without an assigned or available custom profile', async () => {
     const f = await fixture()
     await f.catalog.setProfileActive({
@@ -285,12 +333,32 @@ describe('node execution in task worktrees', () => {
     expect(f.transport.calls[0].options.model).toBeUndefined()
     expect(f.transport.calls[0].options.modelReasoningEffort).toBeUndefined()
   })
-  it('executes in a task worktree from an unborn repository, saves exact run context, tests, new files and diffs', async () => {
+  it('establishes shared history before creating a new task worktree for a legacy unborn project', async () => {
+    const f = await fixture()
+    git(f.project.repoPath, 'update-ref', '-d', 'HEAD')
+    f.start()
+    await f.execution.waitForIdle()
+    const run = f.execution.get(f.identity).runs[0]
+    expect(run.status).toBe('completed')
+    const initialHead = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    expect(run.worktree?.sourceHead).toBe(initialHead)
+    expect(
+      git(
+        f.project.repoPath,
+        'merge-base',
+        '--is-ancestor',
+        initialHead,
+        run.changes!.after.commit,
+      ),
+    ).toBe('')
+  })
+  it('executes in a task worktree from a newly initialized repository, saves exact run context, tests, new files and diffs', async () => {
     const f = await fixture(
       undefined,
       false,
       'node -e "console.log(\'TEST_OK\')"',
     )
+    const projectHead = git(f.project.repoPath, 'rev-parse', 'HEAD')
     const started = f.start()
     await f.execution.waitForIdle()
     const snapshot = f.execution.get(f.identity),
@@ -302,15 +370,14 @@ describe('node execution in task worktrees', () => {
       exitCode: 0,
       output: expect.stringContaining('TEST_OK'),
     })
-    expect(run.worktree?.branch).toBe(`codex/constella-${f.task.id}`)
+    expect(run.worktree?.branch).toBe('codex/build-an-answer')
     expect(readFileSync(join(run.worktree!.path, 'input.txt'), 'utf8')).toBe(
       'original input',
     )
     expect(existsSync(join(run.worktree!.path, 'ignored.txt'))).toBe(false)
     expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
-    expect(() =>
-      git(f.project.repoPath, 'rev-parse', '--verify', 'HEAD'),
-    ).toThrow()
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(projectHead)
+    expect(run.worktree?.sourceHead).toBe(projectHead)
     expect(run.nodeSnapshot.data.profileId).toBe(f.profile.id)
     expect(run.profileSnapshot?.styleGuide).toBe(f.profile.styleGuide)
     expect(run.skillSnapshots[0].content).toContain('use readable names')

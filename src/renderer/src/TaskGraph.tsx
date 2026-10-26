@@ -651,6 +651,7 @@ function GraphEditor({
         graphRevision={saved.revision}
         blocked={dirty || !validation?.valid || externalChange || taskActive}
         onInspect={inspect}
+        worktreeReady={execution?.worktree?.state === 'ready'}
       />
       {(notice || externalChange || saved.task.archivedAt || taskActive) && (
         <div className="graph-notice" role="status">
@@ -843,6 +844,7 @@ function GraphEditor({
               nodeId={node.id}
               onInspect={inspect}
               disabled={runBlockers.length > 0}
+              worktreeReady={execution?.worktree?.state === 'ready'}
             />
           )}
           {node?.type === 'agent' && (

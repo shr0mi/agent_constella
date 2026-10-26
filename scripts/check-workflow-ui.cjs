@@ -16,6 +16,7 @@ const errors = [],
 let window,
   scheduler,
   database,
+  openedTaskFolders = 0,
   ending = false
 const deadline = setTimeout(() => {
   console.error('Workflow UI timed out', errors)
@@ -82,7 +83,7 @@ app
       name: 'Workflow studio',
       description: 'Exercise dependency acceptance and review.',
       instructions: '',
-      devCommand: '',
+      devCommand: 'npm run dev',
       testCommand: 'node -e "console.log(\'WORKFLOW_CHECK_PASS\')"',
     })
     const task = workspace.createTask({
@@ -239,6 +240,11 @@ app
       ...execution.getTask(input),
       workflow: scheduler.get(input),
     }))
+    handle(channels.taskReview, (input) => execution.getReview(input))
+    handle(channels.taskOpenWorktree, async (input) => {
+      await execution.getReview(input)
+      openedTaskFolders++
+    })
     handle(channels.nodeGet, (input) => ({
       ...execution.get(input),
       workflow: scheduler.get({
@@ -398,6 +404,49 @@ app
     await until(
       '!!document.querySelector(".workflow-review") && document.querySelectorAll(".workflow-review details").length===3',
     )
+    assert.equal(
+      await run(
+        'Array.from(document.querySelectorAll(".workflow-review button")).some(button=>button.textContent.trim()==="Review task"&&!button.disabled)',
+      ),
+      true,
+    )
+    await click('Review task')
+    await until(
+      'document.querySelector(".task-review-dialog")?.open && !!document.querySelector(".task-review-command")',
+    )
+    const reviewContext = await execution.getReview(identity)
+    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
+      writeFileSync(
+        `${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.review.png`,
+        (await window.webContents.capturePage()).toPNG(),
+      )
+    assert.equal(reviewContext.branch, 'codex/build-a-reviewed-feature')
+    assert.equal(
+      await run(
+        'document.querySelector(".task-review-content").textContent.includes(' +
+          JSON.stringify(reviewContext.path) +
+          ')',
+      ),
+      true,
+    )
+    assert.equal(
+      await run(
+        'document.querySelector(".task-review-command").textContent.includes("npm run dev")',
+      ),
+      true,
+    )
+    assert.equal(
+      existsSync(join(project.repoPath, 'Implement-feature.txt')),
+      false,
+    )
+    await click('Open task folder')
+    await until(
+      '!document.querySelector(".task-review-dialog > header button").disabled',
+    )
+    assert.equal(openedTaskFolders, 1)
+    await run(
+      'document.querySelector(".task-review-dialog > header button").click()',
+    )
     await set('#review-note', 'Refine the implementation before approval.')
     await set('#review-target', a.id, 'select')
     await click('Request changes & revise')
@@ -462,6 +511,12 @@ app
     await until(
       '!!document.querySelector(".workflow-controls.phase-completed")',
     )
+    assert.equal(
+      await run(
+        'document.querySelector(".workflow-integration-hint").textContent.includes("Use Integrate branch")',
+      ),
+      true,
+    )
     await click('Integrate branch')
     await until('document.querySelector(".integration-dialog")?.open')
     await click('Preview integration')
@@ -477,6 +532,9 @@ app
       true,
     )
     assert.equal(git(project.repoPath, 'status', '--porcelain'), '')
+    await until(
+      'document.querySelector(".workflow-integration-hint")?.textContent.includes("has been integrated")',
+    )
     if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
       writeFileSync(
         process.env.CONSTELLA_WORKFLOW_SCREENSHOT,
@@ -495,6 +553,8 @@ app
           manualAcceptance: true,
           humanRevision: true,
           humanReview: true,
+          taskFolderReview: true,
+          readableBranch: true,
           boardDoingToDone: true,
           explicitIntegration: true,
           providerCalls: 0,

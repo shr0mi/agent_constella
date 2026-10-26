@@ -23,6 +23,7 @@ import { GraphService } from '../src/main/application/graph-service'
 import { NodeExecutionService } from '../src/main/application/node-execution-service'
 import { WorkflowService } from '../src/main/application/workflow-service'
 import { makeWorkflowNode, type WorkflowNode } from '../src/shared/graph'
+import { BranchIntegrationService } from '../src/main/application/branch-integration'
 import type { CodexClient } from '../src/main/codex/service'
 
 const roots: string[] = [],
@@ -909,6 +910,7 @@ describe('explicit task branch integration', () => {
   })
   it('integrates a clean initially empty repository without requiring a manual first commit', async () => {
     const f = await fixture({ empty: true })
+    const initialHead = git(f.project.repoPath, 'rev-parse', 'HEAD')
     f.begin()
     await f.waitingReview()
     f.approve()
@@ -916,18 +918,85 @@ describe('explicit task branch integration', () => {
       ...f.identity,
       expectedRevision: f.snapshot().revision,
     })
-    expect(plan.targetHead).toBeNull()
+    expect(plan.targetHead).toBe(initialHead)
     expect(plan.status).toBe('ready')
     const integrated = await f.scheduler.integrate(
       {
         ...f.identity,
         expectedRevision: plan.workflowRevision,
         targetBranch: plan.targetBranch!,
-        targetHead: null,
+        targetHead: initialHead,
       },
       'desktop-human',
     )
     expect(integrated.status).toBe('integrated')
     expect(existsSync(join(f.project.repoPath, 'Join.txt'))).toBe(true)
+  })
+  it('integrates two todo branches created before the first integration from a new empty project', async () => {
+    const f = await fixture({ empty: true })
+    const initialHead = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    const secondTask = f.workspace.createTask({
+      projectId: f.project.id,
+      title: 'Second todo',
+    })
+    const worktrees = f.execution.worktrees
+    const first = await worktrees.ensure(f.project, f.task)
+    const second = await worktrees.ensure(f.project, secondTask)
+    expect(first.sourceHead).toBe(initialHead)
+    expect(second.sourceHead).toBe(initialHead)
+    writeFileSync(join(first.path, 'first.txt'), 'First task result')
+    writeFileSync(join(second.path, 'second.txt'), 'Second task result')
+    const firstResult = await worktrees.capture(
+      first.path,
+      'Accepted first todo',
+    )
+    const secondResult = await worktrees.capture(
+      second.path,
+      'Accepted second todo',
+    )
+    const integration = new BranchIntegrationService(worktrees)
+    const firstPlan = await integration.preview(
+      f.project,
+      first,
+      firstResult,
+      1,
+    )
+    expect(firstPlan.status).toBe('ready')
+    const firstIntegration = await integration.apply(
+      f.project,
+      first,
+      firstResult,
+      {
+        targetBranch: firstPlan.targetBranch!,
+        targetHead: firstPlan.targetHead,
+      },
+      1,
+    )
+    expect(firstIntegration.status).toBe('integrated')
+    const secondPlan = await integration.preview(
+      f.project,
+      second,
+      secondResult,
+      1,
+    )
+    expect(secondPlan.status).toBe('ready')
+    const secondIntegration = await integration.apply(
+      f.project,
+      second,
+      secondResult,
+      {
+        targetBranch: secondPlan.targetBranch!,
+        targetHead: secondPlan.targetHead,
+      },
+      1,
+    )
+    expect(secondIntegration.status).toBe('integrated')
+    expect(readFileSync(join(f.project.repoPath, 'first.txt'), 'utf8')).toBe(
+      'First task result',
+    )
+    expect(readFileSync(join(f.project.repoPath, 'second.txt'), 'utf8')).toBe(
+      'Second task result',
+    )
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
   })
 })
