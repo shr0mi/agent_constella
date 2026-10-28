@@ -4,6 +4,7 @@ const { tmpdir } = require('node:os')
 const { join, resolve } = require('node:path')
 const { randomUUID } = require('node:crypto')
 const assert = require('node:assert/strict')
+const captureUi = require('./ui-capture.cjs')
 // Runs the real bundled renderer and sandboxed preload against isolated IPC fixtures.
 // SQLite/admission behavior is covered separately by tests/graphs.test.ts.
 const root = resolve(__dirname, '..')
@@ -453,7 +454,7 @@ const errors = []
 const timeout = setTimeout(() => {
   console.error('Graph UI check timed out', errors)
   finish(1)
-}, 30000)
+}, process.env.CONSTELLA_GRAPH_SCREENSHOT ? 120000 : 30000)
 function finish(code) {
   clearTimeout(timeout)
   rmSync(data, { force: true, recursive: true })
@@ -506,6 +507,7 @@ app
     async function checkManagerChats(label, scope) {
       await click(label)
       await waitFor('document.querySelectorAll(".manager-turn").length === 1')
+      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, scope.taskId ? 'task-manager' : 'project-manager')
       const original = managerChat(scope)
       await click('New chat')
       await waitFor(
@@ -662,6 +664,7 @@ app
     // Reopen the actual built route and make sure node data is restored.
     await run("location.hash = '/projects'")
     await waitFor('!!document.querySelector(".projects-page")')
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'projects')
     await run(`location.hash = ${JSON.stringify(route)}`)
     await waitFor('document.querySelectorAll(".workflow-node").length === 4')
     await run(
@@ -800,6 +803,12 @@ app
     )
     assert.equal(attempts.length, 1)
     assert.equal(attempts[0].status, 'completed')
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation-result')
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation-focus', { focus: '.node-composer textarea' })
+    if (process.env.CONSTELLA_GRAPH_SCREENSHOT) {
+      assert.equal(await run('getComputedStyle(document.querySelector(".node-composer")).outlineWidth'), '2px')
+      assert.equal(await run('getComputedStyle(document.querySelector(".node-composer")).outlineStyle'), 'solid')
+    }
     await click('Tests')
     await waitFor(
       'document.querySelector(".node-test-output")?.textContent.includes("FIXTURE_TEST_PASS")',
@@ -813,6 +822,7 @@ app
     await waitFor(
       'document.querySelector(".monaco-diff-editor")?.textContent.includes("constellation!")',
     )
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'diff')
     await click('Conversation')
     await run(
       "{const el = document.querySelector('#node-followup');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Revise the welcome copy');el.dispatchEvent(new Event('input',{bubbles:true}));}",
@@ -834,11 +844,7 @@ app
       'document.querySelectorAll(".node-turn").length === 3 && document.querySelector(".node-workspace-bar strong").textContent === "Stopped"',
     )
     assert.equal(attempts[2].status, 'cancelled')
-    if (process.env.CONSTELLA_GRAPH_SCREENSHOT)
-      writeFileSync(
-        process.env.CONSTELLA_GRAPH_SCREENSHOT,
-        (await window.webContents.capturePage()).toPNG(),
-      )
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation')
     await waitFor(
       '!document.querySelector(".node-workspace > header button").disabled',
     )
@@ -863,6 +869,15 @@ app
     )
     assert.equal(deletionRequests, 2)
     assert.equal(projectDeleted, true)
+    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'projects-empty')
+    if (process.env.CONSTELLA_GRAPH_SCREENSHOT) {
+      await run("location.hash = '/playground'")
+      await waitFor('!!document.querySelector(".lab-page .welcome")')
+      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'connectivity')
+      await run("location.hash = '/integration'")
+      await waitFor('!!document.querySelector(".notes-page")')
+      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'integration-notes')
+    }
     assert.equal(
       await run('document.querySelectorAll(".sidebar-projects a").length'),
       0,

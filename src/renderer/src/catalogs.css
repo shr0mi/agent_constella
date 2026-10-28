@@ -1,53 +1,61 @@
 .catalog-page {
-  padding: 28px 30px;
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding: 32px;
 }
+
 .catalog-page .page-heading h1 {
-  font-size: 26px;
+  font-size: 28px;
 }
+
 .catalog-scope-bar {
   display: flex;
   align-items: center;
   gap: 18px;
-  border-bottom: 1px solid #392e43;
-  padding-bottom: 16px;
-  margin-top: 30px;
+  border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+  margin-top: 24px;
+  padding-bottom: 18px;
 }
+
 .scope-tabs {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px;
-  border: 1px solid #3f304b;
-  background: #1c1722;
   border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  padding: 3px;
 }
+
 .scope-tabs button {
   display: flex;
   align-items: center;
   gap: 7px;
   border-radius: 4px;
   background: transparent;
-  color: #8e779f;
-  font-size: 11px;
+  color: var(--text-secondary);
+  font-size: 13px;
   padding: 8px 16px;
 }
+
 .scope-tabs button.selected {
-  background: #392944;
-  color: #d2b3ea;
+  background: var(--surface);
+  color: var(--accent);
 }
+
 .catalog-project-select {
   min-width: 180px;
   max-width: 230px;
 }
+
 .catalog-scope-caption {
-  font-size: 10px;
-  color: #8a7399;
+  font-size: 12px;
+  color: var(--text-secondary);
   margin-left: auto;
 }
+
 .catalog-toolbar {
   display: flex;
   align-items: center;
@@ -55,55 +63,66 @@
   margin: 23px 0 20px;
   flex-wrap: wrap;
 }
+
 .catalog-toolbar > span:first-child {
-  font-size: 9px;
-  letter-spacing: 1px;
-  color: #8f75a2;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
 }
+
 .catalog-toolbar > span:first-child small {
-  font-size: 8px;
-  background: #35253f;
+  font-size: 11px;
+  background: var(--surface-subtle);
   padding: 3px 5px;
   border-radius: 3px;
-  color: #b18fca;
+  color: var(--ink);
   margin-left: 9px;
 }
+
 .catalog-toolbar > span:nth-child(2) {
   flex: 1;
 }
+
 .catalog-show-removed {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 9px;
-  color: #8b729b;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
+
 .catalog-show-removed input {
-  accent-color: #b294d0;
+  accent-color: var(--accent);
   width: 12px;
   height: 12px;
 }
+
 .catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 17px;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
 }
+
 .catalog-card {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #493350;
-  border-radius: 9px;
-  background: #201724;
-  padding: 20px;
+  border: 1px solid var(--line);
   transition: border-color 0.15s;
+  padding: 22px;
+  border-color: var(--line);
+  background: var(--surface);
+  border-radius: 12px;
 }
+
 .catalog-card:hover {
-  border-color: #795389;
+  border-color: var(--line);
 }
+
 .catalog-card.removed {
   opacity: 0.65;
 }
+
 .catalog-card-top {
   display: flex;
   align-items: center;
@@ -111,34 +130,36 @@
   gap: 15px;
   margin-bottom: 19px;
 }
+
 .catalog-symbol {
   display: grid;
   place-items: center;
   width: 37px;
   height: 37px;
-  border: 1px solid #654273;
-  border-radius: 9px;
-  background: #3d2848;
-  color: #c09add;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 0;
+  border-radius: 8px;
 }
+
 .catalog-scope-chip {
-  font-size: 8px;
   letter-spacing: 0.3px;
   padding: 4px 6px;
   border-radius: 4px;
-  background: #34223d;
-  color: #a880bb;
-}
-.catalog-card h2 {
-  font-size: 16px;
-  font-weight: 500;
-  color: #e0c7ec;
-  overflow-wrap: anywhere;
-}
-.catalog-card-description {
+  background: var(--surface-subtle);
+  color: var(--muted);
   font-size: 11px;
-  line-height: 1.9;
-  color: #aa8aba;
+}
+
+.catalog-card h2 {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.catalog-card-description {
+  color: var(--text-secondary);
   margin: 10px 0 19px;
   min-height: 41px;
   display: -webkit-box;
@@ -146,74 +167,89 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.65;
 }
+
 .catalog-folder {
   display: block;
-  font-size: 8px;
-  color: #775a86;
+  color: var(--text-secondary);
   line-height: 1.8;
   max-height: 45px;
   overflow: hidden;
   overflow-wrap: anywhere;
   margin-bottom: 17px;
+  font-size: 11px;
+  font-family: var(--font-mono);
 }
+
 .catalog-card-actions {
   display: flex;
   align-items: center;
   gap: 7px;
-  border-top: 1px solid #432c4a;
+  border-top: 1px solid var(--line);
   padding-top: 13px;
   margin-top: auto;
 }
+
 .catalog-card-actions .button {
-  font-size: 9px;
   padding: 7px 10px;
+  font-size: 12px;
 }
+
 .catalog-remove {
   background: transparent;
-  color: #94729e;
+  color: var(--text-secondary);
   margin-left: auto;
 }
+
 .catalog-remove:hover {
-  color: #d6aecb;
-  background: #3a253c;
+  color: var(--accent);
+  background: var(--surface-hover);
 }
+
 .profile-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
   margin-bottom: 20px;
 }
+
 .profile-card-tags > span {
   display: flex;
   gap: 4px;
   align-items: center;
-  font-size: 8px;
-  color: #a17cb7;
-  border: 1px solid #4d3159;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
   border-radius: 4px;
   padding: 4px 6px;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+
 .catalog-footnote {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #796184;
-  font-size: 9px;
+  color: var(--text-secondary);
+  font-size: 11px;
   line-height: 1.7;
   margin: 21px 0 5px;
 }
+
 .catalog-footnote > svg {
   flex-shrink: 0;
 }
+
 .catalog-empty {
   min-height: 350px;
 }
+
 .catalog-empty > svg {
-  color: #a685bd;
+  color: var(--text-secondary);
 }
+
 .catalog-skill-selector {
   display: flex;
   flex-direction: column;
@@ -222,65 +258,74 @@
   overflow-y: auto;
   margin-top: 10px;
 }
+
 .catalog-skill-choice {
   display: flex !important;
   align-items: flex-start !important;
   justify-content: initial !important;
   gap: 9px;
-  border: 1px solid #4a3155;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: #251a2c;
+  background: var(--surface);
   padding: 10px;
   margin: 0 !important;
   cursor: pointer;
   min-width: 0;
 }
+
 .catalog-skill-choice.checked {
-  border-color: #82618e;
-  background: #302039;
+  border-color: var(--line);
+  background: var(--surface);
 }
+
 .catalog-skill-choice input {
   width: 12px !important;
   height: 12px;
   min-width: 12px;
   padding: 0 !important;
-  accent-color: #be96d5;
+  accent-color: var(--accent);
   margin-top: 3px;
   flex-shrink: 0;
 }
+
 .catalog-skill-choice > span {
   flex: 1;
   min-width: 0;
 }
+
 .catalog-skill-choice strong {
   display: block;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 450;
   overflow-wrap: anywhere;
-  color: #cfacdf;
+  color: var(--ink);
 }
+
 .catalog-skill-choice strong small {
   display: inline-block;
-  font-size: 7px;
-  color: #8e6c9d;
+  font-size: 10px;
+  color: var(--text-secondary);
   font-weight: 400;
   margin-left: 8px;
 }
+
 .catalog-skill-choice p {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.8;
-  color: #896394;
+  color: var(--text-secondary);
   margin-top: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
 .catalog-skill-choice > svg {
-  color: #9b6fb0;
+  color: var(--text-secondary);
   flex-shrink: 0;
   margin-top: 3px;
 }
+
 .catalog-model-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -289,42 +334,48 @@
   margin-top: 20px;
   position: relative;
 }
+
 .catalog-model-fields label {
   margin-top: 0 !important;
 }
+
 .catalog-model-fields > .helper {
   grid-column: 1/-1;
   padding-right: 30px;
   margin-top: 10px;
 }
+
 .catalog-model-fields > .icon-button {
   position: absolute;
   bottom: 0;
   right: 0;
 }
+
 .selector-missing {
-  font-size: 10px;
-  color: #c29a8a;
+  font-size: 12px;
+  color: var(--warning);
   padding: 9px;
-  border: 1px solid #725044;
+  border: 1px solid var(--danger-line);
   border-radius: 5px;
   line-height: 1.8;
 }
+
 .selector-missing button {
   background: none;
-  color: #d0b1d7;
+  color: var(--ink);
   text-decoration: underline;
-  font-size: 9px;
+  font-size: 11px;
 }
+
 .workspace-form .skill-code-editor {
-  font:
-    11px/1.8 'SFMono-Regular',
+  font: 13px/1.8 'SFMono-Regular',
     Consolas,
     monospace;
   min-height: 280px;
   white-space: pre;
   overflow: auto;
 }
+
 .resource-editor-label {
   display: flex;
   align-items: center;
@@ -332,47 +383,58 @@
   gap: 10px;
   margin: 18px 0 8px;
 }
+
 .resource-editor-label label {
   margin: 0;
   display: flex;
   gap: 6px;
   overflow-wrap: anywhere;
 }
+
 .resource-editor-label > button {
-  font-size: 9px;
-  color: #aa8db6;
+  font-size: 11px;
+  color: var(--text-secondary);
   background: none;
   text-decoration: underline;
 }
+
 .lab-profile-config .helper a,
 .config-card .helper a {
-  color: #a989c4;
+  color: var(--text-secondary);
 }
+
 .config-card .catalog-skill-choice {
   padding: 8px;
 }
+
 .config-card .catalog-skill-choice strong {
-  font-size: 9px;
+  font-size: 11px;
 }
+
 .config-card .catalog-skill-choice strong small {
   display: block;
   margin-left: 0;
   margin-top: 2px;
 }
+
 .config-card .catalog-skill-choice p {
-  font-size: 8px;
+  font-size: 11px;
 }
+
 .config-card .catalog-skill-selector {
   max-height: 270px;
   margin-top: 14px;
 }
+
 .catalog-page .heading-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
 .workspace-form select {
   max-width: 100%;
 }
+
 @media (max-width: 1180px) {
   .catalog-page {
     padding: 24px 20px;
@@ -381,10 +443,10 @@
     align-items: flex-start;
   }
   .catalog-page .page-heading h1 {
-    font-size: 23px;
+    font-size: 24px;
   }
   .catalog-scope-caption {
-    font-size: 9px;
+    font-size: 11px;
   }
   .catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -396,15 +458,27 @@
     width: 130px;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .catalog-card {
     transition: none;
   }
 }
+
 .catalog-source {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.7;
-  color: #b6a2c8;
+  color: var(--ink);
   overflow-wrap: anywhere;
   margin: 9px 0 0;
+}
+
+@media (max-width: 1180px) {
+  .catalog-page {
+    padding: 24px;
+  }
+  .catalog-grid {
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
 }

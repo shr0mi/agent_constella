@@ -10,14 +10,14 @@ export default function NodeDiff({ diff }: { diff: FileDiff }) {
   useEffect(() => {
     if (!container.current || diff.binary || diff.unavailable) return
     const editor = monaco.editor.createDiffEditor(container.current, {
-      theme: 'vs-dark',
+      theme: 'vs',
       readOnly: true,
       originalEditable: false,
       domReadOnly: true,
       renderSideBySide: true,
       automaticLayout: true,
       minimap: { enabled: false },
-      fontSize: 11,
+      fontSize: 12,
       scrollBeyondLastLine: false,
       renderOverviewRuler: false,
     })

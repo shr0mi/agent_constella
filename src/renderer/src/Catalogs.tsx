@@ -112,10 +112,6 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
     <main className="catalog-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">
-            <span />
-            LIBRARY / {kind === 'skills' ? 'SKILLS' : 'AGENT PROFILES'}
-          </div>
           <h1>
             {kind === 'skills'
               ? 'Skills, ready to reuse.'

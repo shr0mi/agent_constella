@@ -65,10 +65,10 @@ import {
 } from '../../shared/workflow'
 
 const kinds = {
-  start: { label: 'Start', icon: GitBranch, color: '#8accae' },
-  agent: { label: 'Agent task', icon: Bot, color: '#b7a0ed' },
-  review: { label: 'Human review', icon: UserRound, color: '#e2bc85' },
-  end: { label: 'End', icon: CircleStop, color: '#8db8dd' },
+  start: { label: 'Start', icon: GitBranch, color: 'var(--success)' },
+  agent: { label: 'Agent task', icon: Bot, color: 'var(--accent)' },
+  review: { label: 'Human review', icon: UserRound, color: 'var(--warning)' },
+  end: { label: 'End', icon: CircleStop, color: 'var(--text-secondary)' },
 }
 type CanvasNode = Node<
   {
@@ -372,9 +372,9 @@ function GraphEditor({
     markerEnd: { type: MarkerType.ArrowClosed },
     style:
       workflow?.nodes[edge.source]?.status === 'completed'
-        ? { stroke: '#70bf95' }
+        ? { stroke: 'var(--success)' }
         : workflow?.nodes[edge.source]?.status === 'failed'
-          ? { stroke: '#dc7b7b', strokeDasharray: '5 4' }
+          ? { stroke: 'var(--danger)', strokeDasharray: '5 4' }
           : undefined,
     ariaLabel: `Connection from ${draft?.nodes.find((node) => node.id === edge.source)?.data.title} to ${draft?.nodes.find((node) => node.id === edge.target)?.data.title}`,
   }))
@@ -696,7 +696,7 @@ function GraphEditor({
               defaultViewport={view.viewport ?? draft.viewport}
               minZoom={0.1}
               maxZoom={2.5}
-              colorMode="dark"
+              colorMode="light"
               nodesDraggable
               nodesConnectable={!!editable}
               edgesReconnectable={!!editable}
@@ -745,17 +745,17 @@ function GraphEditor({
               }}
               proOptions={{ hideAttribution: false }}
             >
-              <Background color="#34303e" gap={22} size={1} />
+              <Background color="var(--line-strong)" gap={22} size={1} />
               <Controls showInteractive={false} />
               <MiniMap<CanvasNode>
                 nodeColor={(node) =>
                   node.data.status === 'completed'
-                    ? '#70bf95'
+                    ? 'var(--success)'
                     : node.data.status === 'failed'
-                      ? '#dc7b7b'
+                      ? 'var(--danger)'
                       : node.data.status === 'running'
-                        ? '#bd9df2'
-                        : '#645b72'
+                        ? 'var(--accent)'
+                        : 'var(--muted)'
                 }
                 pannable
                 zoomable
@@ -826,7 +826,6 @@ function GraphEditor({
         <aside className="graph-details" aria-label="Node details">
           <header>
             <div>
-              <span>WORKFLOW / DETAILS</span>
               <h2>
                 {node
                   ? kinds[node.type].label

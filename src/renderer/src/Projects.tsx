@@ -123,16 +123,12 @@ export function ProjectsPage() {
     <main className="projects-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">
-            <span />
-            WORKSPACE / PROJECTS
-          </div>
           <h1>Your projects</h1>
           <p>A home for each repository. A clear view of the work ahead.</p>
         </div>
-        <ProjectActions />
+        {projects.length > 0 && <ProjectActions />}
       </div>
-      <div className="project-overview">
+      <div className="project-overview" aria-label="Workspace summary">
         <div>
           <FolderGit2 size={17} />
           <strong>{projects.length}</strong>
@@ -141,7 +137,7 @@ export function ProjectsPage() {
         <div>
           <Layers3 size={17} />
           <strong>{tasks.length}</strong>
-          <span>active tasks</span>
+          <span>{tasks.length === 1 ? 'active task' : 'active tasks'}</span>
         </div>
         <div>
           <CheckCheck size={17} />
@@ -157,7 +153,7 @@ export function ProjectsPage() {
       </div>
       <div className="projects-toolbar">
         <span>
-          REPOSITORIES <small>{projects.length}</small>
+          Repositories <small>{projects.length}</small>
         </span>
         <label className="workspace-search">
           <Search size={14} />
@@ -187,7 +183,6 @@ export function ProjectsPage() {
           <div className="empty-project-icon">
             <FolderGit2 size={32} />
           </div>
-          <span className="eyebrow">START WITH A PROJECT</span>
           <h2>Give your next idea a workspace.</h2>
           <p>
             Create a project folder or open one you already have. We’ll set up
@@ -200,6 +195,11 @@ export function ProjectsPage() {
         </div>
       ) : (
         <div className="project-cards">
+          {visible.length > 0 && (
+            <div className="project-list-header" aria-hidden="true">
+              <span>Repository</span><span>Workload</span><span />
+            </div>
+          )}
           {visible.map((project) => {
             const projectTasks = tasks.filter(
               (task) => task.projectId === project.id,
@@ -213,38 +213,29 @@ export function ProjectsPage() {
                 key={project.id}
                 className="project-card"
               >
-                <div className="project-card-top">
-                  <span className="project-monogram">
-                    {project.name.slice(0, 2).toUpperCase()}
+                <div className="project-identity">
+                  <span className="project-monogram" aria-hidden="true">
+                    <FolderGit2 size={20} />
                   </span>
-                  <ArrowRight size={17} />
+                  <div>
+                    <h2>{project.name}</h2>
+                    <p className="project-card-path" title={project.repoPath}>
+                      <GitBranch size={12} /><span>{project.repoPath}</span>
+                    </p>
+                    <p className="project-card-description">
+                      {project.description ||
+                        'Add a project brief in settings to give the work context.'}
+                    </p>
+                  </div>
                 </div>
-                <h2>{project.name}</h2>
-                <p className="project-card-path" title={project.repoPath}>
-                  <GitBranch size={12} />
-                  {project.repoPath}
-                </p>
-                <p className="project-card-description">
-                  {project.description ||
-                    'Add a project brief in settings to give the work context.'}
-                </p>
-                <div className="project-progress">
-                  <span
-                    style={{
-                      width: `${projectTasks.length ? (done / projectTasks.length) * 100 : 0}%`,
-                    }}
-                  />
+                <div className="project-card-work">
+                  <span><strong>{projectTasks.length}</strong> {projectTasks.length === 1 ? 'task' : 'tasks'}</span>
+                  <span className="project-completion">{done} done</span>
+                  <div className="project-progress" aria-hidden="true">
+                    <span style={{ transform: `scaleX(${projectTasks.length ? done / projectTasks.length : 0})` }} />
+                  </div>
                 </div>
-                <div className="project-card-bottom">
-                  <span>
-                    {projectTasks.length}{' '}
-                    {projectTasks.length === 1 ? 'task' : 'tasks'}
-                  </span>
-                  <span>
-                    {done} done
-                    <ChevronArrow />
-                  </span>
-                </div>
+                <span className="project-open" aria-hidden="true">Open project <ArrowRight size={16} /></span>
               </Link>
             )
           })}
@@ -260,14 +251,15 @@ export function ProjectsPage() {
   )
 }
 
-function ChevronArrow() {
-  return <ArrowRight size={12} />
-}
 function LoadingWorkspace() {
   return (
-    <div className="workspace-empty">
-      <LoaderCircle className="spin" size={24} />
-      <p>Loading your workspace…</p>
+    <div className="workspace-loading" role="status">
+      <span className="sr-only">Loading your workspace…</span>
+      {[0, 1, 2].map((row) => (
+        <div className="workspace-skeleton" key={row} aria-hidden="true">
+          <span /><div><i /><i /></div><span />
+        </div>
+      ))}
     </div>
   )
 }
@@ -386,10 +378,6 @@ export function ProjectBoardPage() {
       </Link>
       <div className="page-heading board-heading">
         <div>
-          <div className="eyebrow">
-            <GitBranch size={11} />
-            PROJECT WORKSPACE
-          </div>
           <h1>{project.name}</h1>
           <p className="board-repo-path" title={project.repoPath}>
             {project.repoPath}

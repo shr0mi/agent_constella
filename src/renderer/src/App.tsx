@@ -14,6 +14,7 @@ import {
   FlaskConical,
   FolderKanban,
   GitBranch,
+  HardDrive,
   Layers3,
   LoaderCircle,
   MessageSquare,
@@ -80,11 +81,11 @@ function Sidebar() {
     <aside className="sidebar">
       <div className="brand">
         <span className="brand-mark">
-          <Sparkles size={21} />
+          <Layers3 size={21} />
         </span>
         <span>
           AgentConstella
-          <span className="brand-sub">YOUR LOCAL AGENT WORKSPACE</span>
+          <span className="brand-sub">Local agent workspace</span>
         </span>
       </div>
       <div className="workspace-label">
@@ -92,9 +93,8 @@ function Sidebar() {
         <div>
           Personal workspace<small>Local · single user</small>
         </div>
-        <ChevronDown size={14} />
       </div>
-      <div className="nav-label">WORKSPACE</div>
+      <div className="nav-label">Workspace</div>
       <nav aria-label="Main navigation">
         <NavLink to="/projects">
           <FolderKanban size={17} />
@@ -116,7 +116,7 @@ function Sidebar() {
       </nav>
       {projects.length > 0 && (
         <div className="sidebar-projects">
-          <div className="nav-label">YOUR PROJECTS</div>
+          <div className="nav-label">Your projects</div>
           {projects.map((project) => (
             <NavLink key={project.id} to={`/projects/${project.id}`}>
               <span>{project.name.slice(0, 1).toUpperCase()}</span>
@@ -125,12 +125,6 @@ function Sidebar() {
           ))}
         </div>
       )}
-      <div className="sidebar-note">
-        <GitBranch size={18} />
-        <strong>From a task to a team.</strong>
-        <p>Build visible workflows with humans and Codex.</p>
-        <span>WORKFLOW PROGRESSION · MILESTONE 06</span>
-      </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
           <CircleHelp size={17} />
@@ -231,8 +225,7 @@ export function App() {
           <ChevronRight size={14} />
           <strong>{pageName}</strong>
           <span className="topbar-spacer" />
-          <span className="starter-badge">STARTER</span>
-          <span className="avatar">AK</span>
+          <span className="topbar-local"><HardDrive size={13} /> Local workspace</span>
         </header>
         <div className="global-errors">
           {error && (
@@ -378,10 +371,6 @@ function Playground() {
     <main className="lab-page">
       <div className="page-heading">
         <div>
-          <div className="eyebrow">
-            <span />
-            FOUNDATION / 01
-          </div>
           <h1>Connectivity lab</h1>
           <p>A small space to put your Codex connection to work.</p>
         </div>
@@ -465,11 +454,8 @@ function Playground() {
             {runs.length === 0 ? (
               <div className="welcome">
                 <div className="welcome-symbol">
-                  <Sparkles size={29} />
-                  <span className="orbit orbit-one" />
-                  <span className="orbit orbit-two" />
+                  <Terminal size={29} />
                 </div>
-                <span className="eyebrow">LET’S MAKE A CONNECTION</span>
                 <h2>
                   One workspace.
                   <br />
@@ -1032,7 +1018,6 @@ function ActivityView({ item }: { item: ActivityItem }) {
 function IntegrationNotes() {
   return (
     <main className="notes-page">
-      <div className="eyebrow">FOUNDATION / INTEGRATION RECORD</div>
       <h1>Know the boundaries.</h1>
       <p className="notes-intro">
         The starter uses the Codex TypeScript SDK for execution. These
@@ -1041,7 +1026,6 @@ function IntegrationNotes() {
       <div className="notes-grid">
         {limitations.map((note, i) => (
           <section className="note-card" key={note}>
-            <span>{String(i + 1).padStart(2, '0')}</span>
             <h2>
               {
                 [

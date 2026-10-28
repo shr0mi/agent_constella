@@ -90,7 +90,7 @@ export function WorkflowControls({
           <div>
             <i
               style={{
-                width: `${workflow.summary.total ? (workflow.summary.accepted / workflow.summary.total) * 100 : 0}%`,
+                transform: `scaleX(${workflow.summary.total ? workflow.summary.accepted / workflow.summary.total : 0})`,
               }}
             />
           </div>
@@ -261,7 +261,7 @@ export function ReviewPanel({
   }
   if (!node) return null
   return (
-    <section className="workflow-review" aria-label="Human review decision">
+    <section className={`workflow-review state-${node.status}`} aria-label="Human review decision">
       <header>
         <UserRound size={17} />
         <strong>{workflowStatusLabel[node.status]}</strong>

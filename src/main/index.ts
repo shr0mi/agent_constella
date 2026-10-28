@@ -73,7 +73,7 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 700,
     title: 'AgentConstella',
-    backgroundColor: '#101114',
+    backgroundColor: '#f3f5f8',
     show: false,
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),

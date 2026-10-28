@@ -54,6 +54,23 @@ function FailureCard({ failure }: { failure: Failure }) {
   )
 }
 
+function ExecutionGuidance({ testCommand }: { testCommand: string }) {
+  return (
+    <>
+      <div className="node-context-note">
+        Run controls execute only this node. All prerequisites must be completed
+        and accepted. Use Run workflow on the graph to schedule ready nodes
+        automatically.
+      </div>
+      {testCommand.trim() && (
+        <div className="node-context-note">
+          Checks after each successful turn: <code>{testCommand}</code>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function NodeWorkspace({
   graph,
   node,
@@ -310,16 +327,22 @@ export function NodeWorkspace({
           </button>
         </div>
       </div>
-      <div className="node-context-note">
-        Run controls execute only this node. All prerequisites must be completed
-        and accepted. Use Run workflow on the graph to schedule ready nodes
-        automatically.
-      </div>
-      {graph.project.testCommand.trim() && (
-        <div className="node-context-note">
-          Checks after each successful turn:{' '}
-          <code>{graph.project.testCommand}</code>
-        </div>
+      {last?.status === 'failed' ? (
+        <>
+          <div className="node-latest-failure" role="status" aria-label="Latest attempt failure">
+            <TriangleAlert size={16} aria-hidden="true" />
+            <div>
+              <strong>{last.error?.message ?? last.inspectionError?.message ?? 'The latest attempt failed.'}</strong>
+              <p>{last.error?.hint ?? last.inspectionError?.hint ?? 'Inspect this attempt and its checks, then retry or request a revision in this conversation.'}</p>
+            </div>
+          </div>
+          <details className="node-execution-guidance">
+            <summary>Execution details</summary>
+            <ExecutionGuidance testCommand={graph.project.testCommand} />
+          </details>
+        </>
+      ) : (
+        <ExecutionGuidance testCommand={graph.project.testCommand} />
       )}
       {failure && <FailureCard failure={failure} />}
       {snapshot?.persistenceError && (

@@ -13,6 +13,7 @@ const { tmpdir } = require('node:os')
 const { join, resolve } = require('node:path')
 const { randomUUID, createHash } = require('node:crypto')
 const assert = require('node:assert/strict')
+const captureUi = require('./ui-capture.cjs')
 const root = resolve(__dirname, '..'),
   data = mkdtempSync(join(tmpdir(), 'constella-workflow-ui-'))
 app.setPath('userData', join(data, 'electron'))
@@ -30,7 +31,7 @@ let window,
 const deadline = setTimeout(() => {
   console.error('Workflow UI timed out', errors)
   void finish(1)
-}, 45000)
+}, process.env.CONSTELLA_WORKFLOW_SCREENSHOT ? 120000 : 45000)
 async function finish(code) {
   if (ending) return
   ending = true
@@ -351,6 +352,7 @@ app
     )
     await run('location.hash="/agents"')
     await until('document.querySelectorAll(".catalog-card").length===2')
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'agents')
     assert.deepEqual(
       await run(
         'Array.from(document.querySelectorAll(".catalog-card h2"), item=>item.textContent).sort()',
@@ -359,6 +361,7 @@ app
     )
     await run('location.hash="/skills"')
     await until('document.querySelectorAll(".catalog-card").length===4')
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'skills')
     assert.equal(
       await run('document.querySelectorAll(".catalog-source").length'),
       4,
@@ -415,11 +418,8 @@ app
       '({failed:getComputedStyle(document.querySelector(".workflow-node.state-failed")).backgroundColor,pending:getComputedStyle(document.querySelector(".workflow-node.state-pending")).backgroundColor})',
     )
     assert.notEqual(colors.failed, colors.pending)
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(
-        `${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.failed.png`,
-        (await window.webContents.capturePage()).toPNG(),
-      )
+    await until('document.querySelector(".node-latest-failure")?.textContent.includes("Deliberate UI fixture failure")')
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'failed')
     assert.equal(
       workspace.getBoard({ projectId: project.id }).tasks[0].status,
       'doing',
@@ -478,11 +478,7 @@ app
       'document.querySelector(".task-review-dialog")?.open && !!document.querySelector(".task-review-command")',
     )
     const reviewContext = await execution.getReview(identity)
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(
-        `${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.review.png`,
-        (await window.webContents.capturePage()).toPNG(),
-      )
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'review')
     assert.equal(reviewContext.branch, 'codex/build-a-reviewed-feature')
     assert.equal(
       await run(
@@ -574,11 +570,7 @@ app
     await until(
       'document.querySelectorAll(".workflow-node.state-completed").length===6',
     )
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(
-        `${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.graph.png`,
-        (await window.webContents.capturePage()).toPNG(),
-      )
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'graph')
     assert.equal(
       workspace.getBoard({ projectId: project.id }).tasks[0].status,
       'doing',
@@ -617,11 +609,7 @@ app
     await until(
       'document.querySelector(".workflow-integration-hint")?.textContent.includes("merged into the base branch")',
     )
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(
-        process.env.CONSTELLA_WORKFLOW_SCREENSHOT,
-        (await window.webContents.capturePage()).toPNG(),
-      )
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'integration')
     await run('document.querySelector(".integration-dialog > header button").click()')
     const dependent = workspace.createTask({ projectId: project.id, title: 'Use the accepted plan', description: 'Implement the next step.' })
     await run(`location.hash=${JSON.stringify(`/projects/${project.id}`)}`)
@@ -634,14 +622,12 @@ app
     await run('Array.from(document.querySelectorAll(".task-card-actions button[aria-label]")).find(button=>button.getAttribute("aria-label")==="Open Build a reviewed feature in IDE").click()')
     await until('Array.from(document.querySelectorAll(".task-card-actions button[aria-label]")).filter(button=>button.getAttribute("aria-label").endsWith(" in IDE")).every(button=>!button.disabled)')
     assert.equal(openedIdePaths.at(-1), reviewContext.path)
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(`${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.board.png`, (await window.webContents.capturePage()).toPNG())
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'board')
     await run('Array.from(document.querySelectorAll(".task-open")).find(button=>button.textContent.includes("Use the accepted plan")).click()')
     await until('!!document.querySelector("#required-files") && !!document.querySelector(".dependency-choice input")')
     await run('document.querySelector(".dependency-choice input").click()')
     await set('#required-files', 'project_plan.md')
-    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
-      writeFileSync(`${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.inputs.png`, (await window.webContents.capturePage()).toPNG())
+    await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'inputs')
     await click('Save changes')
     await until('!document.querySelector("dialog[open]")')
     const savedInputs = workspace.getBoard({ projectId: project.id }).tasks.find((item) => item.id === dependent.id)
