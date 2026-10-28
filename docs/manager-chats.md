@@ -19,9 +19,9 @@ Manager tokens allow these tools:
 | Tool | Behavior |
 | --- | --- |
 | `workspace_get_context` | Live project, board or selected task/node context |
-| `project_update` | Board manager only: partial project brief/instructions, development/run and test commands, name, and model/effort defaults, using the live project revision |
+| `project_update` | Board manager only: partial project brief/instructions, development/run, test and IDE commands, parallel-agent limit, name, and model/effort defaults, using the live project revision |
 | `todo_create` | Create a To Do task with an optional full graph atomically |
-| `todo_update` | Partial task text edits with an expected task revision |
+| `todo_update` | Partial task edits, dependencyIds, and requiredFiles with an expected task revision |
 | `todo_archive` | Reversible archive/restore; archive cancels active task execution |
 | `graph_get` | Full saved document, live revision and validation |
 | `graph_apply_changes` | Atomic add/update/remove node and add/remove edge operations |
@@ -49,3 +49,5 @@ Migration 8 preserves existing task/graph history and allows project-level entri
 The pinned Codex SDK uses `codex exec`. Its stream can omit nested/custom tool activity, so change history is the authoritative record of saved edits. Stop retains committed edits and partial history. A successful conversational reply alone does not prove an edit saved; tool results and history do. Account authentication/model availability are checked by the existing runtime, and provider failures remain visible in the chat. Reopening the app reissues current endpoint credentials when continuing a saved thread.
 
 Configuration follows the official [Codex SDK configuration override documentation](https://learn.chatgpt.com/docs/codex-sdk) and [MCP HTTP/authentication configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli), with types checked against the pinned installed SDK.
+
+Todo dependencies must belong to the same project and form an acyclic graph. A prerequisite releases its successors only after integration; reaching workflow End leaves a todo Doing. Required files are verified before an agent starts. The manager can save these settings but cannot integrate a branch or launch an IDE. See [parallel workflows](parallel-workflows.md).

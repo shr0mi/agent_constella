@@ -71,6 +71,10 @@ export function WorkflowControls({
           <strong>
             {workflow.phase === 'idle'
               ? 'Workflow ready to start'
+              : workflow.phase === 'completed'
+                ? workflow.integration?.status === 'integrated'
+                  ? 'Integrated'
+                  : 'Awaiting integration'
               : workflow.phase === 'waiting'
                 ? waiting?.status === 'waiting-review'
                   ? 'Waiting for human review'
@@ -182,9 +186,10 @@ export function WorkflowControls({
           <p className="workflow-integration-hint">
             {workflow.integration?.status === 'integrated'
               ? 'Accepted work has been merged into the base branch.'
-              : 'Work accepted on the task branch. Review it in your project directory, then use Integrate branch to merge it into the base branch.'}
+              : 'Work accepted in the task workspace. Use Integrate branch to merge it into the base branch and move this task to Done and release dependent todos.'}
           </p>
         )}
+        {workflow.summary.blockers.filter((message) => message.startsWith('Waiting for “')).map((message) => <p className="workflow-blocker" key={message}>{message}</p>)}
         {(workflow.error || issue || workflow.phase === 'paused') && (
           <p className="workflow-blocker">
             {workflow.error?.message ??

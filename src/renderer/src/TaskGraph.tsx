@@ -519,8 +519,8 @@ function GraphEditor({
     runBlockers[0] ??
     (blockedParents.length
       ? `Waiting for completed and accepted prerequisites: ${blockedParents.map((parent) => parent?.title ?? 'Unknown node').join(', ')}.`
-      : execution?.active
-        ? 'Another node is active in this project.'
+      : execution?.activeRuns?.some((active) => active.nodeId === node?.id)
+        ? 'This agent is already running.'
         : execution?.persistenceError?.message)
   async function runSelectedNode() {
     if (node?.type !== 'agent' || !saved || nodeRunReason) return
@@ -1209,7 +1209,8 @@ function NodeSettings({
         {node.type === 'end' && (
           <p className="helper">
             One finish point per workflow. End waits for every incoming
-            dependency to be accepted.
+            dependency to be accepted. Integrate the accepted result to move
+            the task to Done.
           </p>
         )}
         <button

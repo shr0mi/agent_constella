@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, realpath, rm, lstat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { eq } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
-import { taskWorktrees } from '../db/schema'
+import { nodeWorktrees, taskWorktrees } from '../db/schema'
 import type { Project, Task } from '../../shared/workspace'
 import type {
   CodeSnapshot,
@@ -166,23 +166,95 @@ export class TaskWorktreeService {
       await rm(temporary, { recursive: true, force: true })
     }
   }
+  async exclusive<T>(taskId: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.preparing.get(taskId) ?? Promise.resolve()
+    const pending = previous.catch(() => {}).then(action)
+    this.preparing.set(taskId, pending)
+    try {
+      return await pending
+    } finally {
+      if (this.preparing.get(taskId) === pending) this.preparing.delete(taskId)
+    }
+  }
   async ensure(
     project: Project,
     task: Task,
     signal?: AbortSignal,
-    options: { preserveLocalChanges?: boolean } = {},
+    _options: { preserveLocalChanges?: boolean } = {},
   ): Promise<TaskWorktree> {
-    const previous = this.preparing.get(project.id) ?? Promise.resolve()
-    const pending = previous
-      .catch(() => {})
-      .then(() => this.prepare(project, task, signal, options))
-    this.preparing.set(project.id, pending)
-    try {
-      return await pending
-    } finally {
-      if (this.preparing.get(project.id) === pending)
-        this.preparing.delete(project.id)
-    }
+    return this.exclusive(task.id, () => this.prepare(project, task, signal))
+  }
+  getNode(nodeId: string): TaskWorktree | null {
+    return this.database.db
+      .select()
+      .from(nodeWorktrees)
+      .where(eq(nodeWorktrees.nodeId, nodeId))
+      .get()?.document ?? null
+  }
+  private saveNode(worktree: TaskWorktree) {
+    this.database.db
+      .insert(nodeWorktrees)
+      .values({
+        nodeId: worktree.nodeId!,
+        taskId: worktree.taskId,
+        projectId: worktree.projectId,
+        document: worktree,
+      })
+      .onConflictDoUpdate({
+        target: nodeWorktrees.nodeId,
+        set: { document: worktree },
+      })
+      .run()
+  }
+  async ensureNode(
+    project: Project,
+    task: Task,
+    nodeId: string,
+    signal?: AbortSignal,
+  ): Promise<TaskWorktree> {
+    return this.exclusive(task.id, async () => {
+      const result = await this.prepare(project, task, signal, true)
+      let node = this.getNode(nodeId)
+      if (node && (node.taskId !== task.id || node.projectId !== project.id))
+        throw new Error('The agent workspace belongs to another task.')
+      if (!node) {
+        const path = join(
+          await realpath(this.appData), 'node-worktrees', project.id, task.id, nodeId,
+        )
+        const branches = await taskGit(project.repoPath, [
+          'for-each-ref', '--format=%(refname:strip=2)', 'refs/heads',
+        ])
+        const branch = readableTaskBranch(
+          `${task.title}-agent-${nodeId}`, branches.trim().split('\n'),
+        )
+        node = {
+          ...result,
+          nodeId,
+          path,
+          branch,
+          state: 'creating',
+          baseRevision: (await taskGit(result.path, ['rev-parse', 'HEAD'])).trim(),
+          createdAt: new Date().toISOString(),
+        }
+        this.saveNode(node)
+      }
+      await this.createCheckout(project.repoPath, node, signal)
+      await this.verify(node, project.repoPath)
+      await this.assertNoOperation(node.path)
+      // Preserve edits made in an agent's IDE before bringing in accepted upstream code.
+      if ((await taskGit(node.path, ['status', '--short'])).length)
+        await this.checkpoint(
+          node, await this.capture(node.path, `Save local edits on ${node.branch}`),
+        )
+      await this.mergeInto(
+        node,
+        (await taskGit(result.path, ['rev-parse', 'HEAD'])).trim(),
+        'Update agent prerequisites',
+      )
+      node.state = 'ready'
+      this.saveNode(node)
+      return structuredClone(node)
+    })
   }
   async assertClean(path: string) {
     await this.assertNoOperation(path)
@@ -214,178 +286,113 @@ export class TaskWorktreeService {
         )
     }
   }
-  // Release branches held by older app-managed checkouts. Their files remain as
-  // backups; the saved branch becomes available in the user's project directory.
   async adopt(project: Project, task: Task): Promise<TaskWorktree | null> {
-    const worktree = this.get(task.id)
-    if (!worktree || worktree.mode === 'project') return worktree
-    const expected = join(
-      await realpath(this.appData),
-      'task-worktrees',
-      project.id,
-      task.id,
+    let worktree = this.get(task.id)
+    if (!worktree) return null
+    if (worktree.projectId !== project.id || worktree.taskId !== task.id)
+      throw new Error('Stored task workspace ownership does not match this project.')
+    if (worktree.mode === 'project') {
+      if ((await realpath(worktree.path)) !== (await realpath(project.repoPath)))
+        throw new Error('The saved project directory changed. Existing files are preserved.')
+      if ((await taskGit(project.repoPath, ['branch', '--show-current'])).trim() === worktree.branch) {
+        await this.assertClean(project.repoPath)
+        if (!worktree.sourceBranch) throw new Error('Restore the saved base branch before migrating this task.')
+        await taskGit(project.repoPath, ['switch', worktree.sourceBranch])
+      }
+      worktree = {
+        ...worktree,
+        mode: 'isolated',
+        legacyPath: worktree.path,
+        path: join(await realpath(this.appData), 'task-worktrees-v2', project.id, task.id),
+        state: 'creating',
+      }
+      this.save(worktree)
+    }
+    const root = await realpath(this.appData)
+    const expected = ['task-worktrees-v2', 'task-worktrees'].map(
+      (folder) => join(root, folder, project.id, task.id),
     )
-    if (
-      worktree.projectId !== project.id ||
-      worktree.taskId !== task.id ||
-      resolve(worktree.path) !== resolve(expected)
-    )
-      throw new Error(
-        'Stored legacy checkout ownership does not match this task.',
-      )
+    if (!expected.includes(resolve(worktree.path)))
+      throw new Error('The saved task workspace is outside its registered location.')
+    await this.createCheckout(project.repoPath, worktree)
     await this.verify(worktree, project.repoPath, false)
-    const branch = await taskGit(worktree.path, [
-      'symbolic-ref',
-      '--quiet',
-      '--short',
-      'HEAD',
-    ])
-      .then((value) => value.trim())
-      .catch(() => null)
-    if (branch && branch !== worktree.branch)
-      throw new Error(
-        'The legacy task checkout is on another branch. Its files have been preserved.',
-      )
-    if (branch) {
-      const snapshot = await this.capture(
-        worktree.path,
-        `Save ${worktree.branch} before moving to the project directory`,
-      )
-      await this.checkpoint(worktree, snapshot)
-      await taskGit(worktree.path, ['switch', '--detach', snapshot.commit])
-    } else {
+    const selected = (await taskGit(worktree.path, ['branch', '--show-current'])).trim()
+    if (!selected) {
       await this.assertClean(worktree.path)
-      const head = (await taskGit(worktree.path, ['rev-parse', 'HEAD'])).trim()
-      const tip = (
-        await taskGit(worktree.path, [
-          'rev-parse',
-          `refs/heads/${worktree.branch}`,
-        ])
-      ).trim()
-      if (head !== tip)
-        throw new Error(
-          'The detached legacy backup differs from the task branch. Its files are preserved; reconcile that branch before continuing.',
-        )
+      const heads = (await taskGit(worktree.path, [
+        'rev-parse', 'HEAD', `refs/heads/${worktree.branch}`,
+      ])).trim().split('\n')
+      if (heads[0] !== heads[1])
+        throw new Error('The detached backup differs from its saved branch. Reconcile it before continuing.')
+      await taskGit(worktree.path, ['switch', worktree.branch])
     }
-    const adopted: TaskWorktree = {
-      ...worktree,
-      mode: 'project',
-      legacyPath: worktree.path,
-      path: await realpath(project.repoPath),
-      state: 'ready',
-    }
-    this.save(adopted)
-    return adopted
+    await this.verify(worktree, project.repoPath)
+    worktree.mode = 'isolated'
+    worktree.state = 'ready'
+    this.save(worktree)
+    return worktree
   }
-  private async prepare(
-    project: Project,
-    task: Task,
-    signal?: AbortSignal,
-    options: { preserveLocalChanges?: boolean } = {},
+  private async createCheckout(
+    source: string, worktree: TaskWorktree, signal?: AbortSignal,
+  ) {
+    const exists = await lstat(worktree.path).catch(() => null)
+    const head = await taskGit(source, [
+      'rev-parse', '--verify', `refs/heads/${worktree.branch}`,
+    ]).then((value) => value.trim()).catch(() => null)
+    if (worktree.state === 'ready' && (!exists || !head))
+      throw new Error('The saved task branch or workspace is missing. Restore it before continuing; it will not be silently recreated.')
+    if (!exists) {
+      await mkdir(dirname(worktree.path), { recursive: true })
+      await taskGit(source, [
+        'worktree', 'add', ...(head ? [] : ['-b', worktree.branch]),
+        worktree.path, head ? worktree.branch : worktree.baseRevision,
+      ], { signal })
+    }
+  }
+  private prepare(
+    project: Project, task: Task, signal?: AbortSignal, syncDependencies = false,
+  ): Promise<TaskWorktree> {
+    return this.exclusive(`project:${project.id}`, () =>
+      this.prepareUnlocked(project, task, signal, syncDependencies),
+    )
+  }
+  private async prepareUnlocked(
+    project: Project, task: Task, signal?: AbortSignal, syncDependencies = false,
   ): Promise<TaskWorktree> {
     try {
       const source = await resolveRepository(project.repoPath)
-      if (source !== (await realpath(project.repoPath)))
+      if (source !== await realpath(project.repoPath))
         throw new Error('The project repository root changed.')
       signal?.throwIfAborted()
-      let worktree = await this.adopt(project, task)
-      if (worktree) {
-        if (
-          worktree.taskId !== task.id ||
-          worktree.projectId !== project.id ||
-          worktree.path !== source ||
-          !worktree.branch.startsWith('codex/')
-        )
-          throw new Error(
-            'Stored task branch ownership does not match this project.',
-          )
-        await this.verify(worktree, source, false)
-      }
-      const selectedBranch = (
-        await taskGit(source, ['branch', '--show-current'], { signal })
-      ).trim()
-      const sameTaskBranch =
-        worktree?.state === 'ready' && worktree.branch === selectedBranch
-      // An explicit review action can return unfinished files to their task
-      // without stashing or changing the index. Identical committed trees keep
-      // this from carrying edits across different versions of the project.
-      const equivalentBranch =
-        !sameTaskBranch &&
-        !!selectedBranch &&
-        worktree?.state === 'ready' &&
-        options.preserveLocalChanges &&
-        (await taskGit(
-          source,
-          ['rev-parse', 'HEAD^{tree}', `refs/heads/${worktree.branch}^{tree}`],
-          { signal },
-        )
-          .then((value) => {
-            const trees = value.trim().split('\n')
-            return trees.length === 2 && trees[0] === trees[1]
-          })
-          .catch((error) => {
-            if (signal?.aborted) throw error
-            return false
-          }))
-      if (sameTaskBranch || equivalentBranch)
-        await this.assertNoOperation(source)
-      else await this.assertClean(source)
       await ensureInitialCommit(source)
+      let worktree = await this.adopt(project, task)
       if (!worktree) {
-        let sourceBranch = (
-          await taskGit(
-            source,
-            ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-            { signal },
-          )
-        ).trim()
-        // A second todo starts from the integration branch, not another todo's
-        // unintegrated progress left selected in the shared project directory.
+        let sourceBranch = (await taskGit(source, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim()
         const records = this.database.db
-          .select()
-          .from(taskWorktrees)
-          .all()
-          .map((row) => row.document)
+          .select().from(taskWorktrees).all().map((row) => row.document)
         const visited = new Set<string>()
         while (true) {
           const owner = records.find(
-            (record) =>
-              record.projectId === project.id && record.branch === sourceBranch,
+            (record) => record.projectId === project.id && record.branch === sourceBranch,
           )
           if (!owner) break
           if (!owner.sourceBranch || visited.has(sourceBranch))
-            throw new Error(
-              'Cannot determine the project integration branch. Check out your base branch before starting a new task.',
-            )
+            throw new Error('Cannot determine the project base branch.')
           visited.add(sourceBranch)
           sourceBranch = owner.sourceBranch
         }
-        const baseRevision = (
-          await taskGit(
-            source,
-            ['rev-parse', '--verify', `refs/heads/${sourceBranch}`],
-            { signal },
-          )
-        ).trim()
-        const existing = (
-          await taskGit(
-            source,
-            ['for-each-ref', '--format=%(refname:strip=2)', 'refs/heads'],
-            { signal },
-          )
-        )
-          .trim()
-          .split('\n')
-          .filter(Boolean)
-        const reserved = records
-          .filter((record) => record.projectId === project.id)
-          .map((record) => record.branch)
+        const baseRevision = (await taskGit(source, [
+          'rev-parse', '--verify', `refs/heads/${sourceBranch}`,
+        ])).trim()
+        const existing = (await taskGit(source, [
+          'for-each-ref', '--format=%(refname:strip=2)', 'refs/heads',
+        ])).trim().split('\n')
         worktree = {
-          mode: 'project',
+          mode: 'isolated',
           taskId: task.id,
           projectId: project.id,
-          path: source,
-          branch: readableTaskBranch(task.title, [...existing, ...reserved]),
+          path: join(await realpath(this.appData), 'task-worktrees-v2', project.id, task.id),
+          branch: readableTaskBranch(task.title, [...existing, ...records.map((record) => record.branch)]),
           baseRevision,
           sourceHead: baseRevision,
           sourceBranch,
@@ -393,56 +400,92 @@ export class TaskWorktreeService {
           createdAt: new Date().toISOString(),
         }
         this.save(worktree)
+        await this.createCheckout(source, worktree, signal)
+        worktree.state = 'ready'
+        this.save(worktree)
       }
-      if (
-        worktree.taskId !== task.id ||
-        worktree.projectId !== project.id ||
-        worktree.path !== source ||
-        !worktree.branch.startsWith('codex/')
-      )
-        throw new Error(
-          'Stored task branch ownership does not match this project.',
-        )
-      const head = await taskGit(
-        source,
-        ['rev-parse', '--verify', `refs/heads/${worktree.branch}`],
-        { signal },
-      )
-        .then((value) => value.trim())
-        .catch(() => null)
-      if (!head) {
-        if (worktree.state === 'ready')
-          throw new Error(
-            'The saved task branch is missing. Restore it before continuing; it will not be silently recreated.',
-          )
-        await taskGit(
-          source,
-          ['branch', worktree.branch, worktree.baseRevision],
-          { signal },
-        )
-      } else if (
-        worktree.state === 'creating' &&
-        head !== worktree.baseRevision
-      ) {
-        throw new Error(
-          'The reserved task branch now contains different work. Its files and history have been preserved.',
-        )
-      }
-      if (!sameTaskBranch)
-        await taskGit(source, ['switch', worktree.branch], { signal })
       await this.verify(worktree, source)
-      worktree.state = 'ready'
-      this.save(worktree)
+      await this.assertNoOperation(worktree.path)
+      if (syncDependencies && (await taskGit(worktree.path, ['status', '--short'])).length)
+        await this.checkpoint(
+          worktree,
+          await this.capture(worktree.path, 'Save task workspace edits before execution'),
+        )
+      // A previously opened task must receive dependencies integrated since its creation.
+      if (syncDependencies && (task.dependencyIds ?? []).length && worktree.sourceBranch) {
+        const base = (await taskGit(source, [
+          'rev-parse', `refs/heads/${worktree.sourceBranch}`,
+        ])).trim()
+        for (const id of task.dependencyIds) {
+          const receipt = this.database.sqlite.prepare(
+            "SELECT json_extract(document, '$.integration.commit') AS commit_id FROM workflows WHERE task_id = ?",
+          ).get(id) as { commit_id: string | null } | undefined
+          const available = receipt?.commit_id && await this.isAncestor(source, receipt.commit_id, base)
+          if (!available)
+            throw new ApplicationError(
+              'TASK_DEPENDENCIES',
+              'A prerequisite is not integrated into this task’s base branch.',
+              'Integrate the prerequisite into the same base branch before continuing.',
+            )
+        }
+        await this.mergeInto(worktree, base, 'Update integrated todo prerequisites')
+      }
       return structuredClone(worktree)
     } catch (error) {
-      if (signal?.aborted) throw error
-      throw gitFailure(
-        'Cannot prepare the task branch in the project directory.',
-        error,
-      )
+      if (signal?.aborted || error instanceof ApplicationError) throw error
+      throw gitFailure('Cannot prepare the isolated task workspace.', error)
     }
   }
+  private isAncestor(path: string, ancestor: string, descendant: string) {
+    return taskGit(path, ['merge-base', '--is-ancestor', ancestor, descendant])
+      .then(() => true)
+      .catch(() => false)
+  }
+  async mergeInto(
+    worktree: TaskWorktree, incoming: string, label: string,
+  ): Promise<CodeSnapshot> {
+    await this.verify(worktree)
+    await this.assertClean(worktree.path)
+    const head = (await taskGit(worktree.path, ['rev-parse', 'HEAD'])).trim()
+    if (await this.isAncestor(worktree.path, incoming, head))
+      return { head, commit: head }
+    let commit = incoming
+    if (!await this.isAncestor(worktree.path, head, incoming)) {
+      let output: string
+      try {
+        output = await taskGit(worktree.path, [
+          'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', head, incoming,
+        ])
+      } catch (error) {
+        if ((error as { code?: number }).code !== 1) throw error
+        const paths = String((error as { stdout?: string }).stdout ?? '')
+          .split('\0').slice(1).filter(Boolean)
+        throw new ApplicationError(
+          'AGENT_MERGE_CONFLICT',
+          `Agent results conflict: ${paths.join(', ')}`,
+          `Code is saved on its agent branch. Resolve the conflict in the agent workspace against ${worktree.branch}, then retry; no merge was started in the result workspace.`,
+        )
+      }
+      const tree = output.split('\0')[0].trim()
+      commit = (await taskGit(worktree.path, [
+        'commit-tree', tree, '-p', head, '-p', incoming, '-m', label,
+      ])).trim()
+    }
+    await this.assertClean(worktree.path)
+    if ((await taskGit(worktree.path, ['rev-parse', 'HEAD'])).trim() !== head)
+      throw new Error('The result branch moved during preparation. Retry the operation.')
+    await taskGit(worktree.path, ['merge', '--ff-only', '--no-edit', commit])
+    return { head, commit }
+  }
   async verify(worktree: TaskWorktree, source?: string, checkedOut = true) {
+    if (worktree.mode === 'isolated') {
+      const root = await realpath(this.appData)
+      const owned = worktree.nodeId
+        ? [join(root, 'node-worktrees', worktree.projectId, worktree.taskId, worktree.nodeId)]
+        : ['task-worktrees', 'task-worktrees-v2'].map((folder) => join(root, folder, worktree.projectId, worktree.taskId))
+      if (!owned.includes(resolve(worktree.path)) || !worktree.branch.startsWith('codex/'))
+        throw new Error('The saved workspace path or branch does not belong to this agent.')
+    }
     const metadata = await lstat(worktree.path)
     if (
       !metadata.isDirectory() ||
@@ -465,8 +508,8 @@ export class TaskWorktreeService {
     )
       throw new ApplicationError(
         'TASK_BRANCH_CHANGED',
-        'The task branch or project root changed during the operation. Select the task branch and retry.',
-        `Expected ${worktree.branch}; the current branch is ${actualBranch || 'a detached checkout'}. After active work stops, use Review task → Switch to task branch, then retry the node. Local edits can be kept when both branches have identical committed files. Avoid switching branches during an agent run or its checks.`,
+        'The agent branch or workspace changed during the operation. Restore the saved branch in its workspace and retry.',
+        `Expected ${worktree.branch}; the current branch is ${actualBranch || 'a detached checkout'}. After active work stops, use Open in IDE to restore the expected branch in this workspace, then retry the node. Avoid switching branches during an agent run or its checks.`,
       )
     if (source) {
       if (worktree.mode === 'project' && (await realpath(source)) !== root)
@@ -508,7 +551,7 @@ export class TaskWorktreeService {
   ): Promise<RunChanges> {
     await this.verify(worktree)
     const after = await this.capture(worktree.path, `Update ${worktree.branch}`)
-    if (saveProgress && worktree.mode === 'project')
+    if (saveProgress)
       await this.checkpoint(worktree, after)
     const fields = (
       await taskGit(worktree.path, [

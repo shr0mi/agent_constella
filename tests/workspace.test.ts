@@ -127,6 +127,8 @@ describe('persistent project application service', () => {
       projectId: a.id,
       expectedRevision: a.revision,
       name: 'Project A',
+      ideCommand: 'zed',
+      maxParallelAgents: 3,
       description: 'A detailed brief',
       instructions: 'Follow repository conventions',
       devCommand: 'npm run dev',
@@ -141,11 +143,11 @@ describe('persistent project application service', () => {
       description: 'Implementation',
       acceptanceCriteria: 'Tests pass',
     })
-    const second = service.createTask({ projectId: a.id, title: 'Second task' })
+    const second = service.createTask({ projectId: a.id, title: 'Second task', dependencyIds: [first.id], requiredFiles: ['project_plan.md'] })
     const other = service.createTask({
       projectId: b.id,
       title: 'Independent task',
-      status: 'done',
+      status: 'todo',
     })
     const moved = service.moveTask({ ...identity(first), status: 'doing' })
     service.archiveTask({ ...identity(moved) })

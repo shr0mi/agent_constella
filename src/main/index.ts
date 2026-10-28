@@ -217,6 +217,7 @@ else {
         workflow: workflow!.get(input),
       }))
       handle(channels.taskReview, (input) => execution!.getReview(input))
+      handle(channels.taskOpenIde, (input) => execution!.openInIde(input))
       handle(channels.taskCheckout, (input) => workflow!.checkoutTask(input))
       handle(channels.taskOpenWorktree, async (input) => {
         const context = await execution!.getReview(input)

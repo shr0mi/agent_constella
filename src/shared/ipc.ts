@@ -45,6 +45,7 @@ export const channels = {
   taskExecution: 'constella:node:task',
   taskReview: 'constella:task:review',
   taskOpenWorktree: 'constella:task:open-worktree',
+  taskOpenIde: 'constella:task:open-ide',
   taskCheckout: 'constella:task:checkout',
   nodeStart: 'constella:node:start',
   nodeStop: 'constella:node:stop',

@@ -75,6 +75,11 @@ async function fixture(
     empty?: boolean
     editInput?: boolean
     hangA?: boolean
+    parallel?: number
+    barrier?: boolean
+    editBoth?: boolean
+    createsPlan?: boolean
+    testCommand?: string
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), 'constella-workflow-'))
@@ -89,6 +94,7 @@ async function fixture(
     writeFileSync(join(project.repoPath, 'input.txt'), 'base\n')
     commit(project.repoPath)
   }
+  workspace.updateProject({ projectId: project.id, expectedRevision: project.revision, name: project.name, description: '', instructions: '', devCommand: '', testCommand: options.testCommand ?? '', maxParallelAgents: options.parallel ?? 1 })
   const task = workspace.createTask({
     projectId: project.id,
     title: 'Branching workflow',
@@ -136,7 +142,7 @@ async function fixture(
       viewport: { x: 0, y: 0, zoom: 1 },
     },
   })
-  const calls: { name: string; resumed?: string; prompt: string }[] = []
+  const calls: { name: string; resumed?: string; prompt: string; path: string }[] = []
   let running = 0,
     maxRunning = 0,
     failed = false
@@ -145,7 +151,7 @@ async function fixture(
       const name = prompt.match(/\nNode: (.+)\n/)?.[1] ?? 'unknown'
       return {
         events: (async function* (): AsyncGenerator<ThreadEvent> {
-          calls.push({ name, resumed, prompt })
+          calls.push({ name, resumed, prompt, path: config.workingDirectory! })
           running++
           maxRunning = Math.max(maxRunning, running)
           try {
@@ -163,16 +169,18 @@ async function fixture(
               })
               return
             }
+            if (options.barrier && ['A', 'B'].includes(name)) await until(() => calls.some((call) => call.name === 'A') && calls.some((call) => call.name === 'B'))
             await new Promise((resolve) => setTimeout(resolve, 8))
             writeFileSync(
               join(config.workingDirectory!, `${name}.txt`),
               `Result for ${name}\n${calls.length}`,
             )
-            if (options.editInput && name === 'A')
+            if ((options.editInput && name === 'A') || (options.editBoth && ['A', 'B'].includes(name)))
               writeFileSync(
                 join(config.workingDirectory!, 'input.txt'),
-                'agent change\n',
+                `agent ${name} change\n`,
               )
+            if (options.createsPlan && name === 'A') writeFileSync(join(config.workingDirectory!, 'project_plan.md'), '# Accepted project plan\nBuild according to this document.')
             if (options.failA && name === 'A' && !failed) {
               failed = true
               yield {
@@ -347,7 +355,7 @@ describe('workflow scheduler, acceptance and review gates', () => {
     expect(f.snapshot().phase).toBe('completed')
     expect(
       f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
-    ).toBe('done')
+    ).toBe('doing')
   })
   it('reopens integrated work for an explicit same-thread revision and requires new downstream review', async () => {
     const f = await fixture()
@@ -550,7 +558,7 @@ describe('workflow scheduler, acceptance and review gates', () => {
         expectedRevision: boardTask.revision,
         status: 'done',
       }),
-    ).toThrow(/controlled by its workflow/)
+    ).toThrow(/only after integration/)
     expect(() =>
       f.scheduler.startNode({
         ...f.identity,
@@ -615,7 +623,7 @@ describe('workflow scheduler, acceptance and review gates', () => {
     expect(state.summary.accepted).toBe(state.summary.total)
     expect(
       f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
-    ).toBe('done')
+    ).toBe('doing')
     expect(
       f.database.db
         .select()
@@ -842,12 +850,8 @@ describe('explicit task branch integration', () => {
     })
     expect(plan.status).toBe('ready')
     expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(before)
-    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(true)
-    const taskBranch = f.execution.worktrees.get(f.task.id)!.branch
-    git(f.project.repoPath, 'switch', 'main')
+    expect(existsSync(join(f.execution.worktrees.get(f.task.id)!.path, 'A.txt'))).toBe(true)
     expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(false)
-    git(f.project.repoPath, 'switch', taskBranch)
-    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(true)
     const command = {
       ...f.identity,
       expectedRevision: plan.workflowRevision,
@@ -907,14 +911,14 @@ describe('explicit task branch integration', () => {
       join(f.execution.worktrees.get(f.task.id)!.path, 'external.txt'),
       'not accepted',
     )
-    commit(f.project.repoPath)
+    commit(f.execution.worktrees.get(f.task.id)!.path)
     plan = await f.scheduler.previewIntegration({
       ...f.identity,
       expectedRevision: f.snapshot().revision,
     })
     expect(plan.status).toBe('blocked')
     expect(plan.message).toContain('changed after the accepted')
-    expect(existsSync(join(f.project.repoPath, 'external.txt'))).toBe(true)
+    expect(existsSync(join(f.execution.worktrees.get(f.task.id)!.path, 'external.txt'))).toBe(true)
     expect(() =>
       git(f.project.repoPath, 'cat-file', '-e', 'main:external.txt'),
     ).toThrow()
@@ -1014,5 +1018,79 @@ describe('explicit task branch integration', () => {
       'Second task result',
     )
     expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
+  })
+})
+
+describe('parallel agents and todo prerequisites', () => {
+  it('runs independent agents simultaneously in separate worktrees and gives their combined files to the join', async () => {
+    const f = await fixture({ parallel: 2, barrier: true })
+    const main = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    f.begin()
+    await f.waitingReview()
+    expect(f.maxRunning()).toBe(2)
+    expect(new Set(f.calls.map((call) => call.path)).size).toBe(3)
+    const joined = f.calls.find((call) => call.name === 'Join')!
+    expect(readFileSync(join(joined.path, 'A.txt'), 'utf8')).toContain('Result for A')
+    expect(readFileSync(join(joined.path, 'B.txt'), 'utf8')).toContain('Result for B')
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(main)
+    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(false)
+    f.approve()
+    expect(f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status).toBe('doing')
+    const plan = await f.scheduler.previewIntegration({ ...f.identity, expectedRevision: f.snapshot().revision })
+    expect(plan.status).toBe('ready')
+    const receipt = await f.scheduler.integrate({ ...f.identity, expectedRevision: plan.workflowRevision, targetBranch: plan.targetBranch!, targetHead: plan.targetHead }, 'desktop-human')
+    expect(receipt.status).toBe('integrated')
+    expect(f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status).toBe('done')
+    expect(existsSync(join(f.project.repoPath, 'A.txt'))).toBe(true)
+    expect(existsSync(join(f.project.repoPath, 'B.txt'))).toBe(true)
+  })
+  it('preserves both branches and blocks acceptance when concurrent agents conflict', async () => {
+    const f = await fixture({ parallel: 2, barrier: true, editBoth: true })
+    f.begin()
+    await until(() => f.snapshot().phase === 'blocked' && !f.execution.activeProject(f.project.id))
+    const runs = [f.a, f.b].map((node) => f.execution.get({ ...f.identity, nodeId: node.id }).runs[0])
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(1)
+    const conflict = runs.find((run) => run.status === 'failed')!
+    expect(conflict.error?.code).toBe('AGENT_MERGE_CONFLICT')
+    expect(conflict.error?.message).toContain('input.txt')
+    for (const run of runs) expect(readFileSync(join(run.worktree!.path, 'input.txt'), 'utf8')).toContain(`agent ${run.nodeSnapshot.data.title} change`)
+    expect(readFileSync(join(f.project.repoPath, 'input.txt'), 'utf8')).toBe('base\n')
+    expect(f.snapshot().nodes[f.joinNode.id].status).toBe('pending')
+    expect(git(f.execution.worktrees.get(f.task.id)!.path, 'status', '--porcelain')).toBe('')
+  })
+  it('blocks a combined result that fails checks even when each agent passed separately', async () => {
+    const testCommand = 'node -e "const f=require(\'fs\');process.exit(f.existsSync(\'A.txt\')&&f.existsSync(\'B.txt\')?1:0)"'
+    const f = await fixture({ parallel: 2, barrier: true, testCommand })
+    f.begin()
+    await until(() => f.snapshot().phase === 'blocked' && !f.execution.activeProject(f.project.id))
+    const runs = [f.a, f.b].map((node) => f.execution.get({ ...f.identity, nodeId: node.id }).runs[0])
+    expect(runs.every((run) => run.tests.status === 'passed')).toBe(true)
+    const failed = runs.find((run) => run.error?.code === 'COMBINED_TEST_FAILED')!
+    expect(failed.integrationTests?.status).toBe('failed')
+    expect(f.snapshot().nodes[f.review.id].status).toBe('pending')
+    expect(f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status).toBe('doing')
+  })
+  it('waits for todo integration, refreshes an already-opened workspace, and supplies project_plan.md to the next agent', async () => {
+    const f = await fixture({ createsPlan: true })
+    const dependent = f.workspace.createTask({ projectId: f.project.id, title: 'Implement plan', description: 'Implement according to project_plan.md', dependencyIds: [f.task.id], requiredFiles: ['project_plan.md'] })
+    const identity = { projectId: f.project.id, taskId: dependent.id }
+    const graph = f.graphs.get(identity)
+    await f.execution.worktrees.ensure(f.project, dependent)
+    f.scheduler.start({ ...identity, expectedGraphRevision: graph.revision })
+    await until(() => f.scheduler.get(identity).error?.code === 'TASK_DEPENDENCIES')
+    expect(f.calls).toHaveLength(0)
+    f.begin(); await f.waitingReview(); f.approve()
+    expect(f.workspace.getBoard({ projectId: f.project.id }).tasks.find((task) => task.id === f.task.id)?.status).toBe('doing')
+    expect(f.scheduler.get(identity).summary.blockers.join(' ')).toContain('integrated')
+    expect(f.calls.some((call) => call.name === 'Implement plan')).toBe(false)
+    const plan = await f.scheduler.previewIntegration({ ...f.identity, expectedRevision: f.snapshot().revision })
+    await f.scheduler.integrate({ ...f.identity, expectedRevision: plan.workflowRevision, targetBranch: plan.targetBranch!, targetHead: plan.targetHead }, 'desktop-human')
+    const agent = graph.document.nodes.find((node) => node.type === 'agent')!
+    await until(() => f.scheduler.get(identity).nodes[agent.id].status === 'awaiting-acceptance')
+    const run = f.execution.get({ ...identity, nodeId: agent.id }).runs[0]
+    expect(run.status).toBe('completed')
+    expect(readFileSync(join(run.worktree!.path, 'project_plan.md'), 'utf8')).toContain('Accepted project plan')
+    expect(run.resolvedPrompt).toContain('Build according to this document.')
+    expect(f.workspace.getBoard({ projectId: f.project.id }).tasks.find((task) => task.id === f.task.id)?.status).toBe('done')
   })
 })

@@ -51,7 +51,11 @@ export class WorkspaceService {
         .select()
         .from(workflows)
         .all()
-        .map((row) => summarizeWorkflow(row.document)),
+        .map((row) => {
+          const summary = summarizeWorkflow(row.document)
+          summary.blockers.unshift(...this.dependencyBlockers(row.projectId, row.taskId))
+          return summary
+        }),
       revision: this.db.select().from(workspaceMeta).get()!.revision,
       projects: this.db
         .select()
@@ -216,6 +220,52 @@ export class WorkspaceService {
         'This task is archived.',
         'Restore the task from the archive before editing or moving it.',
       )
+  }
+
+  dependencyBlockers(projectId: string, taskId: string): string[] {
+    const task = this.task(projectId, taskId)
+    return (task.dependencyIds ?? []).flatMap((id) => {
+      const dependency = this.task(projectId, id)
+      const result = this.db
+        .select().from(workflows).where(eq(workflows.taskId, id)).get()?.document
+      return result?.phase === 'completed' &&
+        result.integration?.status === 'integrated' && result.integration.commit
+        ? []
+        : [`Waiting for “${dependency.title}” to be integrated${dependency.archivedAt ? ' (currently archived)' : ''}.`]
+    })
+  }
+
+  assertDependencies(projectId: string, taskId: string) {
+    const blockers = this.dependencyBlockers(projectId, taskId)
+    if (blockers.length)
+      throw new ApplicationError(
+        'TASK_DEPENDENCIES', blockers.join('\n'),
+        'Complete and integrate the prerequisite tasks. This task will wait without starting an agent.',
+      )
+  }
+
+  private validateDependencies(
+    projectId: string, taskId: string, dependencyIds: string[],
+  ) {
+    if (new Set(dependencyIds).size !== dependencyIds.length)
+      throw new ApplicationError(
+        'TASK_DEPENDENCIES', 'A prerequisite is listed more than once.',
+        'Select each prerequisite once.',
+      )
+    const checked = new Set<string>()
+    const visit = (id: string, path: Set<string>) => {
+      if (checked.has(id)) return
+      if (id === taskId || path.has(id))
+        throw new ApplicationError(
+          'TASK_DEPENDENCY_CYCLE', 'Task dependencies cannot contain a cycle.',
+          'Remove the dependency that leads back to this task.',
+        )
+      const dependency = this.task(projectId, id)
+      for (const parent of dependency.dependencyIds ?? [])
+        visit(parent, new Set([...path, id]))
+      checked.add(id)
+    }
+    for (const id of dependencyIds) visit(id, new Set())
   }
 
   private column(projectId: string, status: TaskStatus): Task[] {
@@ -393,11 +443,18 @@ export class WorkspaceService {
     const { projectId, ...fields } = createTaskSchema.parse(raw)
     return this.commit(() => {
       this.project(projectId)
+      if (fields.status === 'done')
+        throw new ApplicationError(
+          'WORKFLOW_STATUS', 'Tasks become Done only after integration.',
+          'Create the task in To Do or Doing, then run and integrate it.',
+        )
+      const id = randomUUID()
+      this.validateDependencies(projectId, id, fields.dependencyIds)
       const now = new Date().toISOString()
       return this.db
         .insert(tasks)
         .values({
-          id: randomUUID(),
+          id,
           projectId,
           ...fields,
           position: this.column(projectId, fields.status).length,
@@ -418,6 +475,7 @@ export class WorkspaceService {
       const task = this.task(projectId, taskId)
       this.checkRevision(task, expectedRevision)
       this.checkActive(task)
+      this.validateDependencies(projectId, taskId, fields.dependencyIds ?? task.dependencyIds)
       return this.db
         .update(tasks)
         .set({
@@ -441,11 +499,13 @@ export class WorkspaceService {
         .from(workflows)
         .where(eq(workflows.taskId, taskId))
         .get()?.document
+      if (status === 'done' && workflow?.integration?.status !== 'integrated')
+        throw new ApplicationError('WORKFLOW_STATUS', 'Tasks become Done only after integration.', 'Complete the workflow, then use Integrate branch.')
       if (workflow?.startedAt && status !== task.status)
         throw new ApplicationError(
           'WORKFLOW_STATUS',
           'This task status is controlled by its workflow.',
-          'Start/resume the graph to move it to Doing. Only reaching End after acceptance moves it to Done. You can still reorder it within its column.',
+          'Start/resume the graph to move it to Doing. Integrating accepted work moves it to Done. You can still reorder it within its column.',
         )
       this.checkRevision(task, expectedRevision)
       this.checkActive(task)

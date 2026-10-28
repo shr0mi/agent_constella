@@ -95,7 +95,7 @@ describe('readable task branches', () => {
     const f = await fixture(),
       task = f.task('Original title')
     const original = await f.service.ensure(f.project, task)
-    expect(original.path).toBe(f.project.repoPath)
+    expect(original.path).not.toBe(f.project.repoPath)
     expect(existsSync(join(f.root, 'app', 'task-worktrees'))).toBe(false)
     const renamed = f.workspace.updateTask({
       taskId: task.id,
@@ -108,72 +108,36 @@ describe('readable task branches', () => {
     expect(await f.service.ensure(f.project, renamed)).toEqual(original)
     expect(git(original.path, 'status', '--porcelain')).toBe('')
   })
-  it('saves legacy task changes, releases the branch, and retains the old folder as a detached backup', async () => {
-    const f = await fixture(),
-      task = f.task('Legacy task')
-    const branch = `codex/constella-${task.id}`,
-      path = join(f.root, 'app', 'task-worktrees', f.project.id, task.id)
+  it('reuses legacy isolated worktrees without changing their files or index', async () => {
+    const f = await fixture(), task = f.task('Legacy task')
+    const branch = `codex/legacy-${task.id}`
+    const path = join(f.root, 'app', 'task-worktrees', f.project.id, task.id)
     const baseRevision = git(f.project.repoPath, 'rev-parse', 'main')
     git(f.project.repoPath, 'worktree', 'add', '-b', branch, path, 'main')
-    writeFileSync(join(path, 'legacy-work.txt'), 'staged changes')
+    writeFileSync(join(path, 'legacy.txt'), 'staged')
     git(path, 'add', '.')
-    writeFileSync(join(path, 'legacy-work.txt'), 'latest unstaged changes')
-    f.database.db
-      .insert(taskWorktrees)
-      .values({
-        taskId: task.id,
-        projectId: f.project.id,
-        document: {
-          taskId: task.id,
-          projectId: f.project.id,
-          path,
-          branch,
-          baseRevision,
-          sourceHead: baseRevision,
-          sourceBranch: 'main',
-          state: 'ready',
-          createdAt: new Date().toISOString(),
-        },
-      })
-      .run()
-    const adopted = await f.service.adopt(f.project, task)
-    expect(adopted).toMatchObject({
-      mode: 'project',
-      path: f.project.repoPath,
-      branch,
-      legacyPath: path,
-    })
-    expect(readFileSync(join(path, 'legacy-work.txt'), 'utf8')).toBe(
-      'latest unstaged changes',
-    )
-    expect(git(path, 'branch', '--show-current')).toBe('')
-    git(f.project.repoPath, 'switch', branch)
-    expect(
-      readFileSync(join(f.project.repoPath, 'legacy-work.txt'), 'utf8'),
-    ).toBe('latest unstaged changes')
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
-    expect(await f.service.ensure(f.project, task)).toEqual(adopted)
+    writeFileSync(join(path, 'legacy.txt'), 'unstaged')
+    const index = git(path, 'diff', '--cached')
+    f.database.db.insert(taskWorktrees).values({ taskId: task.id, projectId: f.project.id, document: {
+      taskId: task.id, projectId: f.project.id, path, branch, baseRevision, sourceHead: baseRevision, sourceBranch: 'main', state: 'ready', createdAt: new Date().toISOString(),
+    } }).run()
+    expect(await f.service.adopt(f.project, task)).toMatchObject({ mode: 'isolated', path, branch })
+    expect(readFileSync(join(path, 'legacy.txt'), 'utf8')).toBe('unstaged')
+    expect(git(path, 'diff', '--cached')).toBe(index)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
   })
-  it('blocks dirty branch switches and keeps files, staged edits and branch selection intact', async () => {
-    const f = await fixture(),
-      a = f.task('First'),
-      b = f.task('Second')
-    const first = await f.service.ensure(f.project, a)
+  it('creates independent task worktrees while preserving dirty original files and index', async () => {
+    const f = await fixture()
     writeFileSync(join(f.project.repoPath, 'local.txt'), 'staged')
     git(f.project.repoPath, 'add', '.')
     writeFileSync(join(f.project.repoPath, 'local.txt'), 'unstaged')
     const index = git(f.project.repoPath, 'diff', '--cached')
-    await expect(f.service.ensure(f.project, b)).rejects.toThrow(
-      'uncommitted or untracked',
-    )
-    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
-      first.branch,
-    )
+    const [a, b] = await Promise.all([f.service.ensure(f.project, f.task('First')), f.service.ensure(f.project, f.task('Second'))])
+    expect(a.path).not.toBe(b.path)
+    expect(existsSync(join(a.path, 'local.txt'))).toBe(false)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
     expect(git(f.project.repoPath, 'diff', '--cached')).toBe(index)
-    expect(readFileSync(join(f.project.repoPath, 'local.txt'), 'utf8')).toBe(
-      'unstaged',
-    )
-    expect(f.service.get(b.id)).toBeNull()
+    expect(readFileSync(join(f.project.repoPath, 'local.txt'), 'utf8')).toBe('unstaged')
   })
   it('resumes a selected task branch with staged, unstaged and untracked files intact', async () => {
     const f = await fixture(),
@@ -197,66 +161,39 @@ describe('readable task branches', () => {
       'untracked',
     )
   })
-  it('allows only an explicit return to an existing equivalent task branch with local files intact', async () => {
-    const f = await fixture(),
-      task = f.task('Recover unfinished work')
-    const worktree = await f.service.ensure(f.project, task)
-    git(worktree.path, 'switch', 'main')
-    writeFileSync(join(worktree.path, 'local.txt'), 'staged')
-    git(worktree.path, 'add', '.')
-    writeFileSync(join(worktree.path, 'local.txt'), 'unstaged')
-    writeFileSync(join(worktree.path, 'new.txt'), 'untracked')
-    const index = git(worktree.path, 'diff', '--cached'),
-      status = git(worktree.path, 'status', '--porcelain')
-    await expect(f.service.ensure(f.project, task)).rejects.toThrow(
-      'uncommitted or untracked changes on main',
-    )
-    expect(git(worktree.path, 'branch', '--show-current')).toBe('main')
-    expect(
-      await f.service.ensure(f.project, task, undefined, {
-        preserveLocalChanges: true,
-      }),
-    ).toEqual(worktree)
-    expect(git(worktree.path, 'branch', '--show-current')).toBe(
-      worktree.branch,
-    )
-    expect(git(worktree.path, 'diff', '--cached')).toBe(index)
-    expect(git(worktree.path, 'status', '--porcelain')).toBe(status)
-    expect(readFileSync(join(worktree.path, 'local.txt'), 'utf8')).toBe(
-      'unstaged',
-    )
-    expect(readFileSync(join(worktree.path, 'new.txt'), 'utf8')).toBe(
-      'untracked',
-    )
+  it('moves project-mode task branches into isolated folders without losing committed work', async () => {
+    const f = await fixture(), task = f.task('Previously shared')
+    const baseRevision = git(f.project.repoPath, 'rev-parse', 'main'), branch = 'codex/previously-shared'
+    git(f.project.repoPath, 'switch', '-c', branch)
+    const old = { mode: 'project' as const, taskId: task.id, projectId: f.project.id, path: f.project.repoPath, branch, baseRevision, sourceHead: baseRevision, sourceBranch: 'main', state: 'ready' as const, createdAt: new Date().toISOString() }
+    writeFileSync(join(old.path, 'saved.txt'), 'keep this work')
+    await f.service.checkpoint(old, await f.service.capture(old.path, 'Save existing task'))
+    f.database.db.insert(taskWorktrees).values({ taskId: task.id, projectId: f.project.id, document: old }).run()
+    const migrated = await f.service.ensure(f.project, task)
+    expect(migrated.mode).toBe('isolated')
+    expect(migrated.path).not.toBe(old.path)
+    expect(readFileSync(join(migrated.path, 'saved.txt'), 'utf8')).toBe('keep this work')
+    expect(existsSync(join(f.project.repoPath, 'saved.txt'))).toBe(false)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
   })
-  it('keeps dirty switches blocked when the existing task has different committed files', async () => {
-    const f = await fixture(),
-      task = f.task('Different task content')
-    const worktree = await f.service.ensure(f.project, task)
-    writeFileSync(join(worktree.path, 'task.txt'), 'saved task work')
-    await f.service.checkpoint(
-      worktree,
-      await f.service.capture(worktree.path, 'Save task'),
-    )
-    git(worktree.path, 'switch', 'main')
-    writeFileSync(join(worktree.path, 'local.txt'), 'keep local work')
-    await expect(
-      f.service.ensure(f.project, task, undefined, {
-        preserveLocalChanges: true,
-      }),
-    ).rejects.toThrow('uncommitted or untracked')
-    expect(git(worktree.path, 'branch', '--show-current')).toBe('main')
-    expect(readFileSync(join(worktree.path, 'local.txt'), 'utf8')).toBe(
-      'keep local work',
-    )
-    expect(existsSync(join(worktree.path, 'task.txt'))).toBe(false)
+  it('blocks migration of a selected project-mode task with dirty files and preserves them', async () => {
+    const f = await fixture(), task = f.task('Dirty migration')
+    const branch = 'codex/dirty-migration', baseRevision = git(f.project.repoPath, 'rev-parse', 'main')
+    git(f.project.repoPath, 'switch', '-c', branch)
+    writeFileSync(join(f.project.repoPath, 'local.txt'), 'preserve')
+    f.database.db.insert(taskWorktrees).values({ taskId: task.id, projectId: f.project.id, document: {
+      mode: 'project', taskId: task.id, projectId: f.project.id, path: f.project.repoPath, branch, baseRevision, sourceHead: baseRevision, sourceBranch: 'main', state: 'ready', createdAt: new Date().toISOString(),
+    } }).run()
+    await expect(f.service.ensure(f.project, task)).rejects.toThrow('uncommitted or untracked')
+    expect(readFileSync(join(f.project.repoPath, 'local.txt'), 'utf8')).toBe('preserve')
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(branch)
   })
   it('still blocks unfinished Git operations when already on the task branch', async () => {
     const f = await fixture(),
       task = f.task('Unfinished merge')
     const worktree = await f.service.ensure(f.project, task)
     writeFileSync(
-      join(worktree.path, '.git', 'MERGE_HEAD'),
+      git(worktree.path, 'rev-parse', '--git-path', 'MERGE_HEAD'),
       git(worktree.path, 'rev-parse', 'HEAD'),
     )
     await expect(f.service.ensure(f.project, task)).rejects.toThrow(

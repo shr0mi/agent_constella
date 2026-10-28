@@ -33,12 +33,8 @@ export class BranchIntegrationService {
       message: '',
       checkedAt: new Date().toISOString(),
     }
-    if (worktree.mode !== 'project') {
-      plan.message =
-        'The older task branch could not be moved to the project directory. Open Review task to retry its migration; existing files are preserved.'
-      return plan
-    }
     await this.worktrees.verify(worktree, path, false)
+    await this.worktrees.assertClean(worktree.path)
     if (!plan.targetBranch || plan.targetBranch === worktree.branch) {
       plan.message =
         'The original integration branch is unavailable. Restore the task’s base branch before integrating.'

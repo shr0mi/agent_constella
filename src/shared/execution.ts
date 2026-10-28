@@ -28,7 +28,8 @@ export const fileDiffSchema = runIdentitySchema
   .strict()
 export interface TaskWorktree {
   /** Missing on older, isolated worktree records. */
-  mode?: 'project'
+  mode?: 'project' | 'isolated'
+  nodeId?: string
   legacyPath?: string
   taskId: string
   projectId: string
@@ -88,6 +89,7 @@ export interface NodeRun extends Omit<Run, 'status'> {
     status: string
     summary: string
   }[]
+  todoDependencyCommits?: Record<string, string>
   previousAttempt?: {
     id: string
     status: string
@@ -97,6 +99,8 @@ export interface NodeRun extends Omit<Run, 'status'> {
   worktree?: TaskWorktree
   before?: CodeSnapshot
   changes?: RunChanges
+  taskResult?: CodeSnapshot
+  integrationTests?: TestResult
   inspectionError?: Failure
   tests: TestResult
 }
@@ -108,6 +112,7 @@ export interface TaskExecutionSnapshot extends GraphIdentity {
   workflow?: WorkflowSnapshot
   worktree: TaskWorktree | null
   active: ActiveNodeRun | null
+  activeRuns: ActiveNodeRun[]
   nodeStates: { nodeId: string; runId: string; status: NodeRun['status'] }[]
   persistenceError?: Failure
 }
@@ -118,6 +123,7 @@ export interface TaskReviewContext extends GraphIdentity {
   projectPath: string
   projectBranch: string | null
   devCommand: string
+  ideCommand: string
   runCommand: string | null
   active: boolean
   targetBranch: string | null
@@ -135,6 +141,7 @@ export interface ExecutionBridge {
   getTask(input: GraphIdentity): Promise<Result<TaskExecutionSnapshot>>
   getReview(input: GraphIdentity): Promise<Result<TaskReviewContext>>
   openWorktree(input: GraphIdentity): Promise<Result<void>>
+  openInIde(input: GraphIdentity & { nodeId?: string }): Promise<Result<void>>
   checkoutTask(input: GraphIdentity): Promise<Result<void>>
   get(input: NodeIdentity): Promise<Result<NodeExecutionSnapshot>>
   start(input: StartNodeInput): Promise<Result<{ runId: string }>>

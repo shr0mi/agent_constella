@@ -852,3 +852,37 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.task-dependencies {
+  display: grid;
+  gap: 8px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 0;
+}
+.workspace-form .dependency-choice {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+}
+.workspace-form .dependency-choice input {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: #bda8f9;
+  flex: 0 0 auto;
+}
+.workspace-form .dependency-choice > span {
+  color: #d6c5e3;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.task-dependency-note {
+  color: #917a9d;
+  font-size: 12px;
+  margin: 8px 0;
+}

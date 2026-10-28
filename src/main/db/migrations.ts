@@ -231,4 +231,25 @@ export const migrations = [
     CREATE INDEX manager_commands_project ON manager_commands(project_id);
     `,
   },
+  {
+    version: 11,
+    name: 'parallel_workspaces_and_task_dependencies',
+    sql: `
+    ALTER TABLE projects ADD COLUMN ide_command TEXT NOT NULL DEFAULT '';
+    ALTER TABLE projects ADD COLUMN max_parallel_agents INTEGER NOT NULL DEFAULT 4 CHECK(max_parallel_agents BETWEEN 1 AND 8);
+    ALTER TABLE tasks ADD COLUMN dependency_ids TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(dependency_ids));
+    ALTER TABLE tasks ADD COLUMN required_files TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(required_files));
+    CREATE TABLE node_worktrees (
+      node_id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      document TEXT NOT NULL CHECK(json_valid(document))
+    );
+    UPDATE tasks SET status = 'doing', revision = revision + 1
+    WHERE status = 'done' AND id IN (
+      SELECT task_id FROM workflows WHERE json_extract(document, '$.startedAt') IS NOT NULL
+      AND COALESCE(json_extract(document, '$.integration.status'), '') != 'integrated'
+    );
+    `,
+  },
 ] as const

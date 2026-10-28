@@ -15,6 +15,8 @@ export const projectFieldsSchema = z
     instructions: z.string().max(40_000),
     devCommand: z.string().trim().max(2000),
     testCommand: z.string().trim().max(2000),
+    ideCommand: z.string().trim().max(2000).optional(),
+    maxParallelAgents: z.number().int().min(1).max(8).optional(),
     defaultModel: z.string().trim().min(1).max(160).nullable().optional(),
     defaultEffort: effortSchema.nullable().optional(),
   })
@@ -34,6 +36,17 @@ export const taskFieldsSchema = z
     title: z.string().trim().min(1, 'Give the task a title.').max(180),
     description: z.string().max(30_000),
     acceptanceCriteria: z.string().max(20_000),
+    dependencyIds: z.array(z.uuid()).max(100).optional(),
+    requiredFiles: z.array(
+      z.string().trim().min(1).max(4096).refine(
+        (path) =>
+          !path.startsWith('/') &&
+          !path.includes('\\') &&
+          !path.split('/').some((part) => part === '..' || part === '.' || !part) &&
+          !/[:\x00-\x1f]/.test(path),
+        'Use a relative file path inside the task workspace.',
+      ),
+    ).max(100).optional(),
   })
   .strict()
 export const createTaskSchema = taskFieldsSchema.extend({
@@ -41,6 +54,8 @@ export const createTaskSchema = taskFieldsSchema.extend({
   status: taskStatusSchema.default('todo'),
   description: z.string().max(30_000).default(''),
   acceptanceCriteria: z.string().max(20_000).default(''),
+  dependencyIds: taskFieldsSchema.shape.dependencyIds.default([]),
+  requiredFiles: taskFieldsSchema.shape.requiredFiles.default([]),
 })
 export type CreateTaskInput = z.input<typeof createTaskSchema>
 export const taskIdentitySchema = projectIdSchema.extend({
@@ -66,6 +81,8 @@ export interface Project {
   instructions: string
   devCommand: string
   testCommand: string
+  ideCommand: string
+  maxParallelAgents: number
   defaultModel: string | null
   defaultEffort: Effort | null
   revision: number
@@ -78,6 +95,8 @@ export interface Task {
   title: string
   description: string
   acceptanceCriteria: string
+  dependencyIds: string[]
+  requiredFiles: string[]
   status: TaskStatus
   position: number
   revision: number

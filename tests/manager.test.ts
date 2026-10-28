@@ -639,6 +639,8 @@ describe('manager metadata commands', () => {
         title: 'Existing task',
         description: '',
         acceptanceCriteria: '',
+        dependencyIds: [],
+        requiredFiles: [],
         status: 'todo',
         position: 0,
         revision: 1,
@@ -1272,4 +1274,29 @@ describe('local MCP transport and manager sessions', () => {
     manager.initialize()
     expect(manager.get(f.scope).turns[0].status).toBe('interrupted')
   })
+})
+
+it('lets the project manager save todo prerequisites and required files, rejects cycles and foreign dependencies, and supports Undo', async () => {
+  const f = await fixture()
+  const plan = f.workspace.createTask({ projectId: f.project.id, title: 'Create plan' })
+  const saved = await f.tools.call(f.board, 'todo_update', { taskId: f.task.id, expectedRevision: f.task.revision, commandId: command(), dependencyIds: [plan.id], requiredFiles: ['project_plan.md'] })
+  expect(saved).toMatchObject({ dependencyIds: [plan.id], requiredFiles: ['project_plan.md'] })
+  expect((await f.tools.context(f.board)).tasks.find((task) => task.id === f.task.id)).toMatchObject({ dependencyIds: [plan.id] })
+  await expect(f.tools.call(f.board, 'todo_update', { taskId: plan.id, expectedRevision: plan.revision, commandId: command(), dependencyIds: [f.task.id] })).rejects.toMatchObject({ code: 'TASK_DEPENDENCY_CYCLE' })
+  await expect(f.tools.call(f.board, 'todo_update', { taskId: plan.id, expectedRevision: plan.revision, commandId: command(), dependencyIds: [f.otherTask.id] })).rejects.toThrow('does not belong')
+  await expect(f.tools.call(f.board, 'todo_update', { taskId: plan.id, expectedRevision: plan.revision, commandId: command(), requiredFiles: ['../outside.txt'] })).rejects.toThrow()
+  const entry = f.tools.history(f.board).find((entry) => entry.taskId === f.task.id && entry.kind === 'task')!
+  await f.tools.undo({ ...f.board, changeId: entry.id, commandId: command() })
+  expect(f.workspace.getBoard({ projectId: f.project.id }).tasks.find((task) => task.id === f.task.id)).toMatchObject({ dependencyIds: [], requiredFiles: [] })
+  const created = await f.tools.call(f.board, 'todo_create', { title: 'Follow plan', description: 'Use the plan', dependencyIds: [plan.id], requiredFiles: ['project_plan.md'], commandId: command() })
+  expect(created).toMatchObject({ task: { dependencyIds: [plan.id], requiredFiles: ['project_plan.md'] } })
+})
+
+it('lets the manager save IDE and concurrency settings without launching an IDE and restores them through Undo', async () => {
+  const f = await fixture(), project = f.workspace.getBoard({ projectId: f.project.id }).project
+  const saved = await f.tools.call(f.board, 'project_update', { expectedRevision: project.revision, commandId: command(), ideCommand: 'code --new-window', maxParallelAgents: 3 })
+  expect(saved).toMatchObject({ ideCommand: 'code --new-window', maxParallelAgents: 3 })
+  const entry = f.tools.history(f.board).find((entry) => entry.kind === 'project')!
+  await f.tools.undo({ ...f.board, changeId: entry.id, commandId: command() })
+  expect(f.workspace.getBoard({ projectId: f.project.id }).project).toMatchObject({ ideCommand: '', maxParallelAgents: 4 })
 })

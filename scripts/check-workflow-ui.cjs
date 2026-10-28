@@ -23,6 +23,7 @@ let window,
   scheduler,
   database,
   openedProjectFolders = 0,
+  openedIdePaths = [],
   taskReadRevision = 0,
   ending = false
 const deadline = setTimeout(() => {
@@ -92,6 +93,8 @@ app
       instructions: '',
       devCommand: 'npm run dev',
       testCommand: 'node -e "console.log(\'WORKFLOW_CHECK_PASS\')"',
+      ideCommand: 'code --new-window',
+      maxParallelAgents: 1,
     })
     const task = workspace.createTask({
       projectId: project.id,
@@ -252,6 +255,7 @@ app
     handle(channels.state, () => state)
     handle(channels.diagnostics, () => diagnostics)
     handle(channels.workspaceSnapshot, () => workspace.getSnapshot())
+    handle(channels.updateTask, (input) => workspace.updateTask(input))
     handle(channels.catalogSnapshot, (input) => catalog.getSnapshot(input))
     handle(channels.graphGet, (input) => graphs.get(input))
     handle(channels.graphSave, (input) => graphs.save(input))
@@ -262,6 +266,7 @@ app
       return { ...execution.getTask(input), workflow }
     })
     handle(channels.taskReview, (input) => execution.getReview(input))
+    handle(channels.taskOpenIde, (input) => execution.openInIde(input, async (command, path) => { assert.equal(command, 'code --new-window'); openedIdePaths.push(path) }))
     handle(channels.taskCheckout, (input) => scheduler.checkoutTask(input))
     handle(channels.taskOpenWorktree, async (input) => {
       await execution.getReview(input)
@@ -488,33 +493,14 @@ app
       ),
       true,
     )
-    assert.equal(
-      existsSync(join(project.repoPath, 'Implement-feature.txt')),
-      true,
-    )
-    assert.equal(reviewContext.path, project.repoPath)
-    assert.equal(
-      git(project.repoPath, 'branch', '--show-current'),
-      reviewContext.branch,
-    )
-    git(project.repoPath, 'switch', 'main')
-    assert.equal(
-      existsSync(join(project.repoPath, 'Implement-feature.txt')),
-      false,
-    )
-    await click('Refresh branch details')
-    await until(
-      'Array.from(document.querySelectorAll(".task-review-dialog button")).some(button=>button.textContent.trim()==="Switch to task branch"&&!button.disabled)',
-    )
-    await click('Switch to task branch')
-    await until(
-      'Array.from(document.querySelectorAll(".task-review-dialog button")).some(button=>button.textContent.trim()==="Task branch selected")',
-    )
-    assert.equal(
-      existsSync(join(project.repoPath, 'Implement-feature.txt')),
-      true,
-    )
-    await click('Open project folder')
+    assert.equal(existsSync(join(reviewContext.path, 'Implement-feature.txt')), true)
+    assert.notEqual(reviewContext.path, project.repoPath)
+    assert.equal(git(project.repoPath, 'branch', '--show-current'), 'main')
+    assert.equal(existsSync(join(project.repoPath, 'Implement-feature.txt')), false)
+    await click('Open in IDE')
+    await until('Array.from(document.querySelectorAll(".task-review-dialog button")).some(button=>button.textContent.trim()==="Open in IDE"&&!button.disabled)')
+    assert.deepEqual(openedIdePaths, [reviewContext.path])
+    await click('Open task folder')
     await until(
       '!document.querySelector(".task-review-dialog > header button").disabled',
     )
@@ -590,7 +576,7 @@ app
       )
     assert.equal(
       workspace.getBoard({ projectId: project.id }).tasks[0].status,
-      'done',
+      'doing',
     )
     await run(`location.hash=${JSON.stringify(`/projects/${project.id}`)}`)
     await until('!!document.querySelector(".task-workflow-badge.completed")')
@@ -611,7 +597,7 @@ app
     await until('!!document.querySelector(".integration-plan.ready")')
     assert.equal(
       existsSync(join(project.repoPath, 'Implement-feature.txt')),
-      true,
+      false,
     )
     await click('Integrate into main')
     await until('!!document.querySelector(".integration-plan.integrated")')
@@ -620,6 +606,7 @@ app
       true,
     )
     assert.equal(git(project.repoPath, 'branch', '--show-current'), 'main')
+    assert.equal(workspace.getBoard({ projectId: project.id }).tasks[0].status, 'done')
     assert.equal(git(project.repoPath, 'status', '--porcelain'), '')
     await until(
       'document.querySelector(".workflow-integration-hint")?.textContent.includes("merged into the base branch")',
@@ -629,6 +616,21 @@ app
         process.env.CONSTELLA_WORKFLOW_SCREENSHOT,
         (await window.webContents.capturePage()).toPNG(),
       )
+    await run('document.querySelector(".integration-dialog > header button").click()')
+    const dependent = workspace.createTask({ projectId: project.id, title: 'Use the accepted plan', description: 'Implement the next step.' })
+    await run(`location.hash=${JSON.stringify(`/projects/${project.id}`)}`)
+    await until('document.querySelectorAll(".task-open").length===2')
+    await run('Array.from(document.querySelectorAll(".task-open")).find(button=>button.textContent.includes("Use the accepted plan")).click()')
+    await until('!!document.querySelector("#required-files") && !!document.querySelector(".dependency-choice input")')
+    await run('document.querySelector(".dependency-choice input").click()')
+    await set('#required-files', 'project_plan.md')
+    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
+      writeFileSync(`${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.inputs.png`, (await window.webContents.capturePage()).toPNG())
+    await click('Save changes')
+    await until('!document.querySelector("dialog[open]")')
+    const savedInputs = workspace.getBoard({ projectId: project.id }).tasks.find((item) => item.id === dependent.id)
+    assert.deepEqual(savedInputs.dependencyIds, [task.id])
+    assert.deepEqual(savedInputs.requiredFiles, ['project_plan.md'])
     assert.deepEqual(errors, [])
     console.log(
       JSON.stringify(
@@ -645,8 +647,8 @@ app
           manualAcceptance: true,
           humanRevision: true,
           humanReview: true,
-          singleProjectDirectory: true,
-          ideBranchSwitching: true,
+          isolatedTaskWorkspace: true,
+          opensConfiguredIde: true,
           readableBranch: true,
           boardDoingToDone: true,
           explicitIntegration: true,

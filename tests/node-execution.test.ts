@@ -250,58 +250,25 @@ async function until(condition: () => boolean) {
   throw new Error('Timed out waiting for execution state')
 }
 
-describe('node execution in the project directory', () => {
-  it('provides current verified review context without creating a checkout or running the development command', async () => {
-    const f = await fixture()
-    const identity = { projectId: f.project.id, taskId: f.task.id }
+describe('node execution in isolated worktrees', () => {
+  it('reviews combined results in an isolated folder without switching the original checkout or running development commands', async () => {
+    const f = await fixture(), identity = { projectId: f.project.id, taskId: f.task.id }
     await expect(f.execution.getReview(identity)).rejects.toThrow('not ready')
-    expect(f.execution.worktrees.get(f.task.id)).toBeNull()
-    const head = git(f.project.repoPath, 'rev-parse', 'main')
-    f.start()
-    await f.execution.waitForIdle()
-    const worktree = f.execution.worktrees.get(f.task.id)!
-    const project = f.workspace.updateProject({
-      projectId: f.project.id,
-      expectedRevision: f.project.revision,
-      name: f.project.name,
-      description: f.project.description,
-      instructions: f.project.instructions,
-      devCommand:
-        "node -e \"require('fs').writeFileSync('SHOULD_NOT_RUN', '1')\"",
-      testCommand: '',
-    })
+    const head = git(f.project.repoPath, 'rev-parse', 'HEAD')
+    f.start(); await f.execution.waitForIdle()
+    const result = f.execution.worktrees.get(f.task.id)!
     const review = await f.execution.getReview(identity)
-    expect(review).toMatchObject({
-      ...identity,
-      taskTitle: f.task.title,
-      path: worktree.path,
-      branch: 'codex/build-an-answer',
-      projectPath: f.project.repoPath,
-      projectBranch: git(f.project.repoPath, 'branch', '--show-current'),
-      devCommand: project.devCommand,
-      active: false,
-    })
-    expect(review.runCommand).toContain(worktree.path)
-    expect(review.runCommand).toContain(project.devCommand)
-    expect(existsSync(join(worktree.path, 'SHOULD_NOT_RUN'))).toBe(false)
-    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(head)
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
-    expect(worktree.path).toBe(f.project.repoPath)
-    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
-    await expect(
-      f.execution.getReview({ ...identity, path: '/tmp' }),
-    ).rejects.toThrow()
-    await expect(
-      f.execution.getReview({ ...identity, projectId: randomUUID() }),
-    ).rejects.toThrow()
-    git(worktree.path, 'switch', '-c', 'user-switched-branch')
-    expect((await f.execution.getReview(identity)).projectBranch).toBe(
-      'user-switched-branch',
-    )
+    expect(review.path).toBe(result.path)
+    expect(review.path).not.toBe(f.project.repoPath)
+    expect(review.runCommand).toContain(result.path)
+    expect(review.runCommand).not.toContain('git switch')
+    expect(existsSync(join(result.path, 'answer.txt'))).toBe(true)
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(head)
     await f.execution.checkoutTask(identity)
-    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
-      worktree.branch,
-    )
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
+    await expect(f.execution.getReview({ ...identity, path: '/tmp' })).rejects.toThrow()
+    await expect(f.execution.getReview({ ...identity, projectId: randomUUID() })).rejects.toThrow()
   })
   it('runs Default Codex without an assigned or available custom profile', async () => {
     const f = await fixture()
@@ -368,7 +335,7 @@ describe('node execution in the project directory', () => {
       ),
     ).toBe('')
   })
-  it('executes on a task branch in the project directory, saves exact run context, tests, new files and diffs', async () => {
+  it('executes on an agent branch in its own worktree, saves exact run context, tests, new files and diffs', async () => {
     const f = await fixture(
       undefined,
       false,
@@ -386,26 +353,21 @@ describe('node execution in the project directory', () => {
       exitCode: 0,
       output: expect.stringContaining('TEST_OK'),
     })
-    expect(run.worktree?.branch).toBe('codex/build-an-answer')
+    expect(run.worktree?.branch).toMatch(/^codex\/build-an-answer-agent-/)
     expect(readFileSync(join(run.worktree!.path, 'input.txt'), 'utf8')).toBe(
       'original input',
     )
-    expect(existsSync(join(run.worktree!.path, 'ignored.txt'))).toBe(true)
-    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
-    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(projectHead)
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(
-      run.changes?.after.commit,
-    )
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
-    git(f.project.repoPath, 'switch', 'main')
+    expect(existsSync(join(run.worktree!.path, 'ignored.txt'))).toBe(false)
     expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
-    git(f.project.repoPath, 'switch', run.worktree!.branch)
-    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(true)
+    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(projectHead)
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(projectHead)
+    expect(git(run.worktree!.path, 'rev-parse', 'HEAD')).toBe(run.changes?.after.commit)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
     expect(run.worktree?.sourceHead).toBe(projectHead)
     expect(run.nodeSnapshot.data.profileId).toBe(f.profile.id)
     expect(run.profileSnapshot?.styleGuide).toBe(f.profile.styleGuide)
     expect(run.skillSnapshots[0].content).toContain('use readable names')
-    expect(run.resolvedPrompt).toContain('the actual project directory')
+    expect(run.resolvedPrompt).toContain('isolated Git worktree')
     expect(run.resolvedPrompt).not.toContain('disposable lab workspace')
     expect(run.taskSnapshot.acceptanceCriteria).toBe(f.task.acceptanceCriteria)
     expect(run.before?.commit).toMatch(/^[a-f0-9]{40,64}$/)
@@ -437,91 +399,25 @@ describe('node execution in the project directory', () => {
       f.workspace.getBoard({ projectId: f.project.id }).tasks[0].status,
     ).toBe('todo')
   })
-  it('blocks dirty local files without changing the index, then resumes on its task branch in the saved thread', async () => {
+  it('preserves dirty original files and independent snapshots across same-thread revisions', async () => {
     let turn = 0
-    const f = await fixture(
-      (options, _input, _signal, id) =>
-        successful(
-          options,
-          ++turn === 1 ? 'first revision' : 'second revision',
-          id ?? 'thread-same',
-        ),
-      true,
-    )
-    const originalHead = git(f.project.repoPath, 'rev-parse', 'HEAD'),
-      originalIndex = git(f.project.repoPath, 'diff', '--cached'),
-      originalStatus = git(f.project.repoPath, 'status', '--porcelain')
-    f.start()
-    await f.execution.waitForIdle()
-    expect(f.execution.get(f.identity).runs[0].error?.message).toContain(
-      'uncommitted or untracked',
-    )
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(originalHead)
-    expect(git(f.project.repoPath, 'diff', '--cached')).toBe(originalIndex)
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe(
-      originalStatus,
-    )
-    expect(f.transport.calls).toHaveLength(0)
-    git(f.project.repoPath, 'add', '.')
-    git(
-      f.project.repoPath,
-      '-c',
-      'user.name=Fixture',
-      '-c',
-      'user.email=fixture@localhost',
-      '-c',
-      'commit.gpgsign=false',
-      'commit',
-      '-m',
-      'Save local edits',
-    )
-    const savedMain = git(f.project.repoPath, 'rev-parse', 'main')
-    f.start('retry')
-    await f.execution.waitForIdle()
-    const first = f.execution.get(f.identity).runs[1]
-    expect(readFileSync(join(first.worktree!.path, 'input.txt'), 'utf8')).toBe(
-      'unstaged input',
-    )
-    await f.catalog.updateProfile({
-      id: f.profile.id,
-      expectedRevision: f.profile.revision,
-      name: f.profile.name,
-      roleInstructions: 'Updated role for the next attempt.',
-      styleGuide: 'Updated style.',
-      skillIds: f.profile.skillIds,
-      model: null,
-      effort: null,
-    })
-    f.start('followup', 'Change the answer to a second revision.')
-    await f.execution.waitForIdle()
-    const second = f.execution.get(f.identity).runs[2]
+    const f = await fixture((options, _input, _signal, id) => successful(options, ++turn === 1 ? 'first revision' : 'second revision', id ?? 'thread-same'), true)
+    const originalHead = git(f.project.repoPath, 'rev-parse', 'HEAD'), index = git(f.project.repoPath, 'diff', '--cached'), status = git(f.project.repoPath, 'status', '--porcelain')
+    f.start(); await f.execution.waitForIdle()
+    const first = f.execution.get(f.identity).runs[0]
+    expect(first.status).toBe('completed')
+    expect(readFileSync(join(first.worktree!.path, 'input.txt'), 'utf8')).toBe('original input')
+    f.start('followup', 'Second revision'); await f.execution.waitForIdle()
+    const second = f.execution.get(f.identity).runs[1]
+    expect(second.status).toBe('completed')
     expect(second.threadId).toBe(first.threadId)
     expect(f.transport.calls[1].resumed).toBe('thread-same')
-    expect(second.worktree?.path).toBe(first.worktree?.path)
-    expect(second.profileSnapshot?.roleInstructions).toBe(
-      'Updated role for the next attempt.',
-    )
-    expect(first.profileSnapshot?.roleInstructions).toBe(
-      f.profile.roleInstructions,
-    )
-    expect(
-      await f.execution.getDiff({
-        ...f.identity,
-        runId: second.id,
-        path: 'answer.txt',
-      }),
-    ).toMatchObject({ original: 'first revision', modified: 'second revision' })
-    expect(
-      await f.execution.getDiff({
-        ...f.identity,
-        runId: first.id,
-        path: 'answer.txt',
-      }),
-    ).toMatchObject({ original: '', modified: 'first revision' })
-    expect(git(f.project.repoPath, 'rev-parse', 'main')).toBe(savedMain)
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
-    f.start('restart')
-    await f.execution.waitForIdle()
+    expect(await f.execution.getDiff({ ...f.identity, runId: first.id, path: 'answer.txt' })).toMatchObject({ original: '', modified: 'first revision' })
+    expect(await f.execution.getDiff({ ...f.identity, runId: second.id, path: 'answer.txt' })).toMatchObject({ original: 'first revision', modified: 'second revision' })
+    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(originalHead)
+    expect(git(f.project.repoPath, 'diff', '--cached')).toBe(index)
+    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe(status)
+    f.start('restart'); await f.execution.waitForIdle()
     expect(f.transport.calls[2].resumed).toBeUndefined()
   })
   it('persists node thread IDs and attempt history across an app/database restart', async () => {
@@ -591,7 +487,7 @@ describe('node execution in the project directory', () => {
     })
     await f.execution.worktrees.ensure(f.project, otherTask)
     f.start()
-    expect(() => f.start()).toThrow(/Another node is active/)
+    expect(() => f.start()).toThrow(/agent is active/)
     expect(() =>
       f.graphs.save({
         projectId: f.project.id,
@@ -607,10 +503,9 @@ describe('node execution in the project directory', () => {
         .runs[0].items.some((item) => item.id === 'slow'),
     )
     const otherIdentity = { projectId: f.project.id, taskId: otherTask.id }
-    expect((await f.execution.getReview(otherIdentity)).active).toBe(true)
-    await expect(f.execution.checkoutTask(otherIdentity)).rejects.toMatchObject(
-      { code: 'PROJECT_BUSY' },
-    )
+    expect((await f.execution.getReview(otherIdentity)).active).toBe(false)
+    await f.execution.checkoutTask(otherIdentity)
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
     await f.execution.stop(f.identity)
     await f.execution.waitForIdle()
     const run = f.execution.get(f.identity).runs[0]
@@ -901,82 +796,39 @@ describe('node execution in the project directory', () => {
       f.execution.get({ ...f.identity, nodeId: secondId }).runs,
     ).toHaveLength(1)
   })
-  it('preserves files after a branch change and recovers through an explicit checkout and same-thread retry', async () => {
+  it('preserves agent files after an external branch change and recovers after the branch is restored in that worktree', async () => {
     let turn = 0
-    const f = await fixture((options) =>
-      (async function* (): AsyncGenerator<ThreadEvent> {
-        yield* successful(options)
-        if (++turn === 1)
-          git(options.workingDirectory!, 'switch', '-c', 'changed-in-ide')
-      })(),
-    )
-    const base = git(f.project.repoPath, 'rev-parse', 'main')
-    f.start()
-    await f.execution.waitForIdle()
+    const f = await fixture((options) => (async function* (): AsyncGenerator<ThreadEvent> {
+      yield* successful(options)
+      if (++turn === 1) git(options.workingDirectory!, 'switch', '-c', 'changed-in-ide')
+    })())
+    f.start(); await f.execution.waitForIdle()
     const run = f.execution.get(f.identity).runs[0]
     expect(run.status).toBe('failed')
-    expect(run.inspectionError?.message).toContain(
-      'branch or project root changed',
-    )
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(base)
-    expect(git(f.project.repoPath, 'rev-parse', run.worktree!.branch)).toBe(
-      base,
-    )
-    expect(readFileSync(join(f.project.repoPath, 'answer.txt'), 'utf8')).toBe(
-      'first revision',
-    )
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toContain(
-      'answer.txt',
-    )
-    f.start('retry')
-    await f.execution.waitForIdle()
-    expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain(
-      'uncommitted or untracked',
-    )
+    expect(run.inspectionError?.code).toBe('TASK_BRANCH_CHANGED')
+    expect(readFileSync(join(run.worktree!.path, 'answer.txt'), 'utf8')).toBe('first revision')
+    expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
+    f.start('retry'); await f.execution.waitForIdle()
     expect(f.transport.calls).toHaveLength(1)
-    await f.execution.checkoutTask({
-      projectId: f.project.id,
-      taskId: f.task.id,
-    })
-    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(
-      run.worktree!.branch,
-    )
-    expect(readFileSync(join(f.project.repoPath, 'answer.txt'), 'utf8')).toBe(
-      'first revision',
-    )
-    f.start('retry')
-    await f.execution.waitForIdle()
-    const recovered = f.execution.get(f.identity).runs.at(-1)!
-    expect(recovered.status).toBe('completed')
+    git(run.worktree!.path, 'switch', run.worktree!.branch)
+    f.start('retry'); await f.execution.waitForIdle()
+    expect(f.execution.get(f.identity).runs.at(-1)?.status).toBe('completed')
     expect(f.transport.calls[1].resumed).toBe(run.threadId)
-    expect(git(f.project.repoPath, 'status', '--porcelain')).toBe('')
-    expect(git(f.project.repoPath, 'rev-parse', 'HEAD')).toBe(
-      recovered.changes?.after.commit,
-    )
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
   })
-  it('selects an existing task branch for follow-ups but never recreates deleted branches or runs archived tasks', async () => {
+  it('reuses agent worktrees for follow-ups but never recreates deleted branches or runs archived tasks', async () => {
     const f = await fixture()
-    f.start()
-    await f.execution.waitForIdle()
-    const branch = f.execution.get(f.identity).worktree!.branch
-    git(f.project.repoPath, 'switch', 'main')
-    f.start('followup', 'Revise')
-    await f.execution.waitForIdle()
+    f.start(); await f.execution.waitForIdle()
+    const worktree = f.execution.get(f.identity).worktree!
+    f.start('followup', 'Revise'); await f.execution.waitForIdle()
     expect(f.transport.calls).toHaveLength(2)
-    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe(branch)
-    git(f.project.repoPath, 'switch', 'main')
-    git(f.project.repoPath, 'branch', '-D', branch)
-    f.start('followup', 'Continue after branch deletion')
-    await f.execution.waitForIdle()
-    expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain(
-      'saved task branch is missing',
-    )
+    expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
+    git(worktree.path, 'switch', '--detach')
+    git(f.project.repoPath, 'branch', '-D', worktree.branch)
+    f.start('followup', 'Continue'); await f.execution.waitForIdle()
+    expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain('saved task branch or workspace is missing')
     expect(f.transport.calls).toHaveLength(2)
-    f.workspace.archiveTask({
-      projectId: f.project.id,
-      taskId: f.task.id,
-      expectedRevision: f.task.revision,
-    })
+    f.workspace.archiveTask({ projectId: f.project.id, taskId: f.task.id, expectedRevision: f.task.revision })
     expect(() => f.start('retry')).toThrow(/Restore this task/)
   })
   it('keeps storage errors visible without an unhandled execution rejection', async () => {
@@ -992,4 +844,84 @@ describe('node execution in the project directory', () => {
     expect(snapshot.active).toBeNull()
     f.database.sqlite.exec('DROP TRIGGER fail_node_save')
   })
+})
+
+it('blocks a missing declared input before starting the provider', async () => {
+  const f = await fixture()
+  f.workspace.updateTask({ projectId: f.project.id, taskId: f.task.id, expectedRevision: f.task.revision, title: f.task.title, description: f.task.description, acceptanceCriteria: f.task.acceptanceCriteria, requiredFiles: ['project_plan.md'] })
+  f.start(); await f.execution.waitForIdle()
+  const run = f.execution.get(f.identity).runs[0]
+  expect(run.status).toBe('failed')
+  expect(run.error).toMatchObject({ code: 'MISSING_REQUIRED_INPUT', message: expect.stringContaining('project_plan.md') })
+  expect(f.transport.calls).toHaveLength(0)
+  expect(existsSync(join(f.project.repoPath, 'answer.txt'))).toBe(false)
+})
+
+it('opens the task and agent workspaces with the saved IDE command without running development commands', async () => {
+  const f = await fixture()
+  f.workspace.updateProject({ projectId: f.project.id, expectedRevision: f.project.revision, name: f.project.name, description: '', instructions: '', devCommand: 'SHOULD_NOT_RUN', testCommand: '', ideCommand: 'zed --new' })
+  const calls: string[][] = []
+  const launch = async (command: string, path: string) => { calls.push([command, path]) }
+  await f.execution.openInIde({ projectId: f.project.id, taskId: f.task.id }, launch)
+  expect(calls[0]).toEqual(['zed --new', f.execution.worktrees.get(f.task.id)!.path])
+  f.start(); await f.execution.waitForIdle()
+  await f.execution.openInIde(f.identity, launch)
+  expect(calls[1]).toEqual(['zed --new', f.execution.get(f.identity).worktree!.path])
+  expect(calls[0][1]).not.toBe(calls[1][1])
+  const agentWorkspace = f.execution.get(f.identity).worktree!
+  git(agentWorkspace.path, 'switch', '-c', 'repair-in-ide')
+  await f.execution.openInIde(f.identity, launch)
+  expect(calls[2]).toEqual(['zed --new', agentWorkspace.path])
+  expect(git(f.project.repoPath, 'branch', '--show-current')).toBe('main')
+})
+
+it('includes edits from the task IDE workspace in the next agent run without touching the original checkout', async () => {
+  const f = await fixture()
+  const result = await f.execution.worktrees.ensure(f.project, f.task)
+  writeFileSync(join(result.path, 'manual-input.txt'), 'written in the IDE')
+  f.start()
+  await f.execution.waitForIdle()
+  const run = f.execution.get(f.identity).runs[0]
+  expect(run.status).toBe('completed')
+  expect(readFileSync(join(run.worktree!.path, 'manual-input.txt'), 'utf8')).toBe('written in the IDE')
+  expect(existsSync(join(f.project.repoPath, 'manual-input.txt'))).toBe(false)
+  expect(git(result.path, 'status', '--porcelain')).toBe('')
+})
+
+it('stops one agent independently and stops all remaining agents when their task is stopped', async () => {
+  const f = await fixture((options, _prompt, signal) => (async function* (): AsyncGenerator<ThreadEvent> {
+    yield { type: 'thread.started', thread_id: 'parallel-stop' }
+    writeFileSync(join(options.workingDirectory!, 'partial.txt'), 'keep partial work')
+    await new Promise<void>((resolve) => {
+      if (signal?.aborted) resolve()
+      else signal?.addEventListener('abort', () => resolve(), { once: true })
+    })
+  })())
+  const document = structuredClone(f.graph.document)
+  const agent = document.nodes.find((node) => node.type === 'agent')!
+  const second = { ...structuredClone(agent), id: randomUUID() }
+  document.nodes.push(second)
+  const start = document.nodes.find((node) => node.type === 'start')!
+  const review = document.nodes.find((node) => node.type === 'review')!
+  document.edges.push(
+    { id: randomUUID(), source: start.id, target: second.id },
+    { id: randomUUID(), source: second.id, target: review.id },
+  )
+  const saved = f.graphs.save({ projectId: f.project.id, taskId: f.task.id, expectedRevision: f.graph.revision, commandId: randomUUID(), document })
+  const secondIdentity = { ...f.identity, nodeId: second.id }
+  f.execution.start({ ...f.identity, expectedGraphRevision: saved.revision, mode: 'run' })
+  f.execution.start({ ...secondIdentity, expectedGraphRevision: saved.revision, mode: 'run' })
+  await until(() => f.transport.calls.length === 2)
+  expect(f.execution.getTask({ projectId: f.project.id, taskId: f.task.id }).activeRuns).toHaveLength(2)
+  await f.execution.stop(f.identity)
+  await until(() => f.execution.get(f.identity).runs[0].status === 'cancelled')
+  expect(f.execution.get(secondIdentity).active?.nodeId).toBe(second.id)
+  await f.execution.stopTask(f.identity)
+  await f.execution.waitForIdle()
+  expect(f.execution.getTask({ projectId: f.project.id, taskId: f.task.id }).activeRuns).toHaveLength(0)
+  for (const identity of [f.identity, secondIdentity]) {
+    const run = f.execution.get(identity).runs[0]
+    expect(run.status).toBe('cancelled')
+    expect(readFileSync(join(run.worktree!.path, 'partial.txt'), 'utf8')).toBe('keep partial work')
+  }
 })

@@ -1,5 +1,7 @@
 # Codex node execution — milestone 5
 
+> Historical milestone notes: the current parallel-worktree execution, todo dependency, IDE, and integration behavior is documented in [Parallel workflows](parallel-workflows.md). The original single-directory and serial-execution details below describe the earlier design.
+
 Agent nodes now have a **Conversation & runs** workspace. **Run node** executes the saved initial prompt through the pinned Codex TypeScript SDK on a task branch in the existing project directory. The conversation supports follow-ups, stop, retry, and an explicit fresh conversation. Activity, test output, per-attempt file diffs, and saved execution context are available in separate tabs.
 
 New nodes use **Default Codex**: no custom profile is required. A null profile ID adds no custom role or preset profile skills; project/task instructions and explicitly selected extra skills still apply. Model/effort use configured defaults unless overridden. An explicit custom profile ID must resolve to an active item in the correct scope. Existing same-thread instructions remain in history; use New conversation to reset previous profile context.

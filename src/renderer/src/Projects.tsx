@@ -29,9 +29,11 @@ import {
 } from 'lucide-react'
 import type { Project, Task, TaskStatus } from '../../shared/workspace'
 import type { Effort, Failure } from '../../shared/contracts'
+import type { WorkflowSummary } from '../../shared/workflow'
 import { refreshDiagnostics, useAppStore } from './store'
 import { Modal } from './components/Modal'
 import { ManagerChat } from './ManagerChat'
+import { TaskIdeButton } from './TaskReview'
 import {
   refreshWorkspace,
   useWorkspaceStore,
@@ -41,8 +43,22 @@ import {
 const columns: { id: TaskStatus; title: string; caption: string }[] = [
   { id: 'todo', title: 'To Do', caption: 'Ready to take shape' },
   { id: 'doing', title: 'Doing', caption: 'Work in motion' },
-  { id: 'done', title: 'Done', caption: 'Finished and accounted for' },
+  { id: 'done', title: 'Done', caption: 'Integrated into the base branch' },
 ]
+
+function taskWorkflowLabel(workflow: WorkflowSummary) {
+  if (workflow.running)
+    return `${workflow.running} agent${workflow.running === 1 ? '' : 's'} running`
+  if (workflow.phase === 'completed')
+    return workflow.integration === 'integrated' ? 'Integrated' : 'Awaiting integration'
+  if (workflow.blockers.some((message) => message.startsWith('Waiting for “')))
+    return 'Waiting for prerequisites'
+  if (workflow.phase === 'waiting')
+    return workflow.scheduling === 'manual' && !workflow.blockers.length
+      ? 'Choose a ready node'
+      : 'Waiting for acceptance / review'
+  return workflow.phase
+}
 
 function RepositoryButton({ create = false }: { create?: boolean }) {
   const navigate = useNavigate()
@@ -490,7 +506,8 @@ export function ProjectBoardPage() {
                   className="icon-button"
                   aria-label={`Add task to ${column.title}`}
                   onClick={() => setEditor(column.id)}
-                  disabled={pending > 0}
+                  disabled={pending > 0 || column.id === 'done'}
+                  title={column.id === 'done' ? 'Tasks move here after integration' : undefined}
                 >
                   <Plus size={15} />
                 </button>
@@ -549,12 +566,7 @@ export function ProjectBoardPage() {
                             title={workflow.blockers.join('\n')}
                           >
                             <span>
-                              {workflow.phase === 'waiting'
-                                ? workflow.scheduling === 'manual' &&
-                                  !workflow.blockers.length
-                                  ? 'Choose a ready node'
-                                  : 'Waiting for acceptance / review'
-                                : workflow.phase}
+                              {taskWorkflowLabel(workflow)}
                             </span>
                             <strong>
                               {workflow.accepted}/{workflow.total}
@@ -568,6 +580,14 @@ export function ProjectBoardPage() {
                           </div>
                         ) : null
                       })()}
+                      {(task.dependencyIds ?? []).length > 0 && (
+                        <p className="task-dependency-note">
+                          Depends on: {task.dependencyIds.map((id) =>
+                            projectTasks.find((other) => other.id === id)?.title ?? 'Missing task',
+                          ).join(', ')}
+                        </p>
+                      )}
+                      <TaskIdeButton identity={{ projectId: project.id, taskId: task.id }} />
                       <div className="task-card-actions">
                         <Link
                           className="task-graph-link"
@@ -634,7 +654,7 @@ export function ProjectBoardPage() {
                           }
                         >
                           {columns.map((option) => (
-                            <option key={option.id} value={option.id}>
+                            <option key={option.id} value={option.id} disabled={option.id === 'done' && task.status !== 'done'}>
                               {option.title}
                             </option>
                           ))}
@@ -674,7 +694,7 @@ export function ProjectBoardPage() {
               </div>
               <button
                 className="column-add"
-                disabled={pending > 0}
+                disabled={pending > 0 || column.id === 'done'}
                 onClick={() => setEditor(column.id)}
               >
                 <Plus size={13} />
@@ -786,6 +806,10 @@ function TaskEditor({
   const [title, setTitle] = useState(task?.title ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [criteria, setCriteria] = useState(task?.acceptanceCriteria ?? '')
+  const [dependencyIds, setDependencyIds] = useState(task?.dependencyIds ?? [])
+  const [requiredFiles, setRequiredFiles] = useState((task?.requiredFiles ?? []).join('\n'))
+  const snapshot = useWorkspaceStore((state) => state.snapshot)
+  const prerequisites = snapshot?.tasks.filter((other) => other.projectId === project.id && other.id !== task?.id && (!other.archivedAt || dependencyIds.includes(other.id))) ?? []
   const busy = useWorkspaceStore((state) => state.pending > 0)
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -799,6 +823,8 @@ function TaskEditor({
             title,
             description,
             acceptanceCriteria: criteria,
+            dependencyIds,
+            requiredFiles: requiredFiles.split('\n').map((path) => path.trim()).filter(Boolean),
           }),
         )
       else
@@ -808,6 +834,8 @@ function TaskEditor({
             title,
             description,
             acceptanceCriteria: criteria,
+            dependencyIds,
+            requiredFiles: requiredFiles.split('\n').map((path) => path.trim()).filter(Boolean),
             status,
           }),
         )
@@ -855,6 +883,47 @@ function TaskEditor({
             onChange={(event) => setCriteria(event.target.value)}
             placeholder="Describe what a successful result should look like."
           />
+          <label>Depends on todos</label>
+          <div className="task-dependencies">
+            {prerequisites.length ? prerequisites.map((other) => (
+              <label key={other.id} className="dependency-choice">
+                <input
+                  type="checkbox"
+                  checked={dependencyIds.includes(other.id)}
+                  onChange={(event) => setDependencyIds((ids) =>
+                    event.target.checked
+                      ? [...ids, other.id]
+                      : ids.filter((id) => id !== other.id),
+                  )}
+                />
+                <span>
+                  {other.title} · {snapshot?.workflows?.some((workflow) =>
+                    workflow.taskId === other.id &&
+                    workflow.integration === 'integrated' &&
+                    workflow.phase === 'completed',
+                  ) ? 'Integrated' : 'Awaiting integration'}
+                </span>
+              </label>
+            )) : (
+              <p className="form-helper">Create another todo to select a prerequisite.</p>
+            )}
+          </div>
+          <p className="form-helper">
+            This task waits until every prerequisite has been integrated. The
+            project manager can also set these dependencies.
+          </p>
+          <label htmlFor="required-files">Required input files</label>
+          <textarea
+            id="required-files"
+            rows={3}
+            value={requiredFiles}
+            onChange={(event) => setRequiredFiles(event.target.value)}
+            placeholder="project_plan.md"
+          />
+          <p className="form-helper">
+            One relative file path per line. A missing file blocks the agent
+            before implementation starts.
+          </p>
         </fieldset>
         {failure && <FormFailure failure={failure} />}
         <footer>
@@ -920,6 +989,8 @@ function ProjectSettings({
   const [instructions, setInstructions] = useState(project.instructions)
   const [devCommand, setDevCommand] = useState(project.devCommand)
   const [testCommand, setTestCommand] = useState(project.testCommand)
+  const [ideCommand, setIdeCommand] = useState(project.ideCommand ?? '')
+  const [maxParallelAgents, setMaxParallelAgents] = useState(project.maxParallelAgents ?? 4)
   const [defaultModel, setDefaultModel] = useState(project.defaultModel ?? '')
   const [defaultEffort, setDefaultEffort] = useState<Effort | ''>(
     project.defaultEffort ?? '',
@@ -954,6 +1025,8 @@ function ProjectSettings({
           instructions,
           devCommand,
           testCommand,
+          ideCommand,
+          maxParallelAgents,
           defaultModel: defaultModel || null,
           defaultEffort: defaultEffort || null,
         }),
@@ -989,6 +1062,29 @@ function ProjectSettings({
             <FolderGit2 size={15} />
             <code>{project.repoPath}</code>
           </div>
+          <label htmlFor="ide-command">IDE command</label>
+          <input
+            id="ide-command"
+            className="command-input"
+            maxLength={2000}
+            value={ideCommand}
+            onChange={(event) => setIdeCommand(event.target.value)}
+            placeholder="code --new-window"
+          />
+          <p className="form-helper">
+            Use code, zed, or an executable path with optional arguments. Open in
+            IDE appends the workspace path. Quote executable paths containing spaces.
+          </p>
+          <label htmlFor="parallel-agents">Maximum simultaneous agents</label>
+          <input
+            id="parallel-agents"
+            type="number"
+            min={1}
+            max={8}
+            required
+            value={maxParallelAgents}
+            onChange={(event) => setMaxParallelAgents(Number(event.target.value))}
+          />
           <div className="command-fields">
             <div>
               <label htmlFor="project-default-model">Default model</label>
@@ -1098,7 +1194,7 @@ function ProjectSettings({
           </div>
           <p className="form-helper">
             Node runs use the development command as context and execute the
-            test command in the project directory after successful Codex turns.
+            test command in each agent workspace after successful turns and on combined results when needed.
             Saving settings does not run either command.
           </p>
         </fieldset>

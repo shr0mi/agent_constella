@@ -1,15 +1,47 @@
 import { useEffect, useState } from 'react'
-import {
-  Copy,
-  FolderOpen,
-  GitBranch,
-  LoaderCircle,
-  RefreshCw,
-} from 'lucide-react'
+import { Code, Copy, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { GraphIdentity } from '../../shared/graph'
 import type { TaskReviewContext } from '../../shared/execution'
 import { executionAction } from './execution-store'
 import { Modal } from './components/Modal'
+
+export function TaskIdeButton({
+  identity,
+}: {
+  identity: GraphIdentity & { nodeId?: string }
+}) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  async function open() {
+    setPending(true)
+    setError('')
+    try {
+      await executionAction((api) => api.openInIde(identity))
+    } catch (error) {
+      setError(String(error))
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <>
+      <button
+        className="button secondary"
+        disabled={pending}
+        title="Open this workspace using the IDE command in Project settings"
+        onClick={() => void open()}
+      >
+        {pending ? (
+          <LoaderCircle size={13} className="spin" />
+        ) : (
+          <Code size={13} />
+        )}
+        Open in IDE
+      </button>
+      {error && <small className="integration-error" role="alert">{error}</small>}
+    </>
+  )
+}
 
 export function TaskReviewButton({
   identity,
@@ -24,19 +56,12 @@ export function TaskReviewButton({
       <button
         className="button secondary"
         disabled={!available}
-        title={
-          available
-            ? 'Open and run the task code before approving or integrating it.'
-            : 'Run an agent node first to create the task branch.'
-        }
         onClick={() => setOpen(true)}
+        title="Inspect the combined task workspace before review or integration"
       >
-        <FolderOpen size={14} />
-        Review task
+        <FolderOpen size={14} /> Review task
       </button>
-      {open && (
-        <TaskReviewDialog identity={identity} onClose={() => setOpen(false)} />
-      )}
+      {open && <TaskReviewDialog identity={identity} onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -49,41 +74,22 @@ function TaskReviewDialog({
   onClose: () => void
 }) {
   const [context, setContext] = useState<TaskReviewContext>()
-  const [loading, setLoading] = useState(true)
-  const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [refresh, setRefresh] = useState(0)
+  const [pending, setPending] = useState(false)
   useEffect(() => {
     let alive = true
-    setLoading(true)
-    setContext(undefined)
     setError('')
-    void executionAction((api) => {
-      if (!api.getReview)
-        throw new Error('Restart the desktop app to load task review controls.')
-      return api.getReview(identity)
-    })
-      .then((context) => {
-        if (alive) setContext(context)
-      })
-      .catch((error) => {
-        if (alive) setError(String(error))
-      })
-      .finally(() => {
-        if (alive) setLoading(false)
-      })
-    return () => {
-      alive = false
-    }
+    void executionAction((api) => api.getReview(identity))
+      .then((value) => { if (alive) setContext(value) })
+      .catch((error) => { if (alive) setError(String(error)) })
+    return () => { alive = false }
   }, [identity.projectId, identity.taskId, refresh])
-  async function act(action: () => Promise<unknown>, message?: string) {
+  async function act(action: () => Promise<unknown>) {
     setPending(true)
     setError('')
-    setNotice('')
     try {
       await action()
-      if (message) setNotice(message)
     } catch (error) {
       setError(String(error))
     } finally {
@@ -93,9 +99,7 @@ function TaskReviewDialog({
   return (
     <Modal
       title="Review task"
-      subtitle={
-        context?.taskTitle ?? 'Inspect the task code before approving it.'
-      }
+      subtitle={context?.taskTitle ?? 'Inspect the combined agent results.'}
       onClose={onClose}
       busy={pending}
       wide
@@ -103,162 +107,85 @@ function TaskReviewDialog({
     >
       <div className="task-review-content">
         <p>
-          Use your existing project directory and IDE window. Select this task’s
-          branch in your IDE, or switch to it below, then run the product as
-          usual.
+          This task has its own workspace. Open it in your IDE to inspect and run
+          the combined agent results. Your original project folder stays on its
+          current branch until integration.
         </p>
-        <p>
-          To recover unfinished task files, switch back to their task branch
-          here, then retry the failed node. Local edits are kept when the current
-          and task branches have identical committed files. Archiving a task
-          keeps its branch and local files.
-        </p>
-        {loading ? (
-          <p>
-            <LoaderCircle size={14} className="spin" /> Loading task branch…
-          </p>
+        {!context ? (
+          <p><LoaderCircle size={14} className="spin" /> Loading workspace…</p>
         ) : (
-          context && (
-            <>
-              <dl>
-                <dt>Task branch</dt>
-                <dd>
-                  <code>{context.branch}</code>
-                </dd>
-                <dt>Current branch</dt>
-                <dd>{context.projectBranch ?? 'Detached checkout'}</dd>
-                <dt>Merge into</dt>
-                <dd>{context.targetBranch ?? 'Base branch unavailable'}</dd>
-                <dt>Project directory</dt>
-                <dd>
-                  <code>{context.projectPath}</code>
-                </dd>
-              </dl>
-              {context.active && (
-                <p className="task-review-notice">
-                  An agent is still working in this project. Wait for it to
-                  finish before making your review decision.
-                </p>
-              )}
-              <div className="task-review-actions">
-                <button
-                  className="button primary"
-                  disabled={
-                    pending ||
-                    context.active ||
-                    context.projectBranch === context.branch
-                  }
-                  onClick={() =>
-                    void act(async () => {
-                      await executionAction((api) => api.checkoutTask(identity))
-                      setRefresh((value) => value + 1)
-                    })
-                  }
-                >
-                  <GitBranch size={14} />
-                  {context.projectBranch === context.branch
-                    ? 'Task branch selected'
-                    : 'Switch to task branch'}
-                </button>
-                <button
-                  className="button secondary"
-                  disabled={pending}
-                  onClick={() =>
-                    void act(
-                      () => navigator.clipboard.writeText(context.branch),
-                      'Branch name copied.',
-                    )
-                  }
-                >
-                  <Copy size={13} />
-                  Copy branch name
-                </button>
-                <button
-                  className="button secondary"
-                  disabled={pending}
-                  onClick={() =>
-                    void act(() =>
-                      executionAction((api) => api.openWorktree(identity)),
-                    )
-                  }
-                >
-                  <FolderOpen size={14} />
-                  Open project folder
-                </button>
-                <button
-                  className="button secondary"
-                  disabled={pending}
-                  onClick={() =>
-                    void act(
-                      () => navigator.clipboard.writeText(context.path),
-                      'Project directory copied.',
-                    )
-                  }
-                >
-                  <Copy size={13} />
-                  Copy project path
-                </button>
-              </div>
-              <h3>Run the product</h3>
-              {context.runCommand ? (
-                <>
-                  <p>
-                    Paste this command into a terminal to select the task branch
-                    and run the project. You can also select the branch in your
-                    IDE.
-                  </p>
-                  <pre className="task-review-command">
-                    {context.runCommand}
-                  </pre>
-                  <button
-                    className="button secondary"
-                    disabled={pending}
-                    onClick={() =>
-                      void act(
-                        () =>
-                          navigator.clipboard.writeText(context.runCommand!),
-                        'Run command copied.',
-                      )
-                    }
-                  >
-                    <Copy size={13} />
-                    Copy run command
-                  </button>
-                </>
-              ) : (
-                <p>
-                  No development command is configured. Set it in Project
-                  settings, or select the task branch and run the project using
-                  your usual commands.
-                </p>
-              )}
-              <p className="task-review-next">
-                After testing the product, approve the human review or request
-                changes. When the workflow is complete, use Integrate branch to
-                merge the accepted work into{' '}
-                {context.targetBranch ?? 'the base branch'}. The app then leaves
-                your project directory on that branch.
+          <>
+            <dl>
+              <dt>Task branch</dt><dd><code>{context.branch}</code></dd>
+              <dt>Merge into</dt><dd>{context.targetBranch ?? 'Base branch unavailable'}</dd>
+              <dt>Task workspace</dt><dd><code>{context.path}</code></dd>
+              <dt>Original project</dt>
+              <dd><code>{context.projectPath}</code> · {context.projectBranch}</dd>
+            </dl>
+            {context.active && (
+              <p className="task-review-notice">
+                Agents are working on this task. Wait for their results before
+                reviewing the combined code.
               </p>
-            </>
-          )
+            )}
+            <div className="task-review-actions">
+              <TaskIdeButton identity={identity} />
+              <button
+                className="button secondary"
+                disabled={pending}
+                onClick={() => void act(() => executionAction((api) => api.openWorktree(identity)))}
+              >
+                <FolderOpen size={13} /> Open task folder
+              </button>
+              <button
+                className="button secondary"
+                disabled={pending}
+                onClick={() => void act(() => navigator.clipboard.writeText(context.path))}
+              >
+                <Copy size={13} /> Copy workspace path
+              </button>
+              <button
+                className="button secondary"
+                disabled={pending}
+                onClick={() => void act(() => navigator.clipboard.writeText(context.branch))}
+              >
+                <Copy size={13} /> Copy branch name
+              </button>
+            </div>
+            <h3>Run the product</h3>
+            {context.runCommand ? (
+              <>
+                <pre className="task-review-command">{context.runCommand}</pre>
+                <button
+                  className="button secondary"
+                  disabled={pending}
+                  onClick={() => void act(() => navigator.clipboard.writeText(context.runCommand!))}
+                >
+                  <Copy size={13} /> Copy run command
+                </button>
+              </>
+            ) : (
+              <p>Set a development command in Project settings, or run your usual commands in this workspace.</p>
+            )}
+            <p>
+              Worktrees start with committed files. Install dependencies and
+              configure local environment files in this workspace as needed.
+            </p>
+            <p className="task-review-next">
+              After review, use Integrate branch to merge accepted work into{' '}
+              {context.targetBranch ?? 'the base branch'}. The task stays Doing
+              until integration succeeds, then moves to Done and releases
+              dependent todos.
+            </p>
+          </>
         )}
-        {error && (
-          <p className="integration-error" role="alert">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p className="task-review-notice" role="status">
-            {notice}
-          </p>
-        )}
+        {error && <p className="integration-error" role="alert">{error}</p>}
         <button
           className="button secondary"
-          disabled={loading || pending}
+          disabled={pending}
           onClick={() => setRefresh((value) => value + 1)}
         >
-          <RefreshCw size={13} />
-          Refresh branch details
+          <RefreshCw size={13} /> Refresh workspace details
         </button>
       </div>
     </Modal>

@@ -12,6 +12,8 @@ export const projects = sqliteTable('projects', {
   instructions: text('instructions').notNull().default(''),
   devCommand: text('dev_command').notNull().default(''),
   testCommand: text('test_command').notNull().default(''),
+  ideCommand: text('ide_command').notNull().default(''),
+  maxParallelAgents: integer('max_parallel_agents').notNull().default(4),
   defaultModel: text('default_model'),
   defaultEffort: text('default_effort').$type<Effort>(),
   revision: integer('revision').notNull().default(1),
@@ -26,6 +28,8 @@ export const tasks = sqliteTable('tasks', {
   title: text('title').notNull(),
   description: text('description').notNull().default(''),
   acceptanceCriteria: text('acceptance_criteria').notNull().default(''),
+  dependencyIds: text('dependency_ids', { mode: 'json' }).$type<string[]>().notNull().default([]),
+  requiredFiles: text('required_files', { mode: 'json' }).$type<string[]>().notNull().default([]),
   status: text('status', { enum: ['todo', 'doing', 'done'] })
     .notNull()
     .default('todo'),
@@ -122,6 +126,12 @@ export const taskWorktrees = sqliteTable('task_worktrees', {
   projectId: text('project_id')
     .notNull()
     .references(() => projects.id, { onDelete: 'cascade' }),
+  document: text('document', { mode: 'json' }).$type<TaskWorktree>().notNull(),
+})
+export const nodeWorktrees = sqliteTable('node_worktrees', {
+  nodeId: text('node_id').primaryKey(),
+  taskId: text('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   document: text('document', { mode: 'json' }).$type<TaskWorktree>().notNull(),
 })
 export const nodeThreads = sqliteTable('node_threads', {

@@ -1,5 +1,7 @@
 import { Codex, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk'
 import { randomUUID } from 'node:crypto'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { resolve, sep } from 'node:path'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
 import {
@@ -7,7 +9,7 @@ import {
   nodeThreads,
   projects,
   tasks,
-  taskWorktrees,
+  workflows,
 } from '../db/schema'
 import { toActivity, type CodexClient } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
@@ -33,6 +35,8 @@ import type {
 } from '../../shared/execution'
 import { taskGit, TaskWorktreeService } from './task-worktrees'
 import { runChecks } from './run-checks'
+import { z } from 'zod'
+import { launchIde, ideArguments } from './ide-launcher'
 
 interface Active {
   run: NodeRun
@@ -69,7 +73,9 @@ export class NodeExecutionService {
     this.hooks = hooks
   }
   activeProject(projectId: string) {
-    const run = this.active.get(projectId)?.run
+    const run = [...this.active.values()].find(
+      (active) => active.run.projectId === projectId,
+    )?.run
     return run
       ? {
           projectId: run.projectId,
@@ -79,6 +85,56 @@ export class NodeExecutionService {
           status: run.status,
         }
       : null
+  }
+  activeRuns(projectId: string, taskId?: string) {
+    return [...this.active.values()]
+      .map(({ run }) => run)
+      .filter((run) =>
+        run.projectId === projectId && (!taskId || run.taskId === taskId),
+      )
+      .map((run) => ({
+        projectId,
+        taskId: run.taskId,
+        nodeId: run.nodeId,
+        runId: run.id,
+        status: run.status,
+      }))
+  }
+  hasCapacity(projectId: string) {
+    const project = this.db
+      .select().from(projects).where(eq(projects.id, projectId)).get()
+    return this.activeRuns(projectId).length < (project?.maxParallelAgents ?? 4)
+  }
+  private assertTaskDependencies(projectId: string, taskId: string) {
+    const task = this.taskScope({ projectId, taskId })
+    const commits: Record<string, string> = {}
+    for (const id of task.dependencyIds ?? []) {
+      const result = this.db
+        .select().from(workflows).where(eq(workflows.taskId, id)).get()?.document
+      if (
+        result?.phase !== 'completed' ||
+        result.integration?.status !== 'integrated' ||
+        !result.integration.commit
+      ) {
+        const dependency = this.db.select().from(tasks).where(eq(tasks.id, id)).get()
+        throw new ApplicationError(
+          'TASK_DEPENDENCIES',
+          `Waiting for “${dependency?.title ?? id}” to be integrated.`,
+          'Integrate the prerequisite task before starting this agent.',
+        )
+      }
+      commits[id] = result.integration.commit
+    }
+    return commits
+  }
+  assertRunDependencies(run: NodeRun) {
+    const current = this.assertTaskDependencies(run.projectId, run.taskId)
+    if (JSON.stringify(current) !== JSON.stringify(run.todoDependencyCommits ?? {}))
+      throw new ApplicationError(
+        'TASK_DEPENDENCIES_CHANGED',
+        'A todo prerequisite changed after this attempt was prepared.',
+        'Run a revision with the current integrated prerequisite before accepting or integrating this result.',
+      )
   }
   readonly worktrees: TaskWorktreeService
   constructor(
@@ -109,8 +165,7 @@ export class NodeExecutionService {
     }
   }
   hasActiveTask(identity: GraphIdentity) {
-    const active = this.active.get(identity.projectId)
-    return !!active && active.run.taskId === identity.taskId
+    return this.activeRuns(identity.projectId, identity.taskId).length > 0
   }
   private taskScope(identity: GraphIdentity) {
     const task = this.db
@@ -197,11 +252,14 @@ export class NodeExecutionService {
           runId: row.id,
           status: this.volatile.get(row.id)?.status ?? row.status,
         })
-    const active = this.active.get(identity.projectId)?.run
+    const active = [...this.active.values()].find(({ run }) =>
+      run.projectId === identity.projectId && run.taskId === identity.taskId,
+    )?.run
     return {
       ...identity,
       worktree: this.worktrees.get(identity.taskId),
       nodeStates: [...latest.values()],
+      activeRuns: this.activeRuns(identity.projectId, identity.taskId),
       active: active
         ? {
             projectId: active.projectId,
@@ -227,7 +285,7 @@ export class NodeExecutionService {
       throw new ApplicationError(
         'TASK_REVIEW_UNAVAILABLE',
         'The task branch is not ready yet.',
-        'Run an agent node first, then select its branch in your project directory.',
+        'Use Open in IDE to create the task workspace, or run an agent node first.',
       )
     if (worktree.projectId !== identity.projectId)
       throw new ApplicationError(
@@ -249,15 +307,14 @@ export class NodeExecutionService {
       process.platform === 'win32'
         ? `'${worktree.path.replaceAll("'", "''")}'`
         : `'${worktree.path.replaceAll("'", "'\\''")}'`
-    const quotedBranch = `'${worktree.branch}'`
     const checkoutCommand =
       process.platform === 'win32'
-        ? `Set-Location -LiteralPath ${quotedPath} -ErrorAction Stop\ngit switch -- ${quotedBranch}`
-        : `cd -- ${quotedPath} && git switch -- ${quotedBranch}`
+        ? `Set-Location -LiteralPath ${quotedPath} -ErrorAction Stop`
+        : `cd -- ${quotedPath}`
     const runCommand = !devCommand
       ? null
       : process.platform === 'win32'
-        ? `${checkoutCommand}\nif ($LASTEXITCODE -eq 0) {\n${devCommand}\n}`
+        ? `& {\n${checkoutCommand}\n${devCommand}\n}`
         : `${checkoutCommand} && (\n${devCommand}\n)`
     return {
       ...identity,
@@ -267,8 +324,9 @@ export class NodeExecutionService {
       projectPath: project.repoPath,
       projectBranch,
       devCommand,
+      ideCommand: project.ideCommand,
       runCommand,
-      active: !!this.activeProject(identity.projectId),
+      active: this.hasActiveTask(identity),
       targetBranch: worktree.sourceBranch,
       checkoutCommand,
     }
@@ -276,7 +334,7 @@ export class NodeExecutionService {
   async checkoutTask(raw: unknown) {
     const identity = graphIdentitySchema.parse(raw)
     const task = this.taskScope(identity)
-    if (this.activeProject(identity.projectId))
+    if (this.hasActiveTask(identity))
       throw new ApplicationError(
         'PROJECT_BUSY',
         'An agent is working in this project.',
@@ -290,6 +348,24 @@ export class NodeExecutionService {
     await this.worktrees.ensure(project, task, undefined, {
       preserveLocalChanges: true,
     })
+    this.emit(identity)
+  }
+  async openInIde(raw: unknown, launch: typeof launchIde = launchIde) {
+    const identity = graphIdentitySchema
+      .extend({ nodeId: z.uuid().optional() }).strict().parse(raw)
+    const task = this.taskScope(identity)
+    const project = this.db
+      .select().from(projects).where(eq(projects.id, identity.projectId)).get()!
+    ideArguments(project.ideCommand)
+    if (identity.nodeId) this.get({ ...identity, nodeId: identity.nodeId })
+    const agentWorkspace = identity.nodeId
+      ? this.worktrees.getNode(identity.nodeId)
+      : null
+    const workspace = agentWorkspace ?? this.worktrees.get(task.id) ??
+      await this.worktrees.ensure(project, task)
+    // Opening the IDE must remain available for restoring an externally changed branch.
+    await this.worktrees.verify(workspace, project.repoPath, false)
+    await launch(project.ideCommand, workspace.path)
     this.emit(identity)
   }
   get(raw: unknown): NodeExecutionSnapshot {
@@ -308,10 +384,10 @@ export class NodeExecutionService {
         'Select an agent task node to open a Codex conversation.',
         'Start, End, and Human Review do not execute Codex turns.',
       )
-    const active = this.active.get(identity.projectId)?.run
+    const active = this.active.get(identity.nodeId)?.run
     return {
       ...identity,
-      worktree: this.worktrees.get(identity.taskId),
+      worktree: this.worktrees.getNode(identity.nodeId) ?? this.worktrees.get(identity.taskId),
       threadId: this.thread(identity)?.threadId ?? undefined,
       runs: structuredClone(this.history(identity)),
       active: active
@@ -429,25 +505,6 @@ export class NodeExecutionService {
           this.persist(run)
         }
       }
-    for (const row of this.db.select().from(taskWorktrees).all()) {
-      if (row.document.mode === 'project') continue
-      const project = this.db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, row.projectId))
-        .get()
-      const task = this.db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, row.taskId))
-        .get()
-      if (project && task)
-        try {
-          await this.worktrees.adopt(project, task)
-        } catch (error) {
-          console.error('Cannot release legacy task branch:', error)
-        }
-    }
     this.initialized = true
   }
   start(raw: unknown): { runId: string } {
@@ -464,12 +521,13 @@ export class NodeExecutionService {
         'An attempt could not be persisted.',
         'Restore app data access and restart before starting more work. Your project files are retained.',
       )
-    if (this.active.has(input.projectId))
+    if (this.active.has(input.nodeId) || !this.hasCapacity(input.projectId))
       throw new ApplicationError(
         'PROJECT_BUSY',
-        'Another node is active in this project.',
-        'Stop or wait for that attempt before starting more code-writing work.',
+        'This agent is active or the project’s parallel agent limit has been reached.',
+        'Stop an agent, wait for a slot, or increase the limit in Project settings.',
       )
+    const todoDependencyCommits = this.assertTaskDependencies(input.projectId, input.taskId)
     const snapshot = this.get({
       projectId: input.projectId,
       taskId: input.taskId,
@@ -542,6 +600,7 @@ export class NodeExecutionService {
       taskSnapshot: graph.task,
       projectContext: graph.project,
       dependencyResults: [],
+      todoDependencyCommits,
       skillSnapshots: [],
       startedAt: new Date().toISOString(),
       status: 'preparing',
@@ -588,7 +647,7 @@ export class NodeExecutionService {
         error: last.error,
         tests: structuredClone(last.tests),
       }
-    this.active.set(input.projectId, active)
+    this.active.set(input.nodeId, active)
     try {
       this.db
         .insert(nodeThreads)
@@ -606,7 +665,7 @@ export class NodeExecutionService {
       this.persist(run)
       this.hooks?.started(run)
     } catch (error) {
-      this.active.delete(input.projectId)
+      this.active.delete(input.nodeId)
       run.status = 'failed'
       run.finishedAt = new Date().toISOString()
       run.error = applicationFailure(error)
@@ -618,8 +677,8 @@ export class NodeExecutionService {
       throw error
     }
     active.done = this.execute(active).finally(() => {
-      if (this.active.get(input.projectId) === active)
-        this.active.delete(input.projectId)
+      if (this.active.get(input.nodeId) === active)
+        this.active.delete(input.nodeId)
       try {
         this.hooks?.settled(structuredClone(run))
       } catch (error) {
@@ -641,9 +700,11 @@ export class NodeExecutionService {
         expectedRevision: run.graphRevision,
       })
       signal.throwIfAborted()
-      run.worktree = await this.worktrees.ensure(
+      this.assertRunDependencies(run)
+      run.worktree = await this.worktrees.ensureNode(
         run.projectContext,
         run.taskSnapshot,
+        run.nodeId,
         signal,
       )
       this.persist(run)
@@ -663,8 +724,9 @@ export class NodeExecutionService {
       run.options.effort = prepared.effort
       run.options.skillIds = prepared.skillSnapshots.map((skill) => skill.id)
       const context = `Task: ${run.taskSnapshot.title}\n${run.taskSnapshot.description}\n\nTask acceptance criteria:\n${run.taskSnapshot.acceptanceCriteria}\n\nNode: ${run.nodeSnapshot.data.title}\nNode acceptance criteria:\n${run.nodeSnapshot.data.acceptanceCriteria}\nGraph revision: ${run.graphRevision}\n\nAvailable predecessor results (context only; acceptance is managed separately):\n${JSON.stringify(run.dependencyResults)}\n\nThis is an explicitly requested node attempt. Do not run or approve other workflow nodes. Read applicable AGENTS.md/README guidance in this worktree.\n\n${run.mode === 'retry' ? 'The previous attempt did not succeed. Inspect the current files and correct the problem; earlier partial changes are retained.\n' : ''}User request:\n${run.prompt}`
+      const requiredInputs = await this.requiredInputs(run)
       run.resolvedPrompt = resolvePrompt(
-        `${context}\n\nPrevious attempt and test results:\n${JSON.stringify(run.previousAttempt ?? null)}`,
+        `${context}\n\nRequired input files (verified in this workspace):\n${requiredInputs}\n\nPrevious attempt and test results:\n${JSON.stringify(run.previousAttempt ?? null)}`,
         run.skillSnapshots,
         prepared,
         'task',
@@ -724,6 +786,7 @@ export class NodeExecutionService {
       }
       if (!streamCompleted)
         throw new Error('The SDK stream ended without a turn.completed event.')
+      this.assertRunDependencies(run)
       run.status = 'testing'
       this.persist(run)
       run.tests = await runChecks(
@@ -765,9 +828,44 @@ export class NodeExecutionService {
       if (run.before && run.worktree) {
         try {
           run.changes = await this.worktrees.changes(run.worktree, run.before)
+          if (run.status === 'completed' && !signal.aborted) {
+            run.status = 'testing'
+            this.persist(run)
+            await this.worktrees.exclusive(run.taskId, async () => {
+              signal.throwIfAborted()
+              this.assertRunDependencies(run)
+              const result = this.worktrees.get(run.taskId)!
+              const merged = await this.worktrees.mergeInto(
+                result, run.changes!.after.commit, `Combine ${run.nodeSnapshot.data.title}`,
+              )
+              const tree = async (commit: string) =>
+                (await taskGit(result.path, ['rev-parse', `${commit}^{tree}`])).trim()
+              if (await tree(merged.commit) !== await tree(run.changes!.after.commit)) {
+                run.integrationTests = await runChecks(
+                  run.tests.command,
+                  result.path,
+                  signal,
+                  (tests) => {
+                    run.integrationTests = tests
+                    this.persist(run)
+                  },
+                  this.checkTimeoutMs,
+                )
+                if (run.integrationTests.command && run.integrationTests.status !== 'passed')
+                  throw new ApplicationError(
+                    'COMBINED_TEST_FAILED',
+                    'Checks failed after combining agent results.',
+                    'Inspect the combined test output and revise this agent. All branches and files are retained.',
+                  )
+              }
+              await this.worktrees.assertClean(result.path)
+              run.taskResult = merged
+            })
+            run.status = 'completed'
+          }
         } catch (error) {
           run.inspectionError = applicationFailure(error)
-          if (run.status === 'completed') {
+          if (run.status === 'completed' || run.status === 'testing') {
             run.status = 'failed'
             run.error = run.inspectionError
           }
@@ -803,7 +901,7 @@ export class NodeExecutionService {
     const input = nodeIdentitySchema.parse(raw)
     this.taskScope(input)
     this.thread(input)
-    const active = this.active.get(input.projectId)
+    const active = this.active.get(input.nodeId)
     if (
       !active ||
       active.run.nodeId !== input.nodeId ||
@@ -815,16 +913,46 @@ export class NodeExecutionService {
     this.persist(active.run)
   }
   async stopTask(identity: GraphIdentity) {
-    const active = this.active.get(identity.projectId)
-    if (active?.run.taskId === identity.taskId) {
-      await this.stop({ ...identity, nodeId: active.run.nodeId })
-      await active.done
-    }
+    const active = [...this.active.values()].filter(({ run }) =>
+      run.projectId === identity.projectId && run.taskId === identity.taskId,
+    )
+    await Promise.all(active.map(async (entry) => {
+      await this.stop({ ...identity, nodeId: entry.run.nodeId })
+      await entry.done
+    }))
   }
   async waitForIdle(projectId?: string) {
-    if (projectId) await this.active.get(projectId)?.done
-    else
-      await Promise.all([...this.active.values()].map((active) => active.done))
+    await Promise.all(
+      [...this.active.values()]
+        .filter(({ run }) => !projectId || run.projectId === projectId)
+        .map((active) => active.done),
+    )
+  }
+  hasActiveRuns() {
+    return this.active.size > 0
+  }
+  private async requiredInputs(run: NodeRun) {
+    const root = await realpath(run.worktree!.path)
+    const contents: string[] = []
+    let remaining = 64_000
+    for (const file of run.taskSnapshot.requiredFiles ?? []) {
+      const path = await realpath(resolve(root, file)).catch(() => null)
+      if (!path || !path.startsWith(root + sep) || !(await stat(path)).isFile())
+        throw new ApplicationError(
+          'MISSING_REQUIRED_INPUT',
+          `Required file not found in this agent’s workspace: ${file}`,
+          'Integrate the task that supplies this file, or correct the required files in the task editor. Implementation has not started.',
+        )
+      const info = await stat(path)
+      if (info.size <= 32_000 && info.size <= remaining) {
+        const text = await readFile(path, 'utf8')
+        remaining -= info.size
+        contents.push(text.includes('\0')
+          ? `File: ${file} (binary input verified; inspect the file before implementing)`
+          : `File: ${file}\n${text}`)
+      } else contents.push(`File: ${file} (verified; read the full file before implementing)`)
+    }
+    return contents.join('\n\n') || 'None declared.'
   }
   async shutdown() {
     for (const active of this.active.values()) {

@@ -39,6 +39,7 @@ const now = () => new Date().toISOString()
 export class WorkflowService {
   private listeners = new Set<(identity: GraphIdentity) => void>()
   private pumping = new Map<string, Promise<void>>()
+  private wakeAgain = new Set<string>()
   private syncing = new Set<string>()
   private operations = new Set<string>()
   private stopping = false
@@ -155,6 +156,12 @@ export class WorkflowService {
                     title: graph.task.title,
                     description: graph.task.description,
                     acceptanceCriteria: graph.task.acceptanceCriteria,
+                    ...(graph.task.dependencyIds.length
+                      ? { dependencyIds: graph.task.dependencyIds }
+                      : {}),
+                    ...(graph.task.requiredFiles.length
+                      ? { requiredFiles: graph.task.requiredFiles }
+                      : {}),
                   },
                 }
               : {}),
@@ -218,7 +225,7 @@ export class WorkflowService {
           if (record.startedAt && record.phase !== 'archived')
             this.workspace.setWorkflowStatus(
               record,
-              record.phase === 'completed' || record.phase === 'integrating'
+              record.phase === 'completed' && record.integration?.status === 'integrated'
                 ? 'done'
                 : 'doing',
             )
@@ -495,7 +502,9 @@ export class WorkflowService {
         ]
       })
     }
-    return { ...record, summary: summarizeWorkflow(record), evidence }
+    const summary = summarizeWorkflow(record)
+    summary.blockers.unshift(...this.workspace.dependencyBlockers(record.projectId, record.taskId))
+    return { ...record, summary, evidence }
   }
   get(raw: unknown): WorkflowSnapshot {
     const identity = graphIdentitySchema.parse(raw)
@@ -566,6 +575,7 @@ export class WorkflowService {
         'Only agent task nodes execute Codex.',
         'Select an agent node.',
       )
+    this.workspace.assertDependencies(input.projectId, input.taskId)
     // Check before activation so a rejected downstream request cannot start the workflow.
     const draft = structuredClone(record)
     draft.startedAt ??= now()
@@ -577,10 +587,7 @@ export class WorkflowService {
         'Every predecessor must complete and be accepted before this node can run.',
         'Accept successful predecessors or release their human review gates first.',
       )
-    if (
-      this.execution.activeProject(input.projectId) ||
-      this.operations.has(input.projectId)
-    )
+    if (this.operations.has(input.projectId))
       throw new ApplicationError(
         'PROJECT_BUSY',
         'Another operation is active in this project.',
@@ -590,6 +597,7 @@ export class WorkflowService {
     return this.execution.start(input)
   }
   private admit(input: StartNodeInput) {
+    this.workspace.assertDependencies(input.projectId, input.taskId)
     const { record, graph } = this.reconcile(input)
     if (
       this.stopping ||
@@ -673,7 +681,7 @@ export class WorkflowService {
       this.wake(run.projectId)
       return
     }
-    if (run.changes) record.lastSnapshot = run.changes.after
+    if (run.taskResult) record.lastSnapshot = run.taskResult
     if (node.invalidated) {
       node.status = 'stale'
       delete node.invalidated
@@ -759,6 +767,7 @@ export class WorkflowService {
       nodeId: input.nodeId,
       runId: input.runId,
     })
+    this.execution.assertRunDependencies(run)
     if (run.status !== 'completed' || run.error || run.inspectionError)
       throw new ApplicationError(
         'RUN_NOT_SUCCESSFUL',
@@ -797,7 +806,10 @@ export class WorkflowService {
         'This review is not ready or its prerequisites changed.',
         'Wait for every predecessor to complete and be accepted.',
       )
-    if (input.decision === 'approve') this.complete(node, 'human')
+    if (input.decision === 'approve') {
+      this.assertTaskInputs(record)
+      this.complete(node, 'human')
+    }
     else {
       const evidence = this.snapshot(record, graph).evidence[node.id]
       if (
@@ -903,6 +915,7 @@ export class WorkflowService {
         'The workflow must reach End with accepted code before integration.',
         'Complete and accept all required work. Restore an archived task before integration.',
       )
+    this.assertTaskInputs(record)
     const worktree = this.execution.worktrees.get(identity.taskId)
     if (!worktree)
       throw new ApplicationError(
@@ -912,15 +925,25 @@ export class WorkflowService {
       )
     return { record, graph, worktree }
   }
+  private assertTaskInputs(record: WorkflowRecord) {
+    for (const node of Object.values(record.nodes)) {
+      if (node.type !== 'agent' || !node.runId) continue
+      this.execution.assertRunDependencies(this.execution.getRun({
+        projectId: record.projectId,
+        taskId: record.taskId,
+        nodeId: node.id,
+        runId: node.runId,
+      }))
+    }
+  }
   private reserve(projectId: string) {
     if (
-      this.operations.has(projectId) ||
-      this.execution.activeProject(projectId)
+      this.operations.has(projectId)
     )
       throw new ApplicationError(
         'PROJECT_BUSY',
-        'A node or integration operation is active in this project.',
-        'Wait until it settles before integrating.',
+        'Another integration operation is active in this project.',
+        'Wait until it settles before integrating. Agents in other task worktrees can continue.',
       )
     this.operations.add(projectId)
   }
@@ -1039,7 +1062,11 @@ export class WorkflowService {
     }
   }
   private wake(projectId: string) {
-    if (this.stopping || this.pumping.has(projectId)) return
+    if (this.stopping) return
+    if (this.pumping.has(projectId)) {
+      this.wakeAgain.add(projectId)
+      return
+    }
     const promise = Promise.resolve()
       .then(() => this.pump(projectId))
       .catch((error) => {
@@ -1055,14 +1082,17 @@ export class WorkflowService {
             this.persist(record)
           }
       })
-      .finally(() => this.pumping.delete(projectId))
+      .finally(() => {
+        this.pumping.delete(projectId)
+        if (this.wakeAgain.delete(projectId)) this.wake(projectId)
+      })
     this.pumping.set(projectId, promise)
   }
-  private pump(projectId: string) {
+  private pump(projectId: string): void {
     if (
       this.stopping ||
       this.operations.has(projectId) ||
-      this.execution.activeProject(projectId)
+      !this.execution.hasCapacity(projectId)
     )
       return
     for (const row of this.db
@@ -1076,6 +1106,14 @@ export class WorkflowService {
       let { record, graph } = this.reconcile(row.document)
       if (record.scheduling === 'manual') continue
       if (!['running', 'waiting'].includes(record.phase)) continue
+      const dependencyBlockers = this.workspace.dependencyBlockers(projectId, record.taskId)
+      if (dependencyBlockers.length) {
+        record.phase = 'waiting'
+        record.error = { code: 'TASK_DEPENDENCIES', message: dependencyBlockers.join('\n'), hint: 'Integrate the prerequisite tasks; this workflow will continue automatically.' }
+        this.persist(record)
+        continue
+      }
+      if (record.error?.code === 'TASK_DEPENDENCIES') delete record.error
       if (!graph.validation.valid) {
         record.phase = 'blocked'
         record.error = {
@@ -1110,7 +1148,7 @@ export class WorkflowService {
             this.allParents(record, graph, node.id),
         )
       if (!next) {
-        record.phase = 'waiting'
+        record.phase = this.execution.hasActiveTask(record) ? 'running' : 'waiting'
         this.persist(record)
         continue
       }
@@ -1136,7 +1174,7 @@ export class WorkflowService {
         mode,
         ...(mode === 'followup' ? { message: next.pendingMessage } : {}),
       })
-      return
+      return this.pump(projectId)
     }
   }
   async initialize() {
@@ -1169,9 +1207,10 @@ export class WorkflowService {
     }
   }
   async waitForIdle() {
-    await Promise.all([...this.pumping.values()])
-    await this.execution.waitForIdle()
-    await Promise.all([...this.pumping.values()])
+    do {
+      await Promise.all([...this.pumping.values()])
+      await this.execution.waitForIdle()
+    } while (this.pumping.size || this.execution.hasActiveRuns())
   }
   async shutdown() {
     this.stopping = true

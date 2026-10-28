@@ -1,10 +1,10 @@
+import { TaskIdeButton } from './TaskReview'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import {
   Activity,
   ArrowUp,
   Bot,
   FileDiff as FileDiffIcon,
-  FolderOpen,
   GitBranch,
   LoaderCircle,
   Play,
@@ -103,6 +103,7 @@ export function NodeWorkspace({
     : []
   const reasons = [
     ...runBlockers,
+    ...(workflow?.summary.blockers.filter((message) => message.startsWith('Waiting for “')) ?? []),
     ...(blockedParents.length
       ? [
           `Waiting for accepted predecessors: ${blockedParents.map((parent) => `${parent.title} (${workflowStatusLabel[parent.status]})`).join(', ')}.`,
@@ -341,12 +342,6 @@ export function NodeWorkspace({
           </button>
         </div>
       )}
-      {snapshot?.active && !ownActive && (
-        <div className="node-context-note">
-          Another node is active in this project. Its execution slot will be
-          released after it stops and its results are recorded.
-        </div>
-      )}
       <div className="node-tabs">
         {(
           ['conversation', 'activity', 'files', 'tests', 'snapshot'] as const
@@ -416,9 +411,9 @@ export function NodeWorkspace({
                 <Bot size={32} />
                 <h3>Put this node to work.</h3>
                 <p>
-                  Run its saved prompt on a task branch in your project
-                  directory. Ask for revisions here and Codex will continue the
-                  same conversation.
+                  Run its saved prompt in its own agent workspace. Independent
+                  agents can work simultaneously. Ask for revisions here to
+                  continue the same conversation.
                 </p>
                 <p className="node-seed-prompt">{node.data.prompt}</p>
               </div>
@@ -466,7 +461,7 @@ export function NodeWorkspace({
                   <p className="node-working">
                     <LoaderCircle size={13} className="spin" />
                     {run.status === 'preparing'
-                      ? 'Selecting task branch and recording run snapshot…'
+                      ? 'Preparing the agent worktree and recording its snapshot…'
                       : run.status === 'testing'
                         ? 'Running the configured checks…'
                         : run.status === 'stopping'
@@ -616,8 +611,8 @@ export function NodeWorkspace({
                     'Set a test command in Project settings for future attempts.'}
                 </code>
                 <p className="node-limit-note">
-                  The saved project test command runs locally in this task
-                  project directory after a successful Codex turn. Output is
+                  The saved project test command runs in this agent’s isolated
+                  workspace after a successful turn. Output is
                   retained up to 64 KB; timeout is two minutes.
                 </p>
                 <pre className="node-test-output">
@@ -627,6 +622,10 @@ export function NodeWorkspace({
                       : 'No output.')}
                   {selected.tests.truncated ? '\n[output truncated]' : ''}
                 </pre>
+                {selected.integrationTests && <>
+                  <h3>Combined result checks: {selected.integrationTests.status}</h3>
+                  <pre className="node-test-output">{selected.integrationTests.output || 'No output.'}</pre>
+                </>}
               </>
             ) : (
               <div className="node-empty">
@@ -650,37 +649,19 @@ export function NodeWorkspace({
       <footer className="node-workspace-footer">
         <div className="node-worktree-path">
           <GitBranch size={13} />
-          <span title={graph.project.repoPath}>
+          <span title={snapshot?.worktree?.path ?? graph.project.repoPath}>
             {snapshot?.worktree?.branch ??
-              'A readable task branch will be created'}{' '}
-            · {graph.project.repoPath}
+              'An isolated agent workspace will be created'}{' '}
+            · {snapshot?.worktree?.path ?? graph.project.repoPath}
           </span>
-          {snapshot?.worktree && (
-            <button
-              className="icon-button"
-              disabled={pending}
-              onClick={() =>
-                void act(() =>
-                  executionAction((api) =>
-                    api.openWorktree({
-                      projectId: graph.project.id,
-                      taskId: graph.task.id,
-                    }),
-                  ),
-                )
-              }
-              aria-label="Open project folder"
-            >
-              <FolderOpen size={13} /> Open folder
-            </button>
-          )}
+          <TaskIdeButton identity={identity} />
           {snapshot?.worktree && (
             <button
               className="icon-button"
               onClick={() =>
-                void navigator.clipboard.writeText(graph.project.repoPath)
+                void navigator.clipboard.writeText(snapshot?.worktree?.path ?? graph.project.repoPath)
               }
-              aria-label="Copy project directory"
+              aria-label="Copy agent workspace path"
             >
               Copy path
             </button>
@@ -781,6 +762,7 @@ function RunSnapshot({ run }: { run: NodeRun }) {
               worktree: run.worktree,
               before: run.before,
               after: run.changes?.after,
+              combinedTaskResult: run.taskResult,
             },
             null,
             2,

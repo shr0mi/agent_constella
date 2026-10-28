@@ -75,6 +75,7 @@ export interface WorkflowRecord extends GraphIdentity {
   integrationHistory?: IntegrationPlan[]
 }
 export interface WorkflowSummary extends GraphIdentity {
+  running?: number
   phase: WorkflowPhase
   scheduling?: WorkflowRecord['scheduling']
   started: boolean
@@ -182,6 +183,7 @@ export function summarizeWorkflow(record: WorkflowRecord): WorkflowSummary {
     phase: record.phase,
     scheduling: record.scheduling,
     started: !!record.startedAt,
+    running: nodes.filter((node) => node.status === 'running').length,
     accepted: required.filter(
       (node) => node.status === 'completed' && node.acceptanceId,
     ).length,

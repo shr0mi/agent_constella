@@ -46,6 +46,7 @@ const bridge: ConstellaBridge = {
     },
   },
   execution: {
+    openInIde: (input) => ipcRenderer.invoke(channels.taskOpenIde, input),
     getTask: (input) => ipcRenderer.invoke(channels.taskExecution, input),
     getReview: (input) => ipcRenderer.invoke(channels.taskReview, input),
     checkoutTask: (input) => ipcRenderer.invoke(channels.taskCheckout, input),
