@@ -280,6 +280,7 @@ else {
           window.webContents.send(channels.catalogChanged)
       })
       handle(channels.workspaceSnapshot, () => workspace.getSnapshot())
+      handle(channels.projectOpenIde, (input) => workspace.openInIde(input))
       handle(channels.chooseRepository, async () => {
         const selection = await dialog.showOpenDialog(window!, {
           title: 'Open a project folder',

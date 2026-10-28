@@ -16,6 +16,7 @@ export const channels = {
   reset: 'constella:reset',
   updated: 'constella:updated',
   workspaceSnapshot: 'constella:workspace:snapshot',
+  projectOpenIde: 'constella:workspace:open-ide',
   chooseRepository: 'constella:workspace:choose-repository',
   chooseNewProject: 'constella:workspace:choose-new-project',
   updateProject: 'constella:workspace:update-project',

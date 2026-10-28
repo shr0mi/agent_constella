@@ -33,7 +33,7 @@ import type { WorkflowSummary } from '../../shared/workflow'
 import { refreshDiagnostics, useAppStore } from './store'
 import { Modal } from './components/Modal'
 import { ManagerChat } from './ManagerChat'
-import { TaskIdeButton } from './TaskReview'
+import { ProjectIdeButton, TaskIdeButton } from './TaskReview'
 import {
   refreshWorkspace,
   useWorkspaceStore,
@@ -397,6 +397,7 @@ export function ProjectBoardPage() {
         </div>
         <div className="heading-actions">
           <ManagerChat projectId={project.id} taskId={null} />
+          <ProjectIdeButton projectId={project.id} />
           <button
             className="button secondary"
             onClick={() => setSettings(true)}
@@ -587,7 +588,6 @@ export function ProjectBoardPage() {
                           ).join(', ')}
                         </p>
                       )}
-                      <TaskIdeButton identity={{ projectId: project.id, taskId: task.id }} />
                       <div className="task-card-actions">
                         <Link
                           className="task-graph-link"
@@ -659,6 +659,11 @@ export function ProjectBoardPage() {
                             </option>
                           ))}
                         </select>
+                        <TaskIdeButton
+                          identity={{ projectId: project.id, taskId: task.id }}
+                          iconOnly
+                          label={`Open ${task.title} in IDE`}
+                        />
                         <button
                           className="icon-button task-archive"
                           aria-label={`Archive ${task.title}`}

@@ -116,6 +116,7 @@ export interface ProjectBoard {
 }
 
 export interface WorkspaceBridge {
+  openInIde(input: { projectId: string }): Promise<Result<void>>
   getSnapshot(): Promise<Result<WorkspaceSnapshot>>
   chooseRepository(): Promise<Result<Project | null>>
   chooseNewProject(): Promise<Result<Project | null>>

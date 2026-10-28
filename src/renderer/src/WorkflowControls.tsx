@@ -15,7 +15,7 @@ import { workflowStatusLabel } from '../../shared/workflow'
 import { workflowAction } from './execution-store'
 import { useAppStore } from './store'
 import { Modal } from './components/Modal'
-import { TaskReviewButton } from './TaskReview'
+import { TaskIdeButton, TaskReviewButton } from './TaskReview'
 
 export function WorkflowControls({
   workflow,
@@ -96,6 +96,7 @@ export function WorkflowControls({
           </div>
         </div>
         <div className="workflow-control-actions">
+          <TaskIdeButton identity={identity} />
           <TaskReviewButton identity={identity} available={worktreeReady} />
           {issue ? (
             <button

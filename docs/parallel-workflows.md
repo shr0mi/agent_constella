@@ -34,7 +34,7 @@ The checks described above verify agent results and their combination inside the
 
 Project settings stores an IDE executable with optional arguments, for example `code --new-window` or `zed`. Quoted executable paths are supported. Open in IDE appends the workspace path as a literal argument with no shell expansion. Errors explain how to configure the launcher. Saving settings never starts it.
 
-Task-card and review buttons open the combined workspace, creating it if necessary. Node conversations open that agent’s workspace after its first run; before then they open the task workspace. The original project path and task workspace path are shown separately. Development commands are context/copyable commands and are not automatically launched.
+The project board’s Open in IDE button opens the original project location. The quiet `</>` icon in a task card’s bottom bar and the full buttons on its graph/review page open the combined task workspace, creating it if necessary. Node conversations open that agent’s workspace after its first run; before then they open the task workspace. The original project path and task workspace path are shown separately. Development commands are context/copyable commands and are not automatically launched.
 
 Fresh worktrees contain committed files only. Dependencies, ignored environment files, and generated local configuration must be prepared inside them. There is no automatic dependency installation or copying of ignored files. Worktrees remain on disk after archive or project deletion so unfinished work is recoverable.
 

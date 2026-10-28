@@ -1,14 +1,45 @@
 import { useEffect, useState } from 'react'
-import { Code, Copy, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react'
+import { CodeXml, Copy, FolderOpen, LoaderCircle, RefreshCw } from 'lucide-react'
 import type { GraphIdentity } from '../../shared/graph'
 import type { TaskReviewContext } from '../../shared/execution'
 import { executionAction } from './execution-store'
+import { workspaceAction } from './workspace-store'
 import { Modal } from './components/Modal'
 
 export function TaskIdeButton({
   identity,
+  iconOnly = false,
+  label = 'Open task workspace in IDE',
 }: {
   identity: GraphIdentity & { nodeId?: string }
+  iconOnly?: boolean
+  label?: string
+}) {
+  return (
+    <IdeButton
+      onOpen={() => executionAction((api) => api.openInIde(identity))}
+      iconOnly={iconOnly}
+      label={label}
+      title="Open this workspace using the IDE command in Project settings"
+    />
+  )
+}
+
+export function ProjectIdeButton({ projectId }: { projectId: string }) {
+  return (
+    <IdeButton
+      onOpen={() => workspaceAction((api) => api.openInIde({ projectId }))}
+      label="Open project in IDE"
+      title="Open the original project folder in your IDE"
+    />
+  )
+}
+
+function IdeButton({ onOpen, iconOnly = false, label, title }: {
+  onOpen: () => Promise<unknown>
+  iconOnly?: boolean
+  label: string
+  title: string
 }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -16,7 +47,7 @@ export function TaskIdeButton({
     setPending(true)
     setError('')
     try {
-      await executionAction((api) => api.openInIde(identity))
+      await onOpen()
     } catch (error) {
       setError(String(error))
     } finally {
@@ -26,19 +57,20 @@ export function TaskIdeButton({
   return (
     <>
       <button
-        className="button secondary"
+        className={iconOnly ? 'icon-button' : 'button secondary'}
         disabled={pending}
-        title="Open this workspace using the IDE command in Project settings"
+        aria-label={label}
+        title={error || title}
         onClick={() => void open()}
       >
         {pending ? (
           <LoaderCircle size={13} className="spin" />
         ) : (
-          <Code size={13} />
+          <CodeXml size={iconOnly ? 14 : 13} />
         )}
-        Open in IDE
+        {!iconOnly && 'Open in IDE'}
       </button>
-      {error && <small className="integration-error" role="alert">{error}</small>}
+      {error && !iconOnly && <small className="integration-error" role="alert">{error}</small>}
     </>
   )
 }

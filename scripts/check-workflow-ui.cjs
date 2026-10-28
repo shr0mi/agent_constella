@@ -24,6 +24,7 @@ let window,
   database,
   openedProjectFolders = 0,
   openedIdePaths = [],
+  openedProjectIdePaths = [],
   taskReadRevision = 0,
   ending = false
 const deadline = setTimeout(() => {
@@ -255,6 +256,10 @@ app
     handle(channels.state, () => state)
     handle(channels.diagnostics, () => diagnostics)
     handle(channels.workspaceSnapshot, () => workspace.getSnapshot())
+    handle(channels.projectOpenIde, (input) => workspace.openInIde(input, async (command, path) => {
+      assert.equal(command, 'code --new-window')
+      openedProjectIdePaths.push(path)
+    }))
     handle(channels.updateTask, (input) => workspace.updateTask(input))
     handle(channels.catalogSnapshot, (input) => catalog.getSnapshot(input))
     handle(channels.graphGet, (input) => graphs.get(input))
@@ -591,6 +596,7 @@ app
       ),
       true,
     )
+    assert.equal(await run('Array.from(document.querySelectorAll(".workflow-control-actions button")).find(button=>button.getAttribute("aria-label")==="Open task workspace in IDE").textContent.trim()'), 'Open in IDE')
     await click('Integrate branch')
     await until('document.querySelector(".integration-dialog")?.open')
     await click('Preview integration')
@@ -620,6 +626,16 @@ app
     const dependent = workspace.createTask({ projectId: project.id, title: 'Use the accepted plan', description: 'Implement the next step.' })
     await run(`location.hash=${JSON.stringify(`/projects/${project.id}`)}`)
     await until('document.querySelectorAll(".task-open").length===2')
+    await click('Open in IDE')
+    await until('!Array.from(document.querySelectorAll(".heading-actions button")).find(button=>button.getAttribute("aria-label")==="Open project in IDE").disabled')
+    assert.deepEqual(openedProjectIdePaths, [project.repoPath])
+    assert.equal(await run('Array.from(document.querySelectorAll(".task-card-actions button[aria-label]")).filter(button=>button.getAttribute("aria-label").endsWith(" in IDE")&&button.classList.contains("icon-button")&&button.textContent.trim()==="").length'), 2)
+    assert.equal(await run('Array.from(document.querySelectorAll(".task-card > button")).some(button=>button.textContent.includes("Open in IDE"))'), false)
+    await run('Array.from(document.querySelectorAll(".task-card-actions button[aria-label]")).find(button=>button.getAttribute("aria-label")==="Open Build a reviewed feature in IDE").click()')
+    await until('Array.from(document.querySelectorAll(".task-card-actions button[aria-label]")).filter(button=>button.getAttribute("aria-label").endsWith(" in IDE")).every(button=>!button.disabled)')
+    assert.equal(openedIdePaths.at(-1), reviewContext.path)
+    if (process.env.CONSTELLA_WORKFLOW_SCREENSHOT)
+      writeFileSync(`${process.env.CONSTELLA_WORKFLOW_SCREENSHOT}.board.png`, (await window.webContents.capturePage()).toPNG())
     await run('Array.from(document.querySelectorAll(".task-open")).find(button=>button.textContent.includes("Use the accepted plan")).click()')
     await until('!!document.querySelector("#required-files") && !!document.querySelector(".dependency-choice input")')
     await run('document.querySelector(".dependency-choice input").click()')
@@ -649,6 +665,8 @@ app
           humanReview: true,
           isolatedTaskWorkspace: true,
           opensConfiguredIde: true,
+          opensOriginalProjectInIde: true,
+          taskCardIdeIcons: true,
           readableBranch: true,
           boardDoingToDone: true,
           explicitIntegration: true,

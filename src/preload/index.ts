@@ -100,6 +100,7 @@ const bridge: ConstellaBridge = {
     },
   },
   workspace: {
+    openInIde: (input) => ipcRenderer.invoke(channels.projectOpenIde, input),
     getSnapshot: () => ipcRenderer.invoke(channels.workspaceSnapshot),
     chooseRepository: () => ipcRenderer.invoke(channels.chooseRepository),
     chooseNewProject: () => ipcRenderer.invoke(channels.chooseNewProject),

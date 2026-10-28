@@ -53,6 +53,33 @@ const identity = (task: Task) => ({
 })
 
 describe('persistent project application service', () => {
+  it('opens the saved original project location with its IDE command without changing workspace state', async () => {
+    const f = fixture()
+    const project = await f.service.openRepository({ path: f.repository('ide-project') })
+    const launch = vi.fn().mockResolvedValue(undefined)
+    await expect(f.service.openInIde({ projectId: project.id }, launch))
+      .rejects.toMatchObject({ code: 'IDE_COMMAND' })
+    expect(launch).not.toHaveBeenCalled()
+    f.service.updateProject({
+      projectId: project.id,
+      expectedRevision: project.revision,
+      name: project.name,
+      description: '',
+      instructions: '',
+      devCommand: '',
+      testCommand: '',
+      ideCommand: 'zed --new',
+    })
+    const before = f.service.getSnapshot()
+    await f.service.openInIde({ projectId: project.id }, launch)
+    expect(launch).toHaveBeenCalledExactlyOnceWith('zed --new', project.repoPath)
+    expect(f.service.getSnapshot()).toEqual(before)
+    await expect(f.service.openInIde({ projectId: project.id, path: '/tmp/other' }, launch))
+      .rejects.toThrow()
+    await expect(f.service.openInIde({ projectId: randomUUID() }, launch))
+      .rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' })
+    expect(launch).toHaveBeenCalledOnce()
+  })
   it('validates project default model/effort and preserves defaults when older callers omit them', async () => {
     const f = fixture()
     const service = new WorkspaceService(f.database, () => [

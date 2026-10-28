@@ -21,6 +21,7 @@ import { projects, tasks, workspaceMeta, workflows } from '../db/schema'
 import { summarizeWorkflow } from '../../shared/workflow'
 import { ApplicationError } from './errors'
 import { recordChange } from './change-log'
+import { ideArguments, launchIde } from './ide-launcher'
 import type { ModelOption } from '../../shared/contracts'
 import {
   createProjectFolder,
@@ -43,6 +44,13 @@ export class WorkspaceService {
   ) {}
   private get db() {
     return this.database.db
+  }
+
+  async openInIde(raw: unknown, launch: typeof launchIde = launchIde): Promise<void> {
+    const { projectId } = projectIdSchema.parse(raw)
+    const project = this.project(projectId)
+    ideArguments(project.ideCommand)
+    await launch(project.ideCommand, project.repoPath)
   }
 
   getSnapshot(): WorkspaceSnapshot {

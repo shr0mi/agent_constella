@@ -70,6 +70,10 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(removeListener).toHaveBeenCalledWith(channel, listener)
   await bridge.workspace.getSnapshot()
   expect(invoke).toHaveBeenLastCalledWith('constella:workspace:snapshot')
+  await bridge.workspace.openInIde({ projectId: 'project' })
+  expect(invoke).toHaveBeenLastCalledWith('constella:workspace:open-ide', {
+    projectId: 'project',
+  })
   await bridge.workspace.chooseNewProject()
   expect(invoke).toHaveBeenLastCalledWith(
     'constella:workspace:choose-new-project',
