@@ -68,7 +68,7 @@ const kinds = {
   start: { label: 'Start', icon: GitBranch, color: '#8accae' },
   agent: { label: 'Agent task', icon: Bot, color: '#b7a0ed' },
   review: { label: 'Human review', icon: UserRound, color: '#e2bc85' },
-  end: { label: 'End', icon: CircleStop, color: '#8db8dd' },
+  end: { label: 'End', icon: CircleStop, color: '#d4d4d8' },
 }
 type CanvasNode = Node<
   {
@@ -370,12 +370,18 @@ function GraphEditor({
     selected: edge.id === selectedEdge,
     type: 'smoothstep',
     markerEnd: { type: MarkerType.ArrowClosed },
+    className:
+      workflow?.nodes[edge.source]?.status === 'running'
+        ? 'edge-flow-active'
+        : undefined,
     style:
       workflow?.nodes[edge.source]?.status === 'completed'
-        ? { stroke: '#70bf95' }
+        ? { stroke: '#10b981' }
         : workflow?.nodes[edge.source]?.status === 'failed'
-          ? { stroke: '#dc7b7b', strokeDasharray: '5 4' }
-          : undefined,
+          ? { stroke: '#ef4444', strokeDasharray: '5 4' }
+          : workflow?.nodes[edge.source]?.status === 'running'
+            ? { stroke: '#a1a1aa' }
+            : { stroke: '#a1a1aa' },
     ariaLabel: `Connection from ${draft?.nodes.find((node) => node.id === edge.source)?.data.title} to ${draft?.nodes.find((node) => node.id === edge.target)?.data.title}`,
   }))
   function edit(update: (document: GraphDocument) => GraphDocument) {
@@ -745,7 +751,7 @@ function GraphEditor({
               }}
               proOptions={{ hideAttribution: false }}
             >
-              <Background color="#34303e" gap={22} size={1} />
+              <Background color="rgba(255,255,255,0.16)" gap={24} size={1.2} />
               <Controls showInteractive={false} />
               <MiniMap<CanvasNode>
                 nodeColor={(node) =>

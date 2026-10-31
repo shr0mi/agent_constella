@@ -17,7 +17,7 @@ export default function NodeDiff({ diff }: { diff: FileDiff }) {
       renderSideBySide: true,
       automaticLayout: true,
       minimap: { enabled: false },
-      fontSize: 11,
+      fontSize: 12,
       scrollBeyondLastLine: false,
       renderOverviewRuler: false,
     })

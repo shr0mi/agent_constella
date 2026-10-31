@@ -30,6 +30,7 @@ import {
 import type { Project, Task, TaskStatus } from '../../shared/workspace'
 import type { Effort, Failure } from '../../shared/contracts'
 import { refreshDiagnostics, useAppStore } from './store'
+import { WorkflowPipeline } from './components/WorkflowPipeline'
 import { Modal } from './components/Modal'
 import { ManagerChat } from './ManagerChat'
 import {
@@ -44,10 +45,17 @@ const columns: { id: TaskStatus; title: string; caption: string }[] = [
   { id: 'done', title: 'Done', caption: 'Finished and accounted for' },
 ]
 
-function RepositoryButton({ create = false }: { create?: boolean }) {
+function RepositoryButton({
+  create = false,
+  prominent,
+}: {
+  create?: boolean
+  prominent?: boolean
+}) {
   const navigate = useNavigate()
   const pending = useWorkspaceStore((state) => state.pending)
   const [opening, setOpening] = useState(false)
+  const primary = prominent ?? create
   async function open() {
     setOpening(true)
     try {
@@ -63,7 +71,7 @@ function RepositoryButton({ create = false }: { create?: boolean }) {
   }
   return (
     <button
-      className={`button ${create ? 'primary' : 'secondary'}`}
+      className={`button ${primary ? 'primary' : 'secondary'}`}
       title={
         create
           ? 'Create a new project folder and initialize Git'
@@ -84,11 +92,11 @@ function RepositoryButton({ create = false }: { create?: boolean }) {
   )
 }
 
-function ProjectActions() {
+function ProjectActions({ emphasizeOpen = false }: { emphasizeOpen?: boolean }) {
   return (
     <div className="project-entry-actions">
-      <RepositoryButton />
-      <RepositoryButton create />
+      <RepositoryButton prominent={emphasizeOpen || undefined} />
+      <RepositoryButton create prominent={emphasizeOpen ? false : undefined} />
     </div>
   )
 }
@@ -103,6 +111,7 @@ export function ProjectsPage() {
       .includes(search.toLowerCase()),
   )
   const tasks = snapshot?.tasks.filter((task) => !task.archivedAt) ?? []
+  const doneTasks = tasks.filter((task) => task.status === 'done').length
   return (
     <main className="projects-page">
       <div className="page-heading">
@@ -114,30 +123,30 @@ export function ProjectsPage() {
           <h1>Your projects</h1>
           <p>A home for each repository. A clear view of the work ahead.</p>
         </div>
-        <ProjectActions />
+        {projects.length > 0 && <ProjectActions />}
       </div>
-      <div className="project-overview">
-        <div>
-          <FolderGit2 size={17} />
-          <strong>{projects.length}</strong>
-          <span>{projects.length === 1 ? 'repository' : 'repositories'}</span>
-        </div>
-        <div>
-          <Layers3 size={17} />
-          <strong>{tasks.length}</strong>
-          <span>active tasks</span>
-        </div>
-        <div>
-          <CheckCheck size={17} />
-          <strong>
-            {tasks.filter((task) => task.status === 'done').length}
-          </strong>
-          <span>completed</span>
-        </div>
-        <span className="local-storage-tag">
-          <span className="status-dot green" />
-          Saved on this device
-        </span>
+      <div className="bench-bento">
+        <article>
+          <div>
+            <span>Repositories</span>
+            <strong>{projects.length}</strong>
+          </div>
+          <FolderGit2 size={18} />
+        </article>
+        <article>
+          <div>
+            <span>Active tasks</span>
+            <strong>{tasks.length - doneTasks}</strong>
+          </div>
+          <Layers3 size={18} />
+        </article>
+        <article>
+          <div>
+            <span>Completed</span>
+            <strong>{doneTasks}</strong>
+          </div>
+          <CheckCheck size={18} />
+        </article>
       </div>
       <div className="projects-toolbar">
         <span>
@@ -167,20 +176,16 @@ export function ProjectsPage() {
           </button>
         </div>
       ) : projects.length === 0 ? (
-        <div className="workspace-empty first-project">
-          <div className="empty-project-icon">
-            <FolderGit2 size={32} />
+        <div className="project-hero">
+          <WorkflowPipeline />
+          <div className="project-hero-copy">
+            <h2>Give your next idea a workspace</h2>
+            <p>
+              Open an existing Git repository or create a new one. Project
+              files stay in place. Boards and settings are saved locally.
+            </p>
+            <ProjectActions />
           </div>
-          <span className="eyebrow">START WITH A PROJECT</span>
-          <h2>Give your next idea a workspace.</h2>
-          <p>
-            Create a project folder or open one you already have. We’ll set up
-            Git and its board so you can start capturing the work.
-          </p>
-          <ProjectActions />
-          <span className="empty-footnote">
-            Project files stay in place. Boards and settings are saved locally.
-          </span>
         </div>
       ) : (
         <div className="project-cards">

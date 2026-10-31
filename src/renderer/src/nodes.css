@@ -8,8 +8,8 @@
   margin-top: 8px;
 }
 .graph-node-work p {
-  color: #887495;
-  font-size: 9px;
+  color: #94a3b8;
+  font-size: 10px;
   line-height: 1.7;
   margin-top: 8px;
 }
@@ -32,8 +32,8 @@
   align-items: center;
   gap: 14px;
   padding: 13px 20px;
-  background: #211b28;
-  border-bottom: 1px solid #392c43;
+  background: #0a0b0f;
+  border-bottom: 1px solid #0a0b0f;
 }
 .node-workspace-bar > div {
   display: flex;
@@ -41,21 +41,21 @@
   gap: 10px;
 }
 .node-workspace-bar strong {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 .node-workspace-bar > div > span:last-child {
-  color: #8d789c;
-  font-size: 9px;
+  color: #94a3b8;
+  font-size: 10px;
 }
 .node-workspace-bar .button {
-  font-size: 10px;
+  font-size: 11px;
   padding: 7px 10px;
 }
 .node-tabs {
   display: flex;
   gap: 6px;
-  border-bottom: 1px solid #392c43;
+  border-bottom: 1px solid #0a0b0f;
   padding: 0 16px;
   min-height: 45px;
   align-items: center;
@@ -65,26 +65,26 @@
   gap: 6px;
   align-items: center;
   padding: 14px 8px 12px;
-  font-size: 10px;
-  color: #9c84ae;
+  font-size: 11px;
+  color: #94a3b8;
   background: transparent;
   text-transform: capitalize;
   border-bottom: 2px solid transparent;
 }
 .node-tabs > button.selected {
-  color: #d1b7ed;
-  border-color: #b797db;
+  color: #f4f6fb;
+  border-color: #8b5cf6;
 }
 .node-tabs > span {
   flex: 1;
 }
 .node-tabs select {
-  background: #241c2d;
-  border: 1px solid #4b355b;
+  background: #0a0b0f;
+  border: 1px solid #8b5cf6;
   border-radius: 5px;
-  color: #c3a7d6;
+  color: #94a3b8;
   padding: 6px 9px;
-  font-size: 10px;
+  font-size: 11px;
   max-width: 230px;
 }
 .node-workspace-content {
@@ -108,8 +108,8 @@
   justify-content: center;
   padding: 28px;
   gap: 16px;
-  color: #a28bb3;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 13px;
   text-align: center;
   line-height: 1.9;
   height: 100%;
@@ -118,21 +118,21 @@
   max-width: 500px;
 }
 .node-empty h3 {
-  color: #d5c1e5;
-  font-size: 20px;
+  color: #f4f6fb;
+  font-size: 22px;
   font-weight: 500;
 }
 .node-seed-prompt {
   white-space: pre-wrap;
-  border: 1px solid #4b3459;
-  background: #2b2034;
+  border: 1px solid #0a0b0f;
+  background: #0a0b0f;
   border-radius: 6px;
   padding: 15px 20px;
-  color: #c4abd6;
+  color: #94a3b8;
   max-height: 140px;
   overflow: auto;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
 }
 .node-turn {
   margin-bottom: 27px;
@@ -143,13 +143,13 @@
   justify-content: space-between;
   padding-bottom: 12px;
   margin-bottom: 17px;
-  border-bottom: 1px solid #392c43;
-  font-size: 8px;
+  border-bottom: 1px solid #0a0b0f;
+  font-size: 9px;
   letter-spacing: 1px;
-  color: #a484b8;
+  color: #94a3b8;
 }
 .node-turn > header span {
-  color: #786387;
+  color: #94a3b8;
   letter-spacing: 0;
 }
 .node-user-message,
@@ -161,26 +161,26 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  color: #ceafdf;
+  color: #f4f6fb;
   margin-bottom: 9px;
 }
 .node-user-message p,
 .node-agent-message p {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  color: #b5a0c4;
+  font-size: 13px;
+  color: #94a3b8;
   line-height: 1.9;
 }
 .node-agent-message p {
-  color: #e0d1eb;
+  color: #f4f6fb;
 }
 .node-turn-tools details,
 .node-activity {
-  background: #251d2c;
-  border: 1px solid #44314f;
+  background: #0a0b0f;
+  border: 1px solid #0a0b0f;
   border-radius: 5px;
   margin: 7px 0;
 }
@@ -190,8 +190,8 @@
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
-  font-size: 10px;
-  color: #b298c5;
+  font-size: 11px;
+  color: #94a3b8;
   cursor: pointer;
 }
 .node-turn-tools summary > span {
@@ -203,15 +203,15 @@
 .node-turn-tools summary > small,
 .node-activity summary > span {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 10px;
   white-space: nowrap;
 }
 .node-turn-tools pre,
 .node-activity pre {
-  font-size: 10px;
-  color: #b49bc5;
+  font-size: 11px;
+  color: #94a3b8;
   padding: 12px;
-  border-top: 1px solid #44314f;
+  border-top: 1px solid #0a0b0f;
   max-height: 240px;
   overflow: auto;
 }
@@ -220,16 +220,16 @@
   gap: 8px;
   align-items: center;
   margin: 14px 0;
-  color: #ad8ec7;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 .node-turn-result {
   display: flex;
   gap: 16px;
   align-items: center;
   margin-top: 13px;
-  color: #92b4a3;
-  font-size: 9px;
+  color: #10b981;
+  font-size: 10px;
 }
 .node-turn-result button {
   display: flex;
@@ -237,22 +237,22 @@
   align-items: center;
   margin-left: auto;
   padding: 5px 8px;
-  background: #2b2233;
-  border: 1px solid #4b3659;
+  background: #0a0b0f;
+  border: 1px solid #8b5cf6;
   border-radius: 4px;
-  color: #c1a1d9;
-  font-size: 10px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 .node-failure {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: #44282d66;
-  border: 1px solid #88535b66;
+  background: #45121666;
+  border: 1px solid #45121666;
   border-radius: 5px;
   padding: 12px 14px;
   margin: 10px 18px;
-  color: #d7a0a3;
+  color: #ef4444;
 }
 .node-failure > div {
   min-width: 0;
@@ -262,27 +262,27 @@
   margin-top: 2px;
 }
 .node-failure strong {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.5px;
 }
 .node-failure pre {
-  font-size: 10px;
+  font-size: 11px;
   margin: 6px 0;
   max-height: 110px;
   overflow: auto;
 }
 .node-failure p {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.8;
   color: #b38b96;
 }
 .node-context-note {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.7;
-  color: #c4a779;
-  background: #42322555;
+  color: #f59e0b;
+  background: #44280c55;
   padding: 9px 20px;
-  border-bottom: 1px solid #6a4c3455;
+  border-bottom: 1px solid #44280c55;
 }
 .node-run-blockers {
   max-height: 160px;
@@ -294,12 +294,12 @@
   padding-left: 17px;
 }
 .node-run-blockers .button {
-  font-size: 9px;
+  font-size: 10px;
   padding: 5px 8px;
 }
 .node-limit-note {
-  font-size: 9px;
-  color: #80698f;
+  font-size: 10px;
+  color: #94a3b8;
   line-height: 1.8;
   margin: 0 0 14px;
 }
@@ -312,13 +312,13 @@
   width: 225px;
   flex-shrink: 0;
   padding: 15px 10px;
-  border-right: 1px solid #3a2b46;
+  border-right: 1px solid #0a0b0f;
   overflow: auto;
-  background: #1c1721;
+  background: #0a0b0f;
 }
 .node-file-list > p {
-  color: #8d759e;
-  font-size: 9px;
+  color: #94a3b8;
+  font-size: 10px;
   padding: 0 7px;
   margin-bottom: 12px;
   line-height: 1.8;
@@ -332,16 +332,16 @@
   background: transparent;
   border: 1px solid transparent;
   padding: 8px;
-  color: #baa1cf;
+  color: #94a3b8;
   border-radius: 4px;
   font: 10px/1.7 monospace;
 }
 .node-file-list > button.selected {
-  background: #302339;
-  border-color: #553967;
+  background: #0a0b0f;
+  border-color: #8b5cf6;
 }
 .node-file-list > button > span {
-  color: #97c7aa;
+  color: #10b981;
 }
 .node-diff-panel {
   display: flex;
@@ -349,7 +349,7 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  background: #1e1e1e;
+  background: #0a0b0f;
 }
 .node-monaco-diff {
   flex: 1;
@@ -361,95 +361,95 @@
   gap: 10px;
   justify-content: space-between;
   padding: 11px 14px;
-  border-bottom: 1px solid #38313c;
-  font-size: 10px;
+  border-bottom: 1px solid #0a0b0f;
+  font-size: 11px;
 }
 .node-diff-panel > header > strong {
   font-weight: 450;
   overflow-wrap: anywhere;
 }
 .node-diff-panel > header > span {
-  font-size: 9px;
-  color: #92829c;
+  font-size: 10px;
+  color: #94a3b8;
 }
 .node-check-heading {
   display: flex;
   justify-content: space-between;
-  color: #c4add6;
-  font-size: 12px;
+  color: #94a3b8;
+  font-size: 13px;
   margin-bottom: 15px;
 }
 .node-command {
   display: block;
   padding: 12px;
-  background: #251d2c;
-  border: 1px solid #493252;
+  background: #0a0b0f;
+  border: 1px solid #0a0b0f;
   border-radius: 5px;
-  font-size: 11px;
-  color: #c7abd8;
+  font-size: 12px;
+  color: #94a3b8;
   white-space: pre-wrap;
   margin-bottom: 14px;
 }
 .node-test-output {
-  border: 1px solid #3d2c47;
+  border: 1px solid #0a0b0f;
   border-radius: 5px;
-  background: #161219;
+  background: #0a0b0f;
   padding: 17px;
-  color: #b6a2c5;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
   min-height: 100px;
 }
 .node-raw-events {
   margin-top: 22px;
-  color: #9b7db1;
-  font-size: 10px;
+  color: #94a3b8;
+  font-size: 11px;
 }
 .node-raw-events summary {
   cursor: pointer;
 }
 .node-raw-events pre {
   padding: 10px;
-  border-bottom: 1px solid #3d2c47;
-  font-size: 9px;
+  border-bottom: 1px solid #0a0b0f;
+  font-size: 10px;
 }
 .node-snapshot h3 {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
   margin-bottom: 12px;
 }
 .node-snapshot > p {
-  color: #937ca3;
+  color: #94a3b8;
   font: 10px/1.8 monospace;
   margin-bottom: 8px;
 }
 .node-snapshot details {
   margin-top: 18px;
-  color: #b89ccc;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 .node-snapshot summary {
   cursor: pointer;
 }
 .node-snapshot pre {
-  font-size: 10px;
-  color: #ab91be;
+  font-size: 11px;
+  color: #94a3b8;
   padding: 13px;
-  background: #211926;
-  border: 1px solid #44304f;
+  background: #0a0b0f;
+  border: 1px solid #0a0b0f;
   border-radius: 5px;
   margin-top: 12px;
 }
 .node-workspace-footer {
-  border-top: 1px solid #392c43;
+  border-top: 1px solid #0a0b0f;
   padding: 12px 20px 10px;
-  background: #211a28;
+  background: #0a0b0f;
 }
 .node-worktree-path {
   display: flex;
   gap: 7px;
   align-items: center;
-  font-size: 9px;
-  color: #9175a4;
+  font-size: 10px;
+  color: #94a3b8;
   margin-bottom: 10px;
 }
 .node-worktree-path > span {
@@ -461,15 +461,15 @@
 .node-worktree-path button {
   margin-left: auto;
   white-space: nowrap;
-  font-size: 8px;
+  font-size: 9px;
 }
 .node-composer {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid #634978;
-  background: #2a2032;
+  border: 1px solid #8b5cf6;
+  background: #0a0b0f;
   border-radius: 7px;
 }
 .node-composer textarea {
@@ -478,18 +478,18 @@
   border: 0;
   outline: 0;
   resize: vertical;
-  font-size: 11px;
-  color: #e2cfee;
+  font-size: 12px;
+  color: #f4f6fb;
   line-height: 1.8;
   min-height: 40px;
   max-height: 140px;
 }
 .node-composer textarea::placeholder {
-  color: #92769e;
+  color: #94a3b8;
 }
 .node-workspace-footer > p {
   margin: 8px 0 0;
-  font-size: 8px;
+  font-size: 9px;
 }
 @media (max-width: 1100px) {
   .node-workspace-bar {

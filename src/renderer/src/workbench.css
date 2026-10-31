@@ -1,0 +1,305 @@
+:root {
+  color: #ffffff;
+  background: #0e0f14;
+  --muted: #8b5cf6;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #8b5cf6;
+  --surface: #15161e;
+  --violet: #8b5cf6;
+  --amber: #f59e0b;
+  --cyan: #8b5cf6;
+  --emerald: #10b981;
+  --danger: #ef4444;
+}
+
+.app-shell {
+  background: #0e0f14;
+}
+
+.sidebar {
+  background: #0e0f14;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.workspace-label {
+  background: rgba(14, 15, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.workspace-label:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar nav a {
+  border-left: 0;
+  border-radius: 6px;
+  color: #94a3b8;
+}
+
+.sidebar nav a:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #f4f6fb;
+}
+
+.sidebar nav a.active,
+.sidebar-bottom > a.active,
+.sidebar-projects a.active {
+  background: #1b1d28;
+  box-shadow: none;
+  color: #f4f6fb;
+}
+
+.app-main {
+  background: #0e0f14;
+  background-image: none;
+}
+
+.topbar {
+  background: #0e0f14;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.topbar strong {
+  color: #f4f6fb;
+}
+
+.button {
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.button.secondary {
+  background: #1b1d28;
+  border-color: #3f3f46;
+  color: #f4f6fb;
+}
+
+.button.secondary:hover {
+  border-color: #52525b;
+  background: #3f3f46;
+}
+
+.button.primary {
+  background: #1b1d28;
+  border: 1px solid #3f3f46;
+  color: #f4f6fb;
+  box-shadow: none;
+}
+
+.button.primary:hover {
+  background: #3f3f46;
+}
+
+.status-dot {
+  background: var(--amber);
+  box-shadow: none;
+  animation: none;
+}
+
+.status-dot.green {
+  background: var(--emerald);
+  box-shadow: none;
+  animation: none;
+}
+
+.local-indicator {
+  font-family: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  letter-spacing: 0.01em;
+}
+
+.project-card,
+.task-card,
+.catalog-card,
+.conversation-panel,
+.config-card,
+.kanban-column,
+.workspace-modal {
+  background: #15161e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+.project-card:hover,
+.task-card:hover,
+.catalog-card:hover {
+  border-color: #3f3f46;
+}
+
+.project-card-path,
+.board-repo-path,
+.catalog-folder,
+.inline-command,
+code,
+.catalog-scope-chip,
+.profile-card-tags span {
+  font-family: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+}
+
+.project-card-path,
+.board-repo-path {
+  color: var(--cyan);
+}
+
+.workspace-empty.first-project {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(14, 15, 20, 0.72);
+  padding: 36px 32px;
+}
+
+.orbital {
+  position: absolute;
+  right: 8%;
+  top: 18%;
+  width: 180px;
+  height: 180px;
+  pointer-events: none;
+}
+
+.orbital span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 50%;
+}
+
+.orbital span:nth-child(2) {
+  inset: 22px;
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.orbital span:nth-child(3) {
+  inset: 48px;
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.orbital::after {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8b5cf6;
+  top: 18px;
+  left: 50%;
+  box-shadow: none;
+}
+
+.bench-metrics {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.bench-metrics div {
+  min-width: 120px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(10, 11, 15, 0.55);
+  text-align: left;
+}
+
+.bench-metrics span {
+  display: block;
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bench-metrics strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 22px;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+}
+
+.workflow-node {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 2px;
+  background: rgba(14, 15, 20, 0.92);
+}
+
+.workflow-node.agent,
+.workflow-node.state-running {
+  border-left-color: #8b5cf6;
+}
+
+.workflow-node.review,
+.workflow-node.state-waiting-review,
+.workflow-node.state-awaiting-acceptance {
+  border-left-color: #f59e0b;
+}
+
+.workflow-node.start {
+  border-left-color: #8b5cf6;
+}
+
+.workflow-node.end,
+.workflow-node.state-completed {
+  border-left-color: #10b981;
+}
+
+.workflow-node.state-failed {
+  border-left-color: #ef4444;
+}
+
+.react-flow__edge.edge-flow-active .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+  animation: edge-flow 0.8s linear infinite;
+}
+
+.react-flow__controls {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.workflow-controls {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(14, 15, 20, 0.82);
+  backdrop-filter: blur(16px);
+}
+
+.workspace-modal {
+  border-radius: 8px;
+}
+
+.workspace-modal::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(18px);
+}
+
+.workspace-modal > header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.workspace-form textarea,
+.workspace-form input,
+.graph-settings textarea,
+.graph-settings input {
+  font-family: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+}
+
+@keyframes status-pulse {
+  70% {
+    box-shadow: none;
+  }
+}
+
+@keyframes edge-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}

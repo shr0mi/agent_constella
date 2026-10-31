@@ -5,13 +5,13 @@
   overflow: auto;
 }
 .catalog-page .page-heading h1 {
-  font-size: 26px;
+  font-size: 29px;
 }
 .catalog-scope-bar {
   display: flex;
   align-items: center;
   gap: 18px;
-  border-bottom: 1px solid #392e43;
+  border-bottom: 1px solid #0a0b0f;
   padding-bottom: 16px;
   margin-top: 30px;
   flex-wrap: wrap;
@@ -21,8 +21,8 @@
   align-items: center;
   gap: 5px;
   padding: 4px;
-  border: 1px solid #3f304b;
-  background: #1c1722;
+  border: 1px solid #0a0b0f;
+  background: #0a0b0f;
   border-radius: 7px;
 }
 .scope-tabs button {
@@ -31,21 +31,21 @@
   gap: 7px;
   border-radius: 4px;
   background: transparent;
-  color: #8e779f;
-  font-size: 11px;
+  color: #94a3b8;
+  font-size: 12px;
   padding: 8px 16px;
 }
 .scope-tabs button.selected {
-  background: #392944;
-  color: #d2b3ea;
+  background: #0a0b0f;
+  color: #f4f6fb;
 }
 .catalog-project-select {
   min-width: 180px;
   max-width: 230px;
 }
 .catalog-scope-caption {
-  font-size: 10px;
-  color: #8a7399;
+  font-size: 11px;
+  color: #94a3b8;
   margin-left: auto;
 }
 .catalog-toolbar {
@@ -56,16 +56,16 @@
   flex-wrap: wrap;
 }
 .catalog-toolbar > span:first-child {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 1px;
-  color: #8f75a2;
+  color: #94a3b8;
 }
 .catalog-toolbar > span:first-child small {
-  font-size: 8px;
-  background: #35253f;
+  font-size: 9px;
+  background: #0a0b0f;
   padding: 3px 5px;
   border-radius: 3px;
-  color: #b18fca;
+  color: #94a3b8;
   margin-left: 9px;
 }
 .catalog-toolbar > span:nth-child(2) {
@@ -75,11 +75,11 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 9px;
-  color: #8b729b;
+  font-size: 10px;
+  color: #94a3b8;
 }
 .catalog-show-removed input {
-  accent-color: #b294d0;
+  accent-color: #94a3b8;
   width: 12px;
   height: 12px;
 }
@@ -92,14 +92,14 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid #493350;
+  border: 1px solid #0a0b0f;
   border-radius: 9px;
-  background: #201724;
+  background: #0a0b0f;
   padding: 20px;
   transition: border-color 0.15s;
 }
 .catalog-card:hover {
-  border-color: #795389;
+  border-color: #3f3f46;
 }
 .catalog-card.removed {
   opacity: 0.65;
@@ -116,29 +116,29 @@
   place-items: center;
   width: 37px;
   height: 37px;
-  border: 1px solid #654273;
+  border: 1px solid #8b5cf6;
   border-radius: 9px;
-  background: #3d2848;
-  color: #c09add;
+  background: #0a0b0f;
+  color: #94a3b8;
 }
 .catalog-scope-chip {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.3px;
   padding: 4px 6px;
   border-radius: 4px;
-  background: #34223d;
-  color: #a880bb;
+  background: #0a0b0f;
+  color: #94a3b8;
 }
 .catalog-card h2 {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
-  color: #e0c7ec;
+  color: #f4f6fb;
   overflow-wrap: anywhere;
 }
 .catalog-card-description {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.9;
-  color: #aa8aba;
+  color: #94a3b8;
   margin: 10px 0 19px;
   min-height: 41px;
   display: -webkit-box;
@@ -149,8 +149,8 @@
 }
 .catalog-folder {
   display: block;
-  font-size: 8px;
-  color: #775a86;
+  font-size: 9px;
+  color: #94a3b8;
   line-height: 1.8;
   max-height: 45px;
   overflow: hidden;
@@ -161,22 +161,22 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  border-top: 1px solid #432c4a;
+  border-top: 1px solid #0a0b0f;
   padding-top: 13px;
   margin-top: auto;
 }
 .catalog-card-actions .button {
-  font-size: 9px;
+  font-size: 10px;
   padding: 7px 10px;
 }
 .catalog-remove {
   background: transparent;
-  color: #94729e;
+  color: #94a3b8;
   margin-left: auto;
 }
 .catalog-remove:hover {
-  color: #d6aecb;
-  background: #3a253c;
+  color: #94a3b8;
+  background: #0a0b0f;
 }
 .profile-card-tags {
   display: flex;
@@ -188,9 +188,9 @@
   display: flex;
   gap: 4px;
   align-items: center;
-  font-size: 8px;
-  color: #a17cb7;
-  border: 1px solid #4d3159;
+  font-size: 9px;
+  color: #94a3b8;
+  border: 1px solid #0a0b0f;
   border-radius: 4px;
   padding: 4px 6px;
   max-width: 100%;
@@ -200,8 +200,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #796184;
-  font-size: 9px;
+  color: #94a3b8;
+  font-size: 10px;
   line-height: 1.7;
   margin: 21px 0 5px;
 }
@@ -212,7 +212,7 @@
   min-height: 350px;
 }
 .catalog-empty > svg {
-  color: #a685bd;
+  color: #94a3b8;
 }
 .catalog-skill-selector {
   display: flex;
@@ -227,24 +227,24 @@
   align-items: flex-start !important;
   justify-content: initial !important;
   gap: 9px;
-  border: 1px solid #4a3155;
+  border: 1px solid #0a0b0f;
   border-radius: 6px;
-  background: #251a2c;
+  background: #0a0b0f;
   padding: 10px;
   margin: 0 !important;
   cursor: pointer;
   min-width: 0;
 }
 .catalog-skill-choice.checked {
-  border-color: #82618e;
-  background: #302039;
+  border-color: #8b5cf6;
+  background: #0a0b0f;
 }
 .catalog-skill-choice input {
   width: 12px !important;
   height: 12px;
   min-width: 12px;
   padding: 0 !important;
-  accent-color: #be96d5;
+  accent-color: #94a3b8;
   margin-top: 3px;
   flex-shrink: 0;
 }
@@ -254,22 +254,22 @@
 }
 .catalog-skill-choice strong {
   display: block;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 450;
   overflow-wrap: anywhere;
-  color: #cfacdf;
+  color: #94a3b8;
 }
 .catalog-skill-choice strong small {
   display: inline-block;
-  font-size: 7px;
-  color: #8e6c9d;
+  font-size: 8px;
+  color: #94a3b8;
   font-weight: 400;
   margin-left: 8px;
 }
 .catalog-skill-choice p {
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.8;
-  color: #896394;
+  color: #94a3b8;
   margin-top: 3px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -277,7 +277,7 @@
   overflow: hidden;
 }
 .catalog-skill-choice > svg {
-  color: #9b6fb0;
+  color: #94a3b8;
   flex-shrink: 0;
   margin-top: 3px;
 }
@@ -303,18 +303,18 @@
   right: 0;
 }
 .selector-missing {
-  font-size: 10px;
+  font-size: 11px;
   color: #c29a8a;
   padding: 9px;
-  border: 1px solid #725044;
+  border: 1px solid #451216;
   border-radius: 5px;
   line-height: 1.8;
 }
 .selector-missing button {
   background: none;
-  color: #d0b1d7;
+  color: #94a3b8;
   text-decoration: underline;
-  font-size: 9px;
+  font-size: 10px;
 }
 .workspace-form .skill-code-editor {
   font:
@@ -339,20 +339,20 @@
   overflow-wrap: anywhere;
 }
 .resource-editor-label > button {
-  font-size: 9px;
-  color: #aa8db6;
+  font-size: 10px;
+  color: #94a3b8;
   background: none;
   text-decoration: underline;
 }
 .lab-profile-config .helper a,
 .config-card .helper a {
-  color: #a989c4;
+  color: #94a3b8;
 }
 .config-card .catalog-skill-choice {
   padding: 8px;
 }
 .config-card .catalog-skill-choice strong {
-  font-size: 9px;
+  font-size: 10px;
 }
 .config-card .catalog-skill-choice strong small {
   display: block;
@@ -360,7 +360,7 @@
   margin-top: 2px;
 }
 .config-card .catalog-skill-choice p {
-  font-size: 8px;
+  font-size: 9px;
 }
 .config-card .catalog-skill-selector {
   max-height: 270px;
@@ -381,10 +381,10 @@
     align-items: flex-start;
   }
   .catalog-page .page-heading h1 {
-    font-size: 23px;
+    font-size: 26px;
   }
   .catalog-scope-caption {
-    font-size: 9px;
+    font-size: 10px;
   }
   .catalog-grid {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -402,9 +402,9 @@
   }
 }
 .catalog-source {
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.7;
-  color: #b6a2c8;
+  color: #94a3b8;
   overflow-wrap: anywhere;
   margin: 9px 0 0;
 }

@@ -40,6 +40,8 @@ import { ProjectBoardPage, ProjectsPage } from './Projects'
 import { useWorkspaceStore } from './workspace-store'
 import { resolveModelSettings } from '../../shared/model-settings'
 import { CatalogPage } from './Catalogs'
+import { FlowTuneDock } from './components/FlowTuneDock'
+import { InteractiveConstellation } from './components/InteractiveConstellation'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { TaskGraphPage } from './TaskGraph'
@@ -212,6 +214,10 @@ export function App() {
       unsubscribeWorkspace()
     }
   }, [setState, setError])
+  const tasks =
+    workspaceSnapshot?.tasks.filter((task) => !task.archivedAt) ?? []
+  const doneTasks = tasks.filter((task) => task.status === 'done').length
+  const signedIn = state?.diagnostics?.auth.status === 'signed-in'
   const pageName =
     location.pathname === '/integration'
       ? 'Integration notes'
@@ -224,6 +230,7 @@ export function App() {
           : location.pathname.slice(1)
   return (
     <div className="app-shell">
+      <InteractiveConstellation />
       <Sidebar />
       <div className="app-main">
         <header className="topbar">
@@ -245,6 +252,7 @@ export function App() {
             <FailureNotice failure={state.persistenceError} />
           )}
         </div>
+        <div className="route-stage">
         <Routes>
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/playground" element={<Playground />} />
@@ -259,6 +267,12 @@ export function App() {
           <Route path="/agents" element={<CatalogPage kind="profiles" />} />
           <Route path="*" element={<Navigate to="/projects" replace />} />
         </Routes>
+        </div>
+        <FlowTuneDock
+          activeTasks={Math.max(tasks.length - doneTasks, 0)}
+          doneTasks={doneTasks}
+          signedIn={signedIn}
+        />
       </div>
     </div>
   )
@@ -322,6 +336,8 @@ function Playground() {
     project,
   )
   const selectedModel = models.find((option) => option.id === effective.model)
+  const authStatus = state?.diagnostics?.auth.status
+  const signedIn = authStatus === 'signed-in'
   useEffect(() => {
     setProfileId('')
     setAdditionalSkills([])
@@ -402,7 +418,36 @@ function Playground() {
         </button>
       </div>
       <div className="lab-grid">
-        <section className="conversation-panel">
+        <section className="conversation-panel workbench-panel">
+          <details className="preflight">
+            <summary>
+              <i className={signedIn ? 'ok' : ''} />
+              <span className="preflight-title">System pre-flight</span>
+              <time>
+                {state?.diagnostics?.checkedAt
+                  ? new Date(state.diagnostics.checkedAt).toLocaleTimeString()
+                  : 'not checked'}
+              </time>
+              <span className="preflight-toggle">View logs</span>
+            </summary>
+            <div className="preflight-well">
+              <p>sdk {state?.diagnostics?.sdkVersion ?? 'not reported'}</p>
+              <p>
+                cli{' '}
+                {state?.diagnostics?.cliVersion.replace('codex-cli ', '') ??
+                  'not reported'}
+              </p>
+              <p>
+                auth {authStatus ?? 'unknown'}
+                {state?.diagnostics?.auth.detail
+                  ? ` · ${state.diagnostics.auth.detail}`
+                  : ''}
+              </p>
+              <p title={session?.workspace}>
+                workspace {session?.workspace ?? 'preparing…'}
+              </p>
+            </div>
+          </details>
           <div className="panel-heading">
             <div className="agent-icon">
               <Bot size={20} />
@@ -463,38 +508,21 @@ function Playground() {
             aria-relevant="additions text"
           >
             {runs.length === 0 ? (
-              <div className="welcome">
-                <div className="welcome-symbol">
-                  <Sparkles size={29} />
-                  <span className="orbit orbit-one" />
-                  <span className="orbit orbit-two" />
+              <div className="scratch-empty scratch-session">
+                <div className="scratch-session-tab">
+                  <span>Local scratch session</span>
+                  <code>{session?.id.slice(0, 8) ?? 'pending'}</code>
                 </div>
-                <span className="eyebrow">LET’S MAKE A CONNECTION</span>
-                <h2>
-                  One workspace.
-                  <br />
-                  One real conversation.
-                </h2>
-                <p>
-                  Send a prompt, watch tools run, then pick up where you left
-                  off. Everything happens in a disposable local workspace.
+                <p className="scratch-session-status">
+                  <i className={signedIn ? 'ok' : ''} />
+                  {signedIn ? 'Ready for a prompt' : 'Awaiting local prompt'}
                 </p>
-                <div className="flow">
-                  <span>
-                    <Terminal size={14} />
-                    Execute
-                  </span>
-                  <i />
-                  <span>
-                    <Square size={11} />
-                    Stop
-                  </span>
-                  <i />
-                  <span>
-                    <GitBranch size={14} />
-                    Continue
-                  </span>
-                </div>
+                {!signedIn && (
+                  <p className="scratch-auth">
+                    Codex is not logged in. A turn fails until you run npx
+                    codex login.
+                  </p>
+                )}
               </div>
             ) : tab === 'conversation' ? (
               runs.map((run, index) => (
@@ -561,7 +589,7 @@ function Playground() {
                 placeholder={
                   session?.threadId
                     ? 'Continue this conversation…'
-                    : 'Ask Codex to do something in the scratch workspace…'
+                    : 'e.g. codex create a hello world test file in TypeScript…'
                 }
                 value={prompt}
                 maxLength={32000}
@@ -616,16 +644,18 @@ function Playground() {
             </form>
             <div className="composer-foot">
               <span>
-                {session?.threadId
-                  ? 'Saved thread · each message starts a new turn'
-                  : 'Messages use your local Codex authentication'}
+                {signedIn
+                  ? session?.threadId
+                    ? 'Saved thread · each message starts a new turn'
+                    : 'Messages use your local Codex authentication'
+                  : 'Codex unauthenticated. A turn fails until you run npx codex login. This lab does not invent a reply.'}
               </span>
               <span>⌘ / Ctrl + Enter to send</span>
             </div>
           </div>
         </section>
         <aside className="config-column">
-          <section className="config-card">
+          <section className="config-card workbench-panel">
             <div className="card-title">
               <Radio size={16} />
               <h2>Connection</h2>
@@ -638,7 +668,9 @@ function Playground() {
                 <RefreshCw size={14} className={checking ? 'spin' : ''} />
               </button>
             </div>
-            <div className="connection-state">
+            <div
+              className={`connection-state ${signedIn ? '' : 'auth-amber'}`}
+            >
               <span
                 className={`status-dot ${state?.diagnostics?.auth.status === 'signed-in' ? 'green' : ''}`}
               />
@@ -672,7 +704,7 @@ function Playground() {
               Provider access is verified by a real turn.
             </span>
           </section>
-          <section className="config-card lab-profile-config">
+          <section className="config-card workbench-panel lab-profile-config">
             <div className="card-title">
               <Bot size={16} />
               <h2>Agent context</h2>
@@ -751,7 +783,7 @@ function Playground() {
               </NavLink>
             </p>
           </section>
-          <section className="config-card">
+          <section className="config-card workbench-panel">
             <div className="card-title">
               <Cpu size={16} />
               <h2>Run configuration</h2>
@@ -855,7 +887,7 @@ function Playground() {
               </p>
             </div>
           </section>
-          <section className="config-card">
+          <section className="config-card workbench-panel">
             <div className="card-title">
               <Zap size={16} />
               <h2>Selected skills</h2>
