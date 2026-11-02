@@ -7,6 +7,14 @@ import type { ManagerScope } from '../shared/manager'
 
 // Expose named operations only. The renderer cannot access ipcRenderer, credentials, or Node.
 const bridge: ConstellaBridge = {
+  terminal: {
+    list: () => ipcRenderer.invoke(channels.terminalList),
+    read: input => ipcRenderer.invoke(channels.terminalRead, input),
+    input: input => ipcRenderer.invoke(channels.terminalInput, input),
+    resize: input => ipcRenderer.invoke(channels.terminalResize, input),
+    finish: input => ipcRenderer.invoke(channels.terminalFinish, input),
+    close: input => ipcRenderer.invoke(channels.terminalClose, input),
+  },
   manager: {
     get: (input) => ipcRenderer.invoke(channels.managerGet, input),
     list: (input) => ipcRenderer.invoke(channels.managerList, input),

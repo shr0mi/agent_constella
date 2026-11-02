@@ -8,26 +8,26 @@ web
 
 ## Users
 
-Individual developers managing Codex workflows. The current application is a local, single-user workspace for a developer working with repository projects and one or more coding agents.
+Individual developers managing native Codex CLI and Claude Code workflows. The current application is a local, single-user workspace for a developer working with repository projects and one or more coding agents.
 
 The primary job is to organize coding tasks, coordinate agent work, understand progress and blockers, review changes, and integrate accepted results into a repository.
 
 ## Product Purpose
 
-Manage repository tasks, coordinate Codex agents through visible workflows, review their changes, and integrate approved work locally.
+Manage repository tasks, coordinate coding agents through visible workflows, review their changes, and integrate approved work locally.
 
 Success means the developer can follow work from a task through execution, review, and integration, with clear evidence of what changed and which decisions still require their attention.
 
 ## Positioning
 
-AgentConstella connects persistent task boards and editable workflow graphs to real Codex conversations, isolated Git worktrees, code review, and explicit local branch integration. Agent profiles and reusable skills provide context for the work; human review nodes make required decisions part of the workflow.
+AgentConstella connects persistent task boards and editable workflow graphs to real native CLI terminals, isolated Git worktrees, code review, and explicit local branch integration. Agent profiles and reusable skills provide context for the work; human review nodes make required decisions part of the workflow.
 
 ## Operating Context
 
 - The product is an Electron desktop application with a React renderer. The `web` platform value describes its HTML/CSS interface; it does not imply a standalone browser application.
 - Developers work with local Git repositories, task and agent worktrees, terminals, and their preferred IDE.
 - Project settings, task boards, workflow configuration, conversations, and execution records persist locally. Workspace metadata is stored in SQLite.
-- Codex inference uses the configured runtime and account and requires provider connectivity. Local storage and Git workflows do not imply offline inference.
+- Provider inference uses the installed CLI and its configured account and requires provider connectivity. Local storage and Git workflows do not imply offline inference.
 - Full application flows require the Electron preload bridge. Opening the renderer URL alone does not provide repository or Codex access.
 - The existing development entry point is `npm run dev`; production builds use `npm run build` and `npm start`.
 
@@ -50,7 +50,8 @@ Behavior future UI work must accurately represent:
 - Reaching workflow End leaves a task awaiting integration. Integration moves it to Done.
 - Human Review nodes require a human decision. Manager chat tools do not start workflows, accept results, approve human reviews, or integrate branches.
 - Stopping execution retains work already performed; it does not roll back repository changes. Metadata Undo does not roll back code or restore prior approvals.
-- Graph review gates are separate from runtime command permissions. The current SDK transport cannot promise a complete tool audit or an interactive runtime approval UI.
+- Graph review gates are separate from runtime command permissions. Native CLI terminals own runtime permission prompts and conversation history; the app records workflow handoffs and check results.
+- Project settings selects the default Codex/Claude provider for new terminals. Existing sessions retain their provider.
 - UI refinements must preserve existing repository data, saved work, and workflow semantics.
 
 The owner confirmed the audience and core purpose during initialization. Broader collaboration, additional platforms, and further product constraints remain open decisions rather than established requirements.

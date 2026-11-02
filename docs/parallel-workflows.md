@@ -38,7 +38,7 @@ The project board’s Open in IDE button opens the original project location. Th
 
 Fresh worktrees contain committed files only. Dependencies, ignored environment files, and generated local configuration must be prepared inside them. There is no automatic dependency installation or copying of ignored files. Worktrees remain on disk after archive or project deletion so unfinished work is recoverable.
 
-Migration 11 appends IDE/concurrency settings, todo input/dependency arrays, and the `node_worktrees` table. Previously started unintegrated Done tasks return to Doing. Existing shared-directory task branches migrate lazily when opened or run; a dirty selected branch blocks migration without losing files or staging state. Existing isolated worktrees are reused, including compatible detached backups. Missing/altered workspaces fail visibly rather than silently recreating saved work. Restart marks unfinished attempts interrupted and never reruns inference or checks automatically.
+Migration 11 appends IDE/concurrency settings, todo input/dependency arrays, and the `node_worktrees` table. Previously started unintegrated Done tasks return to Doing. Existing shared-directory task branches migrate lazily when opened or run; a dirty selected branch blocks migration without losing files or staging state. Existing isolated worktrees are reused, including compatible detached backups. Missing/altered workspaces fail visibly rather than silently recreating saved work. Native terminal sessions survive Electron restarts and reconnect without resending their assignment. Scheduling pauses until explicit resume. Lost processes become interrupted. See [native terminals](native-terminals.md).
 
 ## Verification
 

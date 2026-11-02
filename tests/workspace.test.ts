@@ -105,7 +105,7 @@ describe('persistent project application service', () => {
       projectId: project.id,
       expectedRevision: project.revision,
     }
-    expect(project).toMatchObject({ defaultModel: null, defaultEffort: null })
+    expect(project).toMatchObject({ defaultProvider: 'codex', defaultModel: null, defaultEffort: null })
     expect(() =>
       service.updateProject({
         ...input,
@@ -129,6 +129,7 @@ describe('persistent project application service', () => {
     ).toThrow('not supported')
     const saved = service.updateProject({
       ...input,
+      defaultProvider: 'claude',
       defaultModel: 'fixture-model',
       defaultEffort: 'high',
     })
@@ -138,6 +139,7 @@ describe('persistent project application service', () => {
       name: 'Renamed',
     })
     expect(renamed).toMatchObject({
+      defaultProvider: 'claude',
       defaultModel: 'fixture-model',
       defaultEffort: 'high',
       repoPath: project.repoPath,

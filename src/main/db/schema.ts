@@ -14,6 +14,7 @@ export const projects = sqliteTable('projects', {
   testCommand: text('test_command').notNull().default(''),
   ideCommand: text('ide_command').notNull().default(''),
   maxParallelAgents: integer('max_parallel_agents').notNull().default(4),
+  defaultProvider: text('default_provider').$type<'codex' | 'claude'>().notNull().default('codex'),
   defaultModel: text('default_model'),
   defaultEffort: text('default_effort').$type<Effort>(),
   revision: integer('revision').notNull().default(1),

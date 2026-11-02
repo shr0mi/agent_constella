@@ -1,6 +1,6 @@
 import { ChevronDown, RefreshCw, Zap } from 'lucide-react'
 import type { CatalogSkill } from '../../../shared/catalog'
-import type { Effort } from '../../../shared/contracts'
+import { effortSchema, type Effort } from '../../../shared/contracts'
 import { refreshDiagnostics, useAppStore } from '../store'
 
 export function SkillSelector({
@@ -98,33 +98,13 @@ export function ModelFields({
   disabled?: boolean
   idPrefix?: string
 }) {
-  const models = useAppStore((state) => state.state?.diagnostics?.models)
   const checking = useAppStore((state) => state.checking)
-  const option = models?.find((option) => option.id === model)
   return (
     <div className="catalog-model-fields">
       <div>
         <label htmlFor={`${idPrefix}-model`}>Default model</label>
         <div className="select-wrap">
-          <select
-            id={`${idPrefix}-model`}
-            value={model}
-            disabled={disabled}
-            onChange={(event) => {
-              onModel(event.target.value)
-              onEffort('')
-            }}
-          >
-            <option value="">Configured default</option>
-            {model && !option && (
-              <option value={model}>{model} (unavailable)</option>
-            )}
-            {models?.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </select>
+          <input id={`${idPrefix}-model`} value={model} disabled={disabled} maxLength={160} placeholder="Use native CLI default" onChange={event => { onModel(event.target.value); onEffort('') }} />
           <ChevronDown size={13} />
         </div>
       </div>
@@ -134,23 +114,16 @@ export function ModelFields({
           <select
             id={`${idPrefix}-effort`}
             value={effort}
-            disabled={disabled || !option}
+            disabled={disabled || !model}
             onChange={(event) => onEffort(event.target.value as Effort | '')}
           >
             <option value="">Model default</option>
-            {effort && !option?.efforts.includes(effort) && (
-              <option value={effort}>{effort} (unavailable)</option>
-            )}
-            {option?.efforts.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
+            {effortSchema.options.map(value => <option key={value} value={value}>{value}</option>)}
           </select>
           <ChevronDown size={13} />
         </div>
       </div>
-      <p className="helper">Model options come from your local runtime.</p>
+      <p className="helper">Model names and effort support are validated by the native CLI.</p>
       <button
         type="button"
         className="icon-button"

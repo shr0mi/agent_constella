@@ -48,7 +48,7 @@ import {
   validateTopology,
 } from '../../shared/graph-validation'
 import type { AgentProfile, CatalogSnapshot } from '../../shared/catalog'
-import type { Effort, ModelOption } from '../../shared/contracts'
+import { effortSchema, type Effort, ModelOption } from '../../shared/contracts'
 import type { ProjectModelDefaults } from '../../shared/model-settings'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
@@ -351,7 +351,7 @@ function GraphEditor({
           ? (catalog?.profiles.find(
               (profile) => profile.id === node.data.profileId,
             )?.name ??
-              (node.data.profileId ? 'Unavailable profile' : 'Default Codex')) +
+              (node.data.profileId ? 'Unavailable profile' : 'Default agent')) +
             (execution?.nodeStates.find((state) => state.nodeId === node.id)
               ? ` · ${nodeStatus(execution.nodeStates.find((state) => state.nodeId === node.id)!.status)}`
               : '')
@@ -1058,7 +1058,7 @@ function NodeSettings({
                 })
               }
             >
-              <option value="">Default Codex</option>
+              <option value="">Default agent</option>
               {node.data.profileId && (!profile || profile.removedAt) && (
                 <option value={node.data.profileId}>Unavailable profile</option>
               )}
@@ -1072,7 +1072,7 @@ function NodeSettings({
             </select>
             {!node.data.profileId && (
               <p className="helper">
-                Default Codex adds no custom role or profile skills. It uses
+                Default agent adds no custom role or profile skills. It uses
                 your task and project context, including the project's model and
                 effort defaults unless overridden below.
               </p>
@@ -1208,8 +1208,8 @@ function NodeSettings({
         {node.type === 'end' && (
           <p className="helper">
             One finish point per workflow. End waits for every incoming
-            dependency to be accepted. Integrate the accepted result to move
-            the task to Done.
+            dependency to be accepted. Integrate the accepted result to move the
+            task to Done.
           </p>
         )}
         <button
@@ -1263,7 +1263,9 @@ function NodeModelFields({
                   ? undefined
                   : event.target.value === '__default__'
                     ? null
-                    : event.target.value,
+                    : event.target.value === '__custom__'
+                      ? 'custom-model'
+                      : event.target.value,
               effort: undefined,
             },
           })
@@ -1274,10 +1276,11 @@ function NodeModelFields({
           {profile?.model ?? project.defaultModel ?? 'configured runtime'})
         </option>
         <option value="__default__">Configured default</option>
+        <option value="__custom__">Specify a model…</option>
         {node.data.model &&
           !models.some((model) => model.id === node.data.model) && (
             <option value={node.data.model}>
-              {node.data.model} (unavailable)
+              {node.data.model} (CLI setting)
             </option>
           )}
         {models.map((model) => (
@@ -1286,6 +1289,19 @@ function NodeModelFields({
           </option>
         ))}
       </select>
+      {node.data.model && (
+        <input
+          aria-label="Custom node model"
+          value={node.data.model}
+          maxLength={160}
+          onChange={(event) =>
+            onChange({
+              ...node,
+              data: { ...node.data, model: event.target.value },
+            })
+          }
+        />
+      )}
       <label htmlFor="graph-node-effort">Reasoning effort</label>
       <select
         id="graph-node-effort"
@@ -1309,12 +1325,14 @@ function NodeModelFields({
           Inherit agent/project effort when model matches
         </option>
         <option value="__default__">Model default</option>
-        {node.data.effort && !option?.efforts.includes(node.data.effort) && (
-          <option value={node.data.effort}>
-            {node.data.effort} (unavailable)
-          </option>
-        )}
-        {option?.efforts.map((effort) => (
+        {node.data.effort &&
+          option &&
+          !option.efforts.includes(node.data.effort) && (
+            <option value={node.data.effort}>
+              {node.data.effort} (CLI setting)
+            </option>
+          )}
+        {(option?.efforts ?? effortSchema.options).map((effort) => (
           <option key={effort} value={effort}>
             {effort}
           </option>

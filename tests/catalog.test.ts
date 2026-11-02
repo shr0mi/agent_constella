@@ -26,7 +26,7 @@ import {
   type CodexClient,
 } from '../src/main/codex/service'
 import { SessionStore } from '../src/main/codex/storage'
-import type { ThreadEvent } from '@openai/codex-sdk'
+import type { ThreadEvent } from '../src/main/terminal/types'
 import type { AgentProfile, CatalogSkill } from '../src/shared/catalog'
 
 const roots: string[] = []

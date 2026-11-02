@@ -403,7 +403,7 @@ app
       await run(
         'Array.from(document.querySelector("#graph-node-profile").options, option=>option.textContent)',
       ),
-      ['Default Codex', 'backend-sensei · Global', 'frontend-master · Global'],
+      ['Default agent', 'backend-sensei · Global', 'frontend-master · Global'],
     )
     assert(await run('document.querySelector(".graph-run-node").disabled'))
     await run(

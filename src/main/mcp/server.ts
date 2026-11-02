@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import type { CodexOptions } from '@openai/codex-sdk'
+import type { AgentOptions } from '../terminal/types'
+import { z } from 'zod'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import type { ManagerScope } from '../../shared/manager'
@@ -12,7 +13,11 @@ import {
 } from '../application/manager-tools'
 import { applicationFailure } from '../application/errors'
 
-type Grant = { scope: ManagerScope; role: 'manager' | 'worker' }
+type Grant = {
+  scope: ManagerScope
+  role: 'manager' | 'worker'
+  onDone?: (summary: string) => Promise<void>
+}
 const readTools = new Set<ManagerToolName>([
   'workspace_get_context',
   'graph_get',
@@ -78,7 +83,7 @@ export class LocalMcpServer {
             instructions:
               grant.role === 'manager'
                 ? managerInstructions
-                : 'Read-only project context for this worker task. Do not execute or approve other nodes. Propose metadata changes in your response for the human/manager.',
+                : 'Read-only project context for this worker task. Do not execute or approve other nodes. Propose metadata changes for the human/manager. When the assignment is complete, call agent_report_done as your final tool with a useful summary, then stop editing.',
           },
         )
         this.connections.add(server)
@@ -132,6 +137,30 @@ export class LocalMcpServer {
             },
           )
         }
+        if (grant.role === 'worker' && grant.onDone)
+          server.registerTool(
+            'agent_report_done',
+            {
+              description:
+                'Hand this assignment back to AgentConstella for checks and acceptance. Call as your LAST tool only when all requested work is complete. Provide a useful summary for downstream agents. Do not edit files after handing work back. This does not approve human reviews or integrate code.',
+              inputSchema: z
+                .object({ summary: z.string().trim().min(1).max(32000) })
+                .strict(),
+            },
+            async ({ summary }) => {
+              if (this.grants.get(token!) !== grant)
+                throw new Error('This assignment credential expired.')
+              await grant.onDone!(summary)
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'Result handed back for checks and acceptance. Stop editing and wait for the next assignment.',
+                  },
+                ],
+              }
+            },
+          )
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
@@ -157,12 +186,17 @@ export class LocalMcpServer {
       throw new Error('Local MCP listener did not bind')
     this.url = `http://127.0.0.1:${address.port}/mcp`
   }
-  issue(raw: ManagerScope, role: Grant['role'] = 'manager') {
+  issue(
+    raw: ManagerScope,
+    role: Grant['role'] = 'manager',
+    onDone?: Grant['onDone'],
+  ) {
     if (!this.url) throw new Error('Local MCP server is not running')
     const scope = this.tools.scope(raw),
       token = randomBytes(32).toString('hex')
-    this.grants.set(token, { scope, role })
-    const options: CodexOptions = {
+    this.grants.set(token, { scope, role, onDone })
+    const options: AgentOptions = {
+      mcp: { url: this.url, token },
       env: {
         ...Object.fromEntries(
           Object.entries(process.env).filter(

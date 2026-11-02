@@ -204,7 +204,7 @@ At widths up to (1180px), the rail becomes (196px), common page insets become (2
 
 Existing compositions include whole-row project records, three open Kanban columns, an auto-filling catalog grid, and a pannable React Flow canvas with a details pane (300px; compact: 280px). These component patterns do not prescribe every future screen's composition.
 
-Dialogs scroll internally and remain within the viewport. Standard/wide forms cap at (540/650px); the node workspace caps at (1250px), with width (94vw) and height (90vh). Compact paths may ellipsize while adjacent actions retain their width; longer evidence wraps or scrolls. CSS below (760px) is an unverified fallback, not a mobile support commitment.
+Dialogs scroll internally and remain within the viewport. Standard/wide forms cap at (540/650px); the node terminal uses the available window with a (12px) margin on each side. Compact paths may ellipsize while adjacent actions retain their width; longer evidence wraps or scrolls. CSS below (760px) is an unverified fallback, not a mobile support commitment.
 
 ## Elevation & Depth
 
@@ -254,7 +254,7 @@ Shared native dialogs use white headers, quiet dividers, internal scrolling, and
 
 User messages occupy quiet rounded insets; agent prose remains open. Tool output is expandable and scrolls within its region. Failed node attempts expose the actual problem and recovery hint near status; generic Execution details collapses, while the full error remains in the transcript. Footer paths shrink while IDE and Copy path controls preserve their widths. The revision composer keeps a continuous cobalt focus outline.
 
-Review uses a light, read-only, side-by-side Monaco diff with minimap and overview ruler hidden. Binary or unavailable changes show an explanation. Paths, commands, and review actions remain readable evidence.
+Agent nodes prioritize the terminal with a compact title and control row. Open in IDE stays visible beside the execution controls. File/diff, activity, tests, and snapshot tabs and the path footer are absent; revision input appears on request. Code inspection opens the agent worktree in the configured IDE. Workflow reviews retain their check summaries and explicit acceptance controls.
 
 ## Do's and Don'ts
 

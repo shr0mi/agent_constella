@@ -55,6 +55,7 @@ it('loads the built preload with only the modules available in Electron’s sand
     'onState',
     'run',
     'stop',
+    'terminal',
     'workflow',
     'workspace',
   ])

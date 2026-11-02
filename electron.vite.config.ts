@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
   main: {
-    build: { externalizeDeps: true },
+    build: { externalizeDeps: true, rollupOptions: { input: { index: resolve('src/main/index.ts'), 'terminal-daemon': resolve('src/main/terminal/daemon.ts') } } },
     plugins: [
       {
         name: 'bundle-upstream-skills',

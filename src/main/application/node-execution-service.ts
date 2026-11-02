@@ -1,16 +1,12 @@
-import { Codex, type ThreadEvent, type ThreadOptions } from '@openai/codex-sdk'
+import type { ThreadEvent, ThreadOptions } from '../terminal/types'
+import { NativeCliClient } from '../terminal/client'
+import { terminalHost } from '../terminal/host'
 import { randomUUID } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
-import {
-  nodeRuns,
-  nodeThreads,
-  projects,
-  tasks,
-  workflows,
-} from '../db/schema'
+import { nodeRuns, nodeThreads, projects, tasks, workflows } from '../db/schema'
 import { toActivity, type CodexClient } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
 import { applicationFailure, ApplicationError } from './errors'
@@ -54,7 +50,9 @@ interface ExecutionHooks {
 const clip = (text: string, limit = 24_000) =>
   text.length > limit ? `${text.slice(0, limit)}\n[truncated in app]` : text
 export class NodeExecutionService {
-  private mcpConnection?: (identity: GraphIdentity & { taskId: string }) => {
+  private mcpConnection?: (
+    identity: GraphIdentity & { taskId: string; nodeId: string },
+  ) => {
     client: CodexClient
     release: () => void
   }
@@ -89,8 +87,9 @@ export class NodeExecutionService {
   activeRuns(projectId: string, taskId?: string) {
     return [...this.active.values()]
       .map(({ run }) => run)
-      .filter((run) =>
-        run.projectId === projectId && (!taskId || run.taskId === taskId),
+      .filter(
+        (run) =>
+          run.projectId === projectId && (!taskId || run.taskId === taskId),
       )
       .map((run) => ({
         projectId,
@@ -102,7 +101,10 @@ export class NodeExecutionService {
   }
   hasCapacity(projectId: string) {
     const project = this.db
-      .select().from(projects).where(eq(projects.id, projectId)).get()
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .get()
     return this.activeRuns(projectId).length < (project?.maxParallelAgents ?? 4)
   }
   private assertTaskDependencies(projectId: string, taskId: string) {
@@ -110,13 +112,20 @@ export class NodeExecutionService {
     const commits: Record<string, string> = {}
     for (const id of task.dependencyIds ?? []) {
       const result = this.db
-        .select().from(workflows).where(eq(workflows.taskId, id)).get()?.document
+        .select()
+        .from(workflows)
+        .where(eq(workflows.taskId, id))
+        .get()?.document
       if (
         result?.phase !== 'completed' ||
         result.integration?.status !== 'integrated' ||
         !result.integration.commit
       ) {
-        const dependency = this.db.select().from(tasks).where(eq(tasks.id, id)).get()
+        const dependency = this.db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.id, id))
+          .get()
         throw new ApplicationError(
           'TASK_DEPENDENCIES',
           `Waiting for “${dependency?.title ?? id}” to be integrated.`,
@@ -129,7 +138,10 @@ export class NodeExecutionService {
   }
   assertRunDependencies(run: NodeRun) {
     const current = this.assertTaskDependencies(run.projectId, run.taskId)
-    if (JSON.stringify(current) !== JSON.stringify(run.todoDependencyCommits ?? {}))
+    if (
+      JSON.stringify(current) !==
+      JSON.stringify(run.todoDependencyCommits ?? {})
+    )
       throw new ApplicationError(
         'TASK_DEPENDENCIES_CHANGED',
         'A todo prerequisite changed after this attempt was prepared.',
@@ -142,7 +154,7 @@ export class NodeExecutionService {
     private readonly graphs: GraphService,
     private readonly catalog: CatalogService,
     appData: string,
-    private readonly client: CodexClient = new Codex(),
+    private readonly client: CodexClient = new NativeCliClient(),
     private readonly checkTimeoutMs = 120_000,
   ) {
     this.worktrees = new TaskWorktreeService(database, appData)
@@ -252,8 +264,9 @@ export class NodeExecutionService {
           runId: row.id,
           status: this.volatile.get(row.id)?.status ?? row.status,
         })
-    const active = [...this.active.values()].find(({ run }) =>
-      run.projectId === identity.projectId && run.taskId === identity.taskId,
+    const active = [...this.active.values()].find(
+      ({ run }) =>
+        run.projectId === identity.projectId && run.taskId === identity.taskId,
     )?.run
     return {
       ...identity,
@@ -352,17 +365,24 @@ export class NodeExecutionService {
   }
   async openInIde(raw: unknown, launch: typeof launchIde = launchIde) {
     const identity = graphIdentitySchema
-      .extend({ nodeId: z.uuid().optional() }).strict().parse(raw)
+      .extend({ nodeId: z.uuid().optional() })
+      .strict()
+      .parse(raw)
     const task = this.taskScope(identity)
     const project = this.db
-      .select().from(projects).where(eq(projects.id, identity.projectId)).get()!
+      .select()
+      .from(projects)
+      .where(eq(projects.id, identity.projectId))
+      .get()!
     ideArguments(project.ideCommand)
     if (identity.nodeId) this.get({ ...identity, nodeId: identity.nodeId })
     const agentWorkspace = identity.nodeId
       ? this.worktrees.getNode(identity.nodeId)
       : null
-    const workspace = agentWorkspace ?? this.worktrees.get(task.id) ??
-      await this.worktrees.ensure(project, task)
+    const workspace =
+      agentWorkspace ??
+      this.worktrees.get(task.id) ??
+      (await this.worktrees.ensure(project, task))
     // Opening the IDE must remain available for restoring an externally changed branch.
     await this.worktrees.verify(workspace, project.repoPath, false)
     await launch(project.ideCommand, workspace.path)
@@ -381,13 +401,15 @@ export class NodeExecutionService {
     if (!node || node.type !== 'agent')
       throw new ApplicationError(
         'AGENT_NODE_REQUIRED',
-        'Select an agent task node to open a Codex conversation.',
-        'Start, End, and Human Review do not execute Codex turns.',
+        'Select an agent task node to open an agent terminal.',
+        'Start, End, and Human Review do not execute agent sessions.',
       )
     const active = this.active.get(identity.nodeId)?.run
     return {
       ...identity,
-      worktree: this.worktrees.getNode(identity.nodeId) ?? this.worktrees.get(identity.taskId),
+      worktree:
+        this.worktrees.getNode(identity.nodeId) ??
+        this.worktrees.get(identity.taskId),
       threadId: this.thread(identity)?.threadId ?? undefined,
       runs: structuredClone(this.history(identity)),
       active: active
@@ -483,6 +505,24 @@ export class NodeExecutionService {
     // Recover only recorded active attempts; never resume a process automatically.
     for (const { document: run } of this.db.select().from(nodeRuns).all())
       if (isActiveNodeRun(run.status)) {
+        if (
+          this.client instanceof NativeCliClient &&
+          run.threadId?.startsWith('terminal:') &&
+          run.status === 'running'
+        ) {
+          const live = (await terminalHost().list()).find(
+            (session) =>
+              session.id === run.threadId!.slice(9) &&
+              session.state !== 'exited',
+          )
+          if (live) {
+            this.active.set(run.nodeId, {
+              run,
+              controller: new AbortController(),
+            })
+            continue
+          }
+        }
         run.status = 'interrupted'
         run.finishedAt = new Date().toISOString()
         run.error = {
@@ -507,6 +547,17 @@ export class NodeExecutionService {
       }
     this.initialized = true
   }
+  reconnect() {
+    for (const active of this.active.values()) {
+      if (active.done) continue
+      active.done = this.execute(active, true).finally(() => {
+        this.active.delete(active.run.nodeId)
+        if (active.controller.signal.reason !== 'detach')
+          this.hooks?.settled(structuredClone(active.run))
+        this.emit(active.run)
+      })
+    }
+  }
   start(raw: unknown): { runId: string } {
     const input = startNodeSchema.parse(raw)
     if (!this.initialized)
@@ -527,7 +578,10 @@ export class NodeExecutionService {
         'This agent is active or the project’s parallel agent limit has been reached.',
         'Stop an agent, wait for a slot, or increase the limit in Project settings.',
       )
-    const todoDependencyCommits = this.assertTaskDependencies(input.projectId, input.taskId)
+    const todoDependencyCommits = this.assertTaskDependencies(
+      input.projectId,
+      input.taskId,
+    )
     const snapshot = this.get({
       projectId: input.projectId,
       taskId: input.taskId,
@@ -555,7 +609,7 @@ export class NodeExecutionService {
     if (input.mode === 'followup' && (!input.message || !snapshot.threadId))
       throw new ApplicationError(
         'THREAD_REQUIRED',
-        'A follow-up needs a message and an existing Codex thread.',
+        'A follow-up needs a message and an existing agent session.',
         'Start this node, or retry an attempt that did not create a thread.',
       )
     if (
@@ -680,7 +734,8 @@ export class NodeExecutionService {
       if (this.active.get(input.nodeId) === active)
         this.active.delete(input.nodeId)
       try {
-        this.hooks?.settled(structuredClone(run))
+        if (active.controller.signal.reason !== 'detach')
+          this.hooks?.settled(structuredClone(run))
       } catch (error) {
         this.persistenceError = applicationFailure(error)
       }
@@ -688,82 +743,86 @@ export class NodeExecutionService {
     })
     return { runId: run.id }
   }
-  private async execute(active: Active) {
+  private async execute(active: Active, recovering = false) {
     const { run, controller } = active,
       signal = controller.signal
     let streamCompleted = false
     let releaseMcp: (() => void) | undefined
     try {
-      await this.graphs.prepareStart({
-        projectId: run.projectId,
-        taskId: run.taskId,
-        expectedRevision: run.graphRevision,
-      })
-      signal.throwIfAborted()
-      this.assertRunDependencies(run)
-      run.worktree = await this.worktrees.ensureNode(
-        run.projectContext,
-        run.taskSnapshot,
-        run.nodeId,
-        signal,
-      )
-      this.persist(run)
-      const prepared = await this.catalog.resolveRun(
-        { ...run.options, prompt: run.prompt },
-        run.worktree.path,
-        run.id,
-        run.projectId,
-        { stageInWorkspace: false },
-      )
-      run.profileSnapshot = prepared.profileSnapshot
-      run.projectSnapshot = prepared.projectSnapshot
-      run.skillSnapshots = prepared.skillSnapshots
-      run.tests.command =
-        prepared.projectSnapshot?.testCommand ?? run.tests.command
-      run.options.model = prepared.model
-      run.options.effort = prepared.effort
-      run.options.skillIds = prepared.skillSnapshots.map((skill) => skill.id)
-      const context = `Task: ${run.taskSnapshot.title}\n${run.taskSnapshot.description}\n\nTask acceptance criteria:\n${run.taskSnapshot.acceptanceCriteria}\n\nNode: ${run.nodeSnapshot.data.title}\nNode acceptance criteria:\n${run.nodeSnapshot.data.acceptanceCriteria}\nGraph revision: ${run.graphRevision}\n\nAvailable predecessor results (context only; acceptance is managed separately):\n${JSON.stringify(run.dependencyResults)}\n\nThis is an explicitly requested node attempt. Do not run or approve other workflow nodes. Read applicable AGENTS.md/README guidance in this worktree.\n\n${run.mode === 'retry' ? 'The previous attempt did not succeed. Inspect the current files and correct the problem; earlier partial changes are retained.\n' : ''}User request:\n${run.prompt}`
-      const requiredInputs = await this.requiredInputs(run)
-      run.resolvedPrompt = resolvePrompt(
-        `${context}\n\nRequired input files (verified in this workspace):\n${requiredInputs}\n\nPrevious attempt and test results:\n${JSON.stringify(run.previousAttempt ?? null)}`,
-        run.skillSnapshots,
-        prepared,
-        'task',
-      )
-      signal.throwIfAborted()
-      run.before = await this.worktrees.capture(
-        run.worktree.path,
-        `AgentConstella before attempt ${run.id}`,
-        signal,
-      )
-      this.persist(run)
-      signal.throwIfAborted()
-      const current = this.graphs.get({
-        projectId: run.projectId,
-        taskId: run.taskId,
-      })
-      if (current.task.archivedAt || current.revision !== run.graphRevision)
-        throw new ApplicationError(
-          'RUN_CONTEXT_CHANGED',
-          'The task was archived or its graph changed during preparation.',
-          'Review the saved graph before retrying.',
+      if (!recovering) {
+        await this.graphs.prepareStart({
+          projectId: run.projectId,
+          taskId: run.taskId,
+          expectedRevision: run.graphRevision,
+        })
+        signal.throwIfAborted()
+        this.assertRunDependencies(run)
+        run.worktree = await this.worktrees.ensureNode(
+          run.projectContext,
+          run.taskSnapshot,
+          run.nodeId,
+          signal,
         )
-      run.status = 'running'
-      this.persist(run)
+        this.persist(run)
+        const prepared = await this.catalog.resolveRun(
+          { ...run.options, prompt: run.prompt },
+          run.worktree.path,
+          run.id,
+          run.projectId,
+          { stageInWorkspace: false },
+        )
+        run.profileSnapshot = prepared.profileSnapshot
+        run.projectSnapshot = prepared.projectSnapshot
+        run.skillSnapshots = prepared.skillSnapshots
+        run.tests.command =
+          prepared.projectSnapshot?.testCommand ?? run.tests.command
+        run.options.model = prepared.model
+        run.options.effort = prepared.effort
+        run.options.skillIds = prepared.skillSnapshots.map((skill) => skill.id)
+        const context = `Task: ${run.taskSnapshot.title}\n${run.taskSnapshot.description}\n\nTask acceptance criteria:\n${run.taskSnapshot.acceptanceCriteria}\n\nNode: ${run.nodeSnapshot.data.title}\nNode acceptance criteria:\n${run.nodeSnapshot.data.acceptanceCriteria}\nGraph revision: ${run.graphRevision}\n\nAvailable predecessor results (context only; acceptance is managed separately):\n${JSON.stringify(run.dependencyResults)}\n\nThis is an explicitly requested node attempt. Do not run or approve other workflow nodes. When this assignment is complete, call the agent_report_done MCP tool as your LAST tool with a summary of changes and checks. Stop editing after handing it back. If you need input or cannot finish, ask in the terminal and do not report done. Read applicable AGENTS.md/README guidance in this worktree.\n\n${run.mode === 'retry' ? 'The previous attempt did not succeed. Inspect the current files and correct the problem; earlier partial changes are retained.\n' : ''}User request:\n${run.prompt}`
+        const requiredInputs = await this.requiredInputs(run)
+        run.resolvedPrompt = resolvePrompt(
+          `${context}\n\nRequired input files (verified in this workspace):\n${requiredInputs}\n\nPrevious attempt and test results:\n${JSON.stringify(run.previousAttempt ?? null)}`,
+          run.skillSnapshots,
+          prepared,
+          'task',
+        )
+        signal.throwIfAborted()
+        run.before = await this.worktrees.capture(
+          run.worktree.path,
+          `AgentConstella before attempt ${run.id}`,
+          signal,
+        )
+        this.persist(run)
+        signal.throwIfAborted()
+        const current = this.graphs.get({
+          projectId: run.projectId,
+          taskId: run.taskId,
+        })
+        if (current.task.archivedAt || current.revision !== run.graphRevision)
+          throw new ApplicationError(
+            'RUN_CONTEXT_CHANGED',
+            'The task was archived or its graph changed during preparation.',
+            'Review the saved graph before retrying.',
+          )
+        run.status = 'running'
+        this.persist(run)
+      }
       const options: ThreadOptions = {
-        workingDirectory: run.worktree.path,
+        role: 'worker',
+        workingDirectory: run.worktree!.path,
+        provider: run.projectContext.defaultProvider ?? 'codex',
+        title: `${run.taskSnapshot.title} / ${run.nodeSnapshot.data.title}`,
+        attachOnly: recovering,
         skipGitRepoCheck: false,
         sandboxMode: 'workspace-write',
-        approvalPolicy: 'never',
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled',
         model: run.options.model ?? undefined,
         modelReasoningEffort: run.options.effort ?? undefined,
       }
       const connection = this.mcpConnection?.({
         projectId: run.projectId,
         taskId: run.taskId,
+        nodeId: run.nodeId,
       })
       releaseMcp = connection?.release
       const client = connection?.client ?? this.client
@@ -781,17 +840,19 @@ export class NodeExecutionService {
         if (event.type === 'error') throw new Error(event.message)
       }
       if (signal.aborted) {
-        run.status = 'cancelled'
+        if (signal.reason !== 'detach') run.status = 'cancelled'
         return
       }
       if (!streamCompleted)
-        throw new Error('The SDK stream ended without a turn.completed event.')
+        throw new Error(
+          'The agent terminal ended without handing back its result.',
+        )
       this.assertRunDependencies(run)
       run.status = 'testing'
       this.persist(run)
       run.tests = await runChecks(
         run.tests.command,
-        run.worktree.path,
+        run.worktree!.path,
         signal,
         (result) => {
           run.tests = result
@@ -825,6 +886,7 @@ export class NodeExecutionService {
       }
     } finally {
       releaseMcp?.()
+      if (signal.reason === 'detach') return
       if (run.before && run.worktree) {
         try {
           run.changes = await this.worktrees.changes(run.worktree, run.before)
@@ -836,11 +898,18 @@ export class NodeExecutionService {
               this.assertRunDependencies(run)
               const result = this.worktrees.get(run.taskId)!
               const merged = await this.worktrees.mergeInto(
-                result, run.changes!.after.commit, `Combine ${run.nodeSnapshot.data.title}`,
+                result,
+                run.changes!.after.commit,
+                `Combine ${run.nodeSnapshot.data.title}`,
               )
               const tree = async (commit: string) =>
-                (await taskGit(result.path, ['rev-parse', `${commit}^{tree}`])).trim()
-              if (await tree(merged.commit) !== await tree(run.changes!.after.commit)) {
+                (
+                  await taskGit(result.path, ['rev-parse', `${commit}^{tree}`])
+                ).trim()
+              if (
+                (await tree(merged.commit)) !==
+                (await tree(run.changes!.after.commit))
+              ) {
                 run.integrationTests = await runChecks(
                   run.tests.command,
                   result.path,
@@ -851,7 +920,10 @@ export class NodeExecutionService {
                   },
                   this.checkTimeoutMs,
                 )
-                if (run.integrationTests.command && run.integrationTests.status !== 'passed')
+                if (
+                  run.integrationTests.command &&
+                  run.integrationTests.status !== 'passed'
+                )
                   throw new ApplicationError(
                     'COMBINED_TEST_FAILED',
                     'Checks failed after combining agent results.',
@@ -913,13 +985,16 @@ export class NodeExecutionService {
     this.persist(active.run)
   }
   async stopTask(identity: GraphIdentity) {
-    const active = [...this.active.values()].filter(({ run }) =>
-      run.projectId === identity.projectId && run.taskId === identity.taskId,
+    const active = [...this.active.values()].filter(
+      ({ run }) =>
+        run.projectId === identity.projectId && run.taskId === identity.taskId,
     )
-    await Promise.all(active.map(async (entry) => {
-      await this.stop({ ...identity, nodeId: entry.run.nodeId })
-      await entry.done
-    }))
+    await Promise.all(
+      active.map(async (entry) => {
+        await this.stop({ ...identity, nodeId: entry.run.nodeId })
+        await entry.done
+      }),
+    )
   }
   async waitForIdle(projectId?: string) {
     await Promise.all(
@@ -947,17 +1022,22 @@ export class NodeExecutionService {
       if (info.size <= 32_000 && info.size <= remaining) {
         const text = await readFile(path, 'utf8')
         remaining -= info.size
-        contents.push(text.includes('\0')
-          ? `File: ${file} (binary input verified; inspect the file before implementing)`
-          : `File: ${file}\n${text}`)
-      } else contents.push(`File: ${file} (verified; read the full file before implementing)`)
+        contents.push(
+          text.includes('\0')
+            ? `File: ${file} (binary input verified; inspect the file before implementing)`
+            : `File: ${file}\n${text}`,
+        )
+      } else
+        contents.push(
+          `File: ${file} (verified; read the full file before implementing)`,
+        )
     }
     return contents.join('\n\n') || 'None declared.'
   }
-  async shutdown() {
+  async shutdown(detach = false) {
     for (const active of this.active.values()) {
-      active.controller.abort()
-      active.run.status = 'stopping'
+      active.controller.abort(detach ? 'detach' : undefined)
+      if (!detach) active.run.status = 'stopping'
       try {
         this.persist(active.run)
       } catch {

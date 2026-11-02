@@ -48,6 +48,7 @@ const storedSessionSchema = z.object({
       projectSnapshot: z
         .object({
           id: z.uuid(),
+          defaultProvider: z.enum(['codex', 'claude']).optional(),
           name: z.string(),
           description: z.string(),
           instructions: z.string(),

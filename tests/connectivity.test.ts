@@ -7,7 +7,7 @@ import type {
   ThreadOptions,
   TurnOptions,
   Usage,
-} from '@openai/codex-sdk'
+} from '../src/main/terminal/types'
 import { runInputSchema, type RunInput } from '../src/shared/contracts'
 import {
   ConnectivityService,
@@ -113,9 +113,7 @@ describe('connectivity service lifecycle', () => {
     expect(state.session.workspace.startsWith(store.directory)).toBe(false)
     expect(client.startThread).toHaveBeenCalledWith(
       expect.objectContaining({
-        approvalPolicy: 'never',
         sandboxMode: 'workspace-write',
-        networkAccessEnabled: false,
       }),
     )
     const reopened = new ConnectivityService(store, client)

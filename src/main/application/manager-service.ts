@@ -1,4 +1,6 @@
-import { Codex, type CodexOptions } from '@openai/codex-sdk'
+import type { AgentOptions as CodexOptions } from '../terminal/types'
+import { terminalHost } from '../terminal/host'
+import { NativeCliClient } from '../terminal/client'
 import { randomUUID } from 'node:crypto'
 import {
   managerSendSchema,
@@ -37,7 +39,7 @@ export class ManagerService {
     private readonly mcp: LocalMcpServer,
     private readonly client: (options: CodexOptions) => CodexClient = (
       options,
-    ) => new Codex(options),
+    ) => new NativeCliClient(options),
   ) {}
   initialize() {
     const rows = this.database.sqlite
@@ -47,7 +49,10 @@ export class ManagerService {
       const chat = this.read(row)
       let changed = false
       for (const turn of chat.turns)
-        if (turn.status === 'running' || turn.status === 'stopping') {
+        if (
+          (turn.status === 'running' || turn.status === 'stopping') &&
+          !chat.threadId?.startsWith('terminal:')
+        ) {
           turn.status = 'interrupted'
           turn.finishedAt = new Date().toISOString()
           turn.error = {
@@ -58,6 +63,53 @@ export class ManagerService {
           changed = true
         }
       if (changed) this.persist(chat)
+    }
+  }
+  async reconnect() {
+    const sessions = await terminalHost().list()
+    const rows = this.database.sqlite
+      .prepare('SELECT document, created_at FROM manager_chats')
+      .all() as { document: string; created_at: string }[]
+    for (const row of rows) {
+      const chat = this.read(row),
+        turn = chat.turns.at(-1)
+      if (
+        !chat.threadId?.startsWith('terminal:') ||
+        !turn ||
+        !['running', 'stopping'].includes(turn.status)
+      )
+        continue
+      const live = sessions.find(
+        (s) => s.id === chat.threadId!.slice(9) && s.state !== 'exited',
+      )
+      if (!live) {
+        turn.status = 'interrupted'
+        turn.finishedAt = new Date().toISOString()
+        this.persist(chat)
+        continue
+      }
+      chat.provider = live.provider
+      const scope = { projectId: chat.projectId, taskId: chat.taskId }
+      const connection = this.mcp.issue(scope)
+      const active: Active = {
+        controller: new AbortController(),
+        release: connection.release,
+      }
+      this.active.set(this.key(scope), active)
+      active.done = this.execute(
+        chat,
+        turn,
+        active,
+        this.client(connection.options),
+        live.cwd,
+        undefined,
+        undefined,
+        true,
+      ).finally(() => {
+        connection.release()
+        this.active.delete(this.key(scope))
+        this.notify(scope)
+      })
     }
   }
   subscribe(listener: (scope: ManagerScope) => void) {
@@ -255,6 +307,7 @@ export class ManagerService {
         throw new Error('Select a model before setting reasoning effort.')
       if (
         settings.model &&
+        packet.models.length > 0 &&
         !packet.models.some(
           (model) =>
             model.id === settings.model &&
@@ -320,16 +373,19 @@ export class ManagerService {
     repoPath: string,
     model?: string,
     effort?: Parameters<CodexClient['startThread']>[0]['modelReasoningEffort'],
+    attachOnly = false,
   ) {
     let completed = false
     try {
+      chat.provider ??= this.tools.contextProvider(chat.projectId)
       const options = {
+        attachOnly,
+        role: 'manager' as const,
         workingDirectory: repoPath,
+        provider: chat.provider,
+        title: chat.taskId ? 'Task manager' : 'Project manager',
         skipGitRepoCheck: false,
         sandboxMode: 'read-only' as const,
-        approvalPolicy: 'never' as const,
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled' as const,
         model,
         modelReasoningEffort: effort,
       }
@@ -354,7 +410,9 @@ export class ManagerService {
         this.persist(chat)
       }
       if (!completed && !active.controller.signal.aborted)
-        throw new Error('Codex ended without completing the manager turn.')
+        throw new Error(
+          'The manager terminal ended without handing back its assignment.',
+        )
       turn.status = completed ? 'completed' : 'cancelled'
     } catch (error) {
       turn.status = completed
@@ -364,6 +422,7 @@ export class ManagerService {
           : 'failed'
       if (turn.status === 'failed') turn.error = applicationFailure(error)
     } finally {
+      if (active.controller.signal.reason === 'detach') return
       turn.finishedAt = new Date().toISOString()
       try {
         this.persist(chat)
@@ -380,11 +439,11 @@ export class ManagerService {
     active.controller.abort()
     await active.done
   }
-  async shutdown() {
+  async shutdown(detach = false) {
     this.closing = true
     for (const active of this.active.values()) {
       active.release?.()
-      active.controller.abort()
+      active.controller.abort(detach ? 'detach' : undefined)
     }
     await Promise.allSettled(
       [...this.active.values()].map((active) => active.done),

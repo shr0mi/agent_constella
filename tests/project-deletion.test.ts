@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
+import type { ThreadEvent, ThreadOptions } from '../src/main/terminal/types'
 import {
   openWorkspaceDatabase,
   type WorkspaceDatabase,

@@ -856,6 +856,7 @@ export class CatalogService {
           instructions: project.instructions,
           devCommand: project.devCommand,
           testCommand: project.testCommand,
+          defaultProvider: project.defaultProvider,
           defaultModel: project.defaultModel,
           defaultEffort: project.defaultEffort,
         },

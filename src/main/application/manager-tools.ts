@@ -254,6 +254,7 @@ export class ManagerTools {
           testCommand: before.testCommand,
           ideCommand: before.ideCommand ?? '',
           maxParallelAgents: before.maxParallelAgents ?? 4,
+          defaultProvider: before.defaultProvider ?? 'codex',
           defaultModel: before.defaultModel,
           defaultEffort: before.defaultEffort,
         })
@@ -325,6 +326,9 @@ export class ManagerTools {
       }
       return this.finishUndo(entry)
     })
+  }
+  contextProvider(projectId: string) {
+    return this.workspace.getBoard({ projectId }).project.defaultProvider ?? 'codex'
   }
   async context(raw: unknown, selectedNodeId?: string) {
     const scope = this.scope(raw),
@@ -484,6 +488,7 @@ export class ManagerTools {
             testCommand: input.testCommand ?? project.testCommand,
             ideCommand: input.ideCommand,
             maxParallelAgents: input.maxParallelAgents,
+            defaultProvider: input.defaultProvider,
             defaultModel: input.defaultModel,
             defaultEffort: input.defaultEffort,
           })

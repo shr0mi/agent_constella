@@ -218,6 +218,7 @@ function managerChat(scope) {
 ipcMain.handle('constella:manager:get', (_event, scope) =>
   result(managerChat(scope)),
 )
+ipcMain.handle('constella:manager:send', () => result({ turnId: randomUUID() }))
 ipcMain.handle('constella:manager:history', () => result([]))
 ipcMain.handle('constella:manager:list', (_event, scope) => {
   const current = managerChat(scope)
@@ -451,10 +452,13 @@ ipcMain.handle('constella:graph:prepare', (_event, input) => {
   })
 })
 const errors = []
-const timeout = setTimeout(() => {
-  console.error('Graph UI check timed out', errors)
-  finish(1)
-}, process.env.CONSTELLA_GRAPH_SCREENSHOT ? 120000 : 30000)
+const timeout = setTimeout(
+  () => {
+    console.error('Graph UI check timed out', errors)
+    finish(1)
+  },
+  process.env.CONSTELLA_GRAPH_SCREENSHOT ? 120000 : 30000,
+)
 function finish(code) {
   clearTimeout(timeout)
   rmSync(data, { force: true, recursive: true })
@@ -507,7 +511,11 @@ app
     async function checkManagerChats(label, scope) {
       await click(label)
       await waitFor('document.querySelectorAll(".manager-turn").length === 1')
-      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, scope.taskId ? 'task-manager' : 'project-manager')
+      await captureUi(
+        window,
+        process.env.CONSTELLA_GRAPH_SCREENSHOT,
+        scope.taskId ? 'task-manager' : 'project-manager',
+      )
       const original = managerChat(scope)
       await click('New chat')
       await waitFor(
@@ -545,7 +553,7 @@ app
       await run(
         'document.querySelector("#graph-node-profile").selectedOptions[0].textContent',
       ),
-      'Default Codex',
+      'Default agent',
     )
     await click('Conversation & runs')
     await waitFor(
@@ -743,7 +751,7 @@ app
       ),
       project.repoPath,
     )
-    await select('#project-default-model', 'fixture-model')
+    await text('#project-default-model', 'fixture-model')
     await select('#project-default-effort', 'high')
     await text('#ide-command', 'zed --new')
     await text('#parallel-agents', '3')
@@ -803,27 +811,39 @@ app
     )
     assert.equal(attempts.length, 1)
     assert.equal(attempts[0].status, 'completed')
-    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation-result')
-    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation-focus', { focus: '.node-composer textarea' })
+    await captureUi(
+      window,
+      process.env.CONSTELLA_GRAPH_SCREENSHOT,
+      'conversation-result',
+    )
+    await click('Request revision')
+    await captureUi(
+      window,
+      process.env.CONSTELLA_GRAPH_SCREENSHOT,
+      'conversation-focus',
+      { focus: '.node-composer textarea' },
+    )
     if (process.env.CONSTELLA_GRAPH_SCREENSHOT) {
-      assert.equal(await run('getComputedStyle(document.querySelector(".node-composer")).outlineWidth'), '2px')
-      assert.equal(await run('getComputedStyle(document.querySelector(".node-composer")).outlineStyle'), 'solid')
+      assert.equal(
+        await run(
+          'getComputedStyle(document.querySelector(".node-composer")).outlineWidth',
+        ),
+        '2px',
+      )
+      assert.equal(
+        await run(
+          'getComputedStyle(document.querySelector(".node-composer")).outlineStyle',
+        ),
+        'solid',
+      )
     }
-    await click('Tests')
-    await waitFor(
-      'document.querySelector(".node-test-output")?.textContent.includes("FIXTURE_TEST_PASS")',
+    assert.equal(await run('!!document.querySelector(".node-tabs")'), false)
+    assert.equal(
+      await run(
+        `!!document.querySelector('.node-workspace [aria-label="Open agent workspace in IDE"]')`,
+      ),
+      true,
     )
-    await click('Files & diffs')
-    await waitFor(
-      'document.querySelector(".node-file-list button")?.textContent.includes("welcome.ts")',
-    )
-    await run('document.querySelector(".node-file-list button").click()')
-    await waitFor('!!document.querySelector(".monaco-diff-editor")')
-    await waitFor(
-      'document.querySelector(".monaco-diff-editor")?.textContent.includes("constellation!")',
-    )
-    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'diff')
-    await click('Conversation')
     await run(
       "{const el = document.querySelector('#node-followup');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Revise the welcome copy');el.dispatchEvent(new Event('input',{bubbles:true}));}",
     )
@@ -832,6 +852,7 @@ app
       'document.querySelectorAll(".node-turn").length === 2 && document.querySelector(".node-chat").textContent.includes("Revised the welcome copy")',
     )
     assert.equal(attempts[1].threadId, attempts[0].threadId)
+    await click('Request revision')
     await run(
       "{const el = document.querySelector('#node-followup');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,'Wait until I stop you');el.dispatchEvent(new Event('input',{bubbles:true}));}",
     )
@@ -844,7 +865,11 @@ app
       'document.querySelectorAll(".node-turn").length === 3 && document.querySelector(".node-workspace-bar strong").textContent === "Stopped"',
     )
     assert.equal(attempts[2].status, 'cancelled')
-    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'conversation')
+    await captureUi(
+      window,
+      process.env.CONSTELLA_GRAPH_SCREENSHOT,
+      'conversation',
+    )
     await waitFor(
       '!document.querySelector(".node-workspace > header button").disabled',
     )
@@ -869,14 +894,26 @@ app
     )
     assert.equal(deletionRequests, 2)
     assert.equal(projectDeleted, true)
-    await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'projects-empty')
+    await captureUi(
+      window,
+      process.env.CONSTELLA_GRAPH_SCREENSHOT,
+      'projects-empty',
+    )
     if (process.env.CONSTELLA_GRAPH_SCREENSHOT) {
       await run("location.hash = '/playground'")
       await waitFor('!!document.querySelector(".lab-page .welcome")')
-      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'connectivity')
+      await captureUi(
+        window,
+        process.env.CONSTELLA_GRAPH_SCREENSHOT,
+        'connectivity',
+      )
       await run("location.hash = '/integration'")
       await waitFor('!!document.querySelector(".notes-page")')
-      await captureUi(window, process.env.CONSTELLA_GRAPH_SCREENSHOT, 'integration-notes')
+      await captureUi(
+        window,
+        process.env.CONSTELLA_GRAPH_SCREENSHOT,
+        'integration-notes',
+      )
     }
     assert.equal(
       await run('document.querySelectorAll(".sidebar-projects a").length'),
@@ -906,8 +943,8 @@ app
           nodeConversation: true,
           sameThreadFollowup: true,
           stopNode: true,
-          monacoDiff: true,
-          testOutput: true,
+          terminalOnlyNodeView: true,
+          checksRetainedInRunRecords: true,
           saves,
           prepares,
           rendererErrors: errors,

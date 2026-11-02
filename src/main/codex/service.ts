@@ -1,10 +1,6 @@
-import {
-  Codex,
-  type ThreadEvent,
-  type ThreadItem,
-  type ThreadOptions,
-  type TurnOptions,
-} from '@openai/codex-sdk'
+import type { ThreadItem, ThreadOptions, AgentClient } from '../terminal/types'
+import { NativeCliClient } from '../terminal/client'
+import { terminalHost } from '../terminal/host'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -25,16 +21,7 @@ import type {
   PreparedCatalogRun,
 } from '../../shared/catalog'
 
-export interface CodexClient {
-  startThread(options: ThreadOptions): CodexThread
-  resumeThread(id: string, options: ThreadOptions): CodexThread
-}
-interface CodexThread {
-  runStreamed(
-    input: string,
-    options: TurnOptions,
-  ): Promise<{ events: AsyncIterable<ThreadEvent> }>
-}
+export type CodexClient = AgentClient
 
 const clip = (text: string): string =>
   text.length > 24_000
@@ -45,7 +32,7 @@ export function toActivity(item: ThreadItem): Activity {
   const base = { id: item.id, type: item.type }
   switch (item.type) {
     case 'agent_message':
-      return { ...base, title: 'Codex', text: clip(item.text) }
+      return { ...base, title: 'Agent', text: clip(item.text) }
     case 'reasoning':
       return { ...base, title: 'Reasoning summary', text: clip(item.text) }
     case 'command_execution':
@@ -118,16 +105,31 @@ export class ConnectivityService {
 
   constructor(
     private readonly store: SessionStore,
-    private readonly client: CodexClient = new Codex(),
+    private readonly client: CodexClient = new NativeCliClient(),
     private readonly resolveCatalog?: CatalogRunResolver,
   ) {}
 
   async initialize(): Promise<void> {
     const saved = await this.store.read()
+    let reconnect: Run | undefined
     if (saved) {
       this.state = { session: saved }
       for (const run of saved.runs) {
         if (run.status === 'running' || run.status === 'stopping') {
+          if (
+            this.client instanceof NativeCliClient &&
+            saved.threadId?.startsWith('terminal:')
+          ) {
+            const live = (await terminalHost().list()).find(
+              (session) =>
+                session.id === saved.threadId!.slice(9) &&
+                session.state !== 'exited',
+            )
+            if (live) {
+              reconnect = run
+              continue
+            }
+          }
           run.status = 'interrupted'
           run.finishedAt = new Date().toISOString()
           run.error = {
@@ -139,6 +141,19 @@ export class ConnectivityService {
       }
       await this.persist()
     } else await this.createSession()
+    if (reconnect) {
+      const active = {
+        controller: new AbortController(),
+        done: undefined as Promise<void> | undefined,
+      }
+      this.active = active
+      active.done = this.execute(reconnect, active.controller, true).finally(
+        () => {
+          if (this.active === active) this.active = undefined
+          this.emit()
+        },
+      )
+    }
   }
 
   snapshot(): AppState {
@@ -263,7 +278,7 @@ export class ConnectivityService {
         throw new Error(
           'Select a model from the runtime catalog before setting an effort.',
         )
-      if (prepared.model) {
+      if (prepared.model && (this.state.diagnostics?.models.length ?? 0) > 0) {
         const model = this.state.diagnostics?.models.find(
           (model) => model.id === prepared.model,
         )
@@ -318,16 +333,24 @@ export class ConnectivityService {
     }
   }
 
-  private async execute(run: Run, controller: AbortController): Promise<void> {
+  private async execute(
+    run: Run,
+    controller: AbortController,
+    attachOnly = false,
+  ): Promise<void> {
     let completed = false
     try {
       const options: ThreadOptions = {
+        role: 'lab',
+        attachOnly,
         workingDirectory: this.state.session.workspace,
+        provider:
+          run.options.provider ??
+          run.projectSnapshot?.defaultProvider ??
+          'codex',
+        title: 'Terminal lab',
         skipGitRepoCheck: true,
         sandboxMode: run.options.sandbox,
-        approvalPolicy: 'never',
-        networkAccessEnabled: false,
-        webSearchMode: 'disabled',
         model: run.options.model ?? undefined,
         modelReasoningEffort: run.options.effort ?? undefined,
       }
@@ -363,7 +386,9 @@ export class ConnectivityService {
         await this.persist()
       }
       if (!completed && !controller.signal.aborted)
-        throw new Error('The SDK stream ended without a turn.completed event.')
+        throw new Error(
+          'The agent session ended without handing back its result.',
+        )
       run.status = completed ? 'completed' : 'cancelled'
     } catch (error) {
       if (completed) run.status = 'completed'
@@ -373,6 +398,7 @@ export class ConnectivityService {
         run.error = describeError(error)
       }
     } finally {
+      if (controller.signal.reason === 'detach') return
       run.finishedAt = new Date().toISOString()
       // A storage failure must remain visible and cannot become an unhandled background rejection.
       try {
@@ -394,8 +420,9 @@ export class ConnectivityService {
   async waitForIdle(): Promise<void> {
     await this.active?.done
   }
-  async shutdown(): Promise<void> {
-    await this.stop()
+  async shutdown(detach = false): Promise<void> {
+    if (detach) this.active?.controller.abort('detach')
+    else await this.stop()
     await this.waitForIdle()
   }
 }

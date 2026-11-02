@@ -155,6 +155,7 @@ export interface ProjectRunSnapshot {
   instructions: string
   devCommand: string
   testCommand: string
+  defaultProvider?: 'codex' | 'claude'
   defaultModel?: string | null
   defaultEffort?: Effort | null
 }

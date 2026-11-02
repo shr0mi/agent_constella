@@ -373,7 +373,7 @@ describe('persistent task graph application service', () => {
         ...identity(saved),
         expectedRevision: saved.revision,
       }),
-    ).rejects.toThrow(/Refresh runtime model/)
+    ).resolves.toMatchObject({ revision: saved.revision })
   })
   it('rejects stale changes, deduplicates exact retries, and rejects reused command IDs with different edits', async () => {
     const f = await fixture(),

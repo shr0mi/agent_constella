@@ -1198,7 +1198,7 @@ export class WorkflowService {
         }
       }
       for (const node of Object.values(record.nodes))
-        if (node.status === 'running') {
+        if (node.status === 'running' && !this.execution.activeRuns(record.projectId, record.taskId).some(run => run.nodeId === node.id)) {
           node.status = 'interrupted'
           node.reason = 'The app closed during this attempt.'
         }
@@ -1212,9 +1212,9 @@ export class WorkflowService {
       await this.execution.waitForIdle()
     } while (this.pumping.size || this.execution.hasActiveRuns())
   }
-  async shutdown() {
+  async shutdown(detach = false) {
     this.stopping = true
     await Promise.all([...this.pumping.values()])
-    await this.execution.shutdown()
+    await this.execution.shutdown(detach)
   }
 }

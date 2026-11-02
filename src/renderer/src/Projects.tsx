@@ -28,9 +28,9 @@ import {
   Zap,
 } from 'lucide-react'
 import type { Project, Task, TaskStatus } from '../../shared/workspace'
-import type { Effort, Failure } from '../../shared/contracts'
+import { effortSchema, type Effort, type Failure } from '../../shared/contracts'
 import type { WorkflowSummary } from '../../shared/workflow'
-import { refreshDiagnostics, useAppStore } from './store'
+import { useAppStore } from './store'
 import { Modal } from './components/Modal'
 import { ManagerChat } from './ManagerChat'
 import { ProjectIdeButton, TaskIdeButton } from './TaskReview'
@@ -50,7 +50,9 @@ function taskWorkflowLabel(workflow: WorkflowSummary) {
   if (workflow.running)
     return `${workflow.running} agent${workflow.running === 1 ? '' : 's'} running`
   if (workflow.phase === 'completed')
-    return workflow.integration === 'integrated' ? 'Integrated' : 'Awaiting integration'
+    return workflow.integration === 'integrated'
+      ? 'Integrated'
+      : 'Awaiting integration'
   if (workflow.blockers.some((message) => message.startsWith('Waiting for “')))
     return 'Waiting for prerequisites'
   if (workflow.phase === 'waiting')
@@ -197,7 +199,9 @@ export function ProjectsPage() {
         <div className="project-cards">
           {visible.length > 0 && (
             <div className="project-list-header" aria-hidden="true">
-              <span>Repository</span><span>Workload</span><span />
+              <span>Repository</span>
+              <span>Workload</span>
+              <span />
             </div>
           )}
           {visible.map((project) => {
@@ -220,7 +224,8 @@ export function ProjectsPage() {
                   <div>
                     <h2>{project.name}</h2>
                     <p className="project-card-path" title={project.repoPath}>
-                      <GitBranch size={12} /><span>{project.repoPath}</span>
+                      <GitBranch size={12} />
+                      <span>{project.repoPath}</span>
                     </p>
                     <p className="project-card-description">
                       {project.description ||
@@ -229,13 +234,22 @@ export function ProjectsPage() {
                   </div>
                 </div>
                 <div className="project-card-work">
-                  <span><strong>{projectTasks.length}</strong> {projectTasks.length === 1 ? 'task' : 'tasks'}</span>
+                  <span>
+                    <strong>{projectTasks.length}</strong>{' '}
+                    {projectTasks.length === 1 ? 'task' : 'tasks'}
+                  </span>
                   <span className="project-completion">{done} done</span>
                   <div className="project-progress" aria-hidden="true">
-                    <span style={{ transform: `scaleX(${projectTasks.length ? done / projectTasks.length : 0})` }} />
+                    <span
+                      style={{
+                        transform: `scaleX(${projectTasks.length ? done / projectTasks.length : 0})`,
+                      }}
+                    />
                   </div>
                 </div>
-                <span className="project-open" aria-hidden="true">Open project <ArrowRight size={16} /></span>
+                <span className="project-open" aria-hidden="true">
+                  Open project <ArrowRight size={16} />
+                </span>
               </Link>
             )
           })}
@@ -257,7 +271,12 @@ function LoadingWorkspace() {
       <span className="sr-only">Loading your workspace…</span>
       {[0, 1, 2].map((row) => (
         <div className="workspace-skeleton" key={row} aria-hidden="true">
-          <span /><div><i /><i /></div><span />
+          <span />
+          <div>
+            <i />
+            <i />
+          </div>
+          <span />
         </div>
       ))}
     </div>
@@ -496,7 +515,11 @@ export function ProjectBoardPage() {
                   aria-label={`Add task to ${column.title}`}
                   onClick={() => setEditor(column.id)}
                   disabled={pending > 0 || column.id === 'done'}
-                  title={column.id === 'done' ? 'Tasks move here after integration' : undefined}
+                  title={
+                    column.id === 'done'
+                      ? 'Tasks move here after integration'
+                      : undefined
+                  }
                 >
                   <Plus size={15} />
                 </button>
@@ -554,9 +577,7 @@ export function ProjectBoardPage() {
                             className={`task-workflow-badge ${workflow.phase}`}
                             title={workflow.blockers.join('\n')}
                           >
-                            <span>
-                              {taskWorkflowLabel(workflow)}
-                            </span>
+                            <span>{taskWorkflowLabel(workflow)}</span>
                             <strong>
                               {workflow.accepted}/{workflow.total}
                             </strong>
@@ -571,9 +592,14 @@ export function ProjectBoardPage() {
                       })()}
                       {(task.dependencyIds ?? []).length > 0 && (
                         <p className="task-dependency-note">
-                          Depends on: {task.dependencyIds.map((id) =>
-                            projectTasks.find((other) => other.id === id)?.title ?? 'Missing task',
-                          ).join(', ')}
+                          Depends on:{' '}
+                          {task.dependencyIds
+                            .map(
+                              (id) =>
+                                projectTasks.find((other) => other.id === id)
+                                  ?.title ?? 'Missing task',
+                            )
+                            .join(', ')}
                         </p>
                       )}
                       <div className="task-card-actions">
@@ -642,7 +668,13 @@ export function ProjectBoardPage() {
                           }
                         >
                           {columns.map((option) => (
-                            <option key={option.id} value={option.id} disabled={option.id === 'done' && task.status !== 'done'}>
+                            <option
+                              key={option.id}
+                              value={option.id}
+                              disabled={
+                                option.id === 'done' && task.status !== 'done'
+                              }
+                            >
                               {option.title}
                             </option>
                           ))}
@@ -800,9 +832,17 @@ function TaskEditor({
   const [description, setDescription] = useState(task?.description ?? '')
   const [criteria, setCriteria] = useState(task?.acceptanceCriteria ?? '')
   const [dependencyIds, setDependencyIds] = useState(task?.dependencyIds ?? [])
-  const [requiredFiles, setRequiredFiles] = useState((task?.requiredFiles ?? []).join('\n'))
+  const [requiredFiles, setRequiredFiles] = useState(
+    (task?.requiredFiles ?? []).join('\n'),
+  )
   const snapshot = useWorkspaceStore((state) => state.snapshot)
-  const prerequisites = snapshot?.tasks.filter((other) => other.projectId === project.id && other.id !== task?.id && (!other.archivedAt || dependencyIds.includes(other.id))) ?? []
+  const prerequisites =
+    snapshot?.tasks.filter(
+      (other) =>
+        other.projectId === project.id &&
+        other.id !== task?.id &&
+        (!other.archivedAt || dependencyIds.includes(other.id)),
+    ) ?? []
   const busy = useWorkspaceStore((state) => state.pending > 0)
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -817,7 +857,10 @@ function TaskEditor({
             description,
             acceptanceCriteria: criteria,
             dependencyIds,
-            requiredFiles: requiredFiles.split('\n').map((path) => path.trim()).filter(Boolean),
+            requiredFiles: requiredFiles
+              .split('\n')
+              .map((path) => path.trim())
+              .filter(Boolean),
           }),
         )
       else
@@ -828,7 +871,10 @@ function TaskEditor({
             description,
             acceptanceCriteria: criteria,
             dependencyIds,
-            requiredFiles: requiredFiles.split('\n').map((path) => path.trim()).filter(Boolean),
+            requiredFiles: requiredFiles
+              .split('\n')
+              .map((path) => path.trim())
+              .filter(Boolean),
             status,
           }),
         )
@@ -878,27 +924,37 @@ function TaskEditor({
           />
           <label>Depends on todos</label>
           <div className="task-dependencies">
-            {prerequisites.length ? prerequisites.map((other) => (
-              <label key={other.id} className="dependency-choice">
-                <input
-                  type="checkbox"
-                  checked={dependencyIds.includes(other.id)}
-                  onChange={(event) => setDependencyIds((ids) =>
-                    event.target.checked
-                      ? [...ids, other.id]
-                      : ids.filter((id) => id !== other.id),
-                  )}
-                />
-                <span>
-                  {other.title} · {snapshot?.workflows?.some((workflow) =>
-                    workflow.taskId === other.id &&
-                    workflow.integration === 'integrated' &&
-                    workflow.phase === 'completed',
-                  ) ? 'Integrated' : 'Awaiting integration'}
-                </span>
-              </label>
-            )) : (
-              <p className="form-helper">Create another todo to select a prerequisite.</p>
+            {prerequisites.length ? (
+              prerequisites.map((other) => (
+                <label key={other.id} className="dependency-choice">
+                  <input
+                    type="checkbox"
+                    checked={dependencyIds.includes(other.id)}
+                    onChange={(event) =>
+                      setDependencyIds((ids) =>
+                        event.target.checked
+                          ? [...ids, other.id]
+                          : ids.filter((id) => id !== other.id),
+                      )
+                    }
+                  />
+                  <span>
+                    {other.title} ·{' '}
+                    {snapshot?.workflows?.some(
+                      (workflow) =>
+                        workflow.taskId === other.id &&
+                        workflow.integration === 'integrated' &&
+                        workflow.phase === 'completed',
+                    )
+                      ? 'Integrated'
+                      : 'Awaiting integration'}
+                  </span>
+                </label>
+              ))
+            ) : (
+              <p className="form-helper">
+                Create another todo to select a prerequisite.
+              </p>
             )}
           </div>
           <p className="form-helper">
@@ -983,14 +1039,16 @@ function ProjectSettings({
   const [devCommand, setDevCommand] = useState(project.devCommand)
   const [testCommand, setTestCommand] = useState(project.testCommand)
   const [ideCommand, setIdeCommand] = useState(project.ideCommand ?? '')
-  const [maxParallelAgents, setMaxParallelAgents] = useState(project.maxParallelAgents ?? 4)
+  const [maxParallelAgents, setMaxParallelAgents] = useState(
+    project.maxParallelAgents ?? 4,
+  )
+  const [defaultProvider, setDefaultProvider] = useState<'codex' | 'claude'>(
+    project.defaultProvider ?? 'codex',
+  )
   const [defaultModel, setDefaultModel] = useState(project.defaultModel ?? '')
   const [defaultEffort, setDefaultEffort] = useState<Effort | ''>(
     project.defaultEffort ?? '',
   )
-  const models = useAppStore((state) => state.state?.diagnostics?.models)
-  const checkingModels = useAppStore((state) => state.checking)
-  const selectedModel = models?.find((model) => model.id === defaultModel)
   const busy = useWorkspaceStore((state) => state.pending > 0)
   async function deleteProject() {
     setFailure(undefined)
@@ -1020,6 +1078,7 @@ function ProjectSettings({
           testCommand,
           ideCommand,
           maxParallelAgents,
+          defaultProvider,
           defaultModel: defaultModel || null,
           defaultEffort: defaultEffort || null,
         }),
@@ -1065,8 +1124,9 @@ function ProjectSettings({
             placeholder="code --new-window"
           />
           <p className="form-helper">
-            Use code, zed, or an executable path with optional arguments. Open in
-            IDE appends the workspace path. Quote executable paths containing spaces.
+            Use code, zed, or an executable path with optional arguments. Open
+            in IDE appends the workspace path. Quote executable paths containing
+            spaces.
           </p>
           <label htmlFor="parallel-agents">Maximum simultaneous agents</label>
           <input
@@ -1076,31 +1136,43 @@ function ProjectSettings({
             max={8}
             required
             value={maxParallelAgents}
-            onChange={(event) => setMaxParallelAgents(Number(event.target.value))}
+            onChange={(event) =>
+              setMaxParallelAgents(Number(event.target.value))
+            }
           />
+          <label htmlFor="project-default-provider">
+            Default agent provider
+          </label>
+          <select
+            id="project-default-provider"
+            value={defaultProvider}
+            onChange={(event) => {
+              setDefaultProvider(event.target.value as 'codex' | 'claude')
+              setDefaultModel('')
+              setDefaultEffort('')
+            }}
+          >
+            <option value="codex">Codex CLI</option>
+            <option value="claude">Claude Code</option>
+          </select>
+          <p className="form-helper">
+            New agent and manager terminals use this CLI. Existing terminals
+            keep their provider. Install and sign in to the CLI on this
+            computer.
+          </p>
           <div className="command-fields">
             <div>
               <label htmlFor="project-default-model">Default model</label>
-              <select
+              <input
                 id="project-default-model"
                 value={defaultModel}
+                maxLength={160}
+                placeholder="Use the CLI’s configured default"
                 onChange={(event) => {
                   setDefaultModel(event.target.value)
                   setDefaultEffort('')
                 }}
-              >
-                <option value="">Configured runtime default</option>
-                {defaultModel && !selectedModel && (
-                  <option value={defaultModel}>
-                    {defaultModel} (refresh to verify)
-                  </option>
-                )}
-                {models?.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div>
               <label htmlFor="project-default-effort">
@@ -1114,14 +1186,8 @@ function ProjectSettings({
                   setDefaultEffort(event.target.value as Effort | '')
                 }
               >
-                <option value="">Model default</option>
-                {defaultEffort &&
-                  !selectedModel?.efforts.includes(defaultEffort) && (
-                    <option value={defaultEffort}>
-                      {defaultEffort} (refresh to verify)
-                    </option>
-                  )}
-                {selectedModel?.efforts.map((effort) => (
+                <option value="">Use the CLI’s configured default</option>
+                {effortSchema.options.map((effort) => (
                   <option key={effort} value={effort}>
                     {effort}
                   </option>
@@ -1130,19 +1196,9 @@ function ProjectSettings({
             </div>
           </div>
           <p className="form-helper">
-            New manager turns and agent runs inherit these settings unless a
-            chat, node, or agent profile overrides them. Saved defaults also
-            apply after restarting the app.
+            Node and profile overrides still apply. Model and effort support is
+            validated by your chosen CLI.
           </p>
-          <button
-            type="button"
-            className="button secondary"
-            disabled={checkingModels}
-            onClick={() => void refreshDiagnostics()}
-          >
-            <RefreshCw size={13} className={checkingModels ? 'spin' : ''} />
-            Refresh model options
-          </button>
           <label htmlFor="project-description">Project brief</label>
           <textarea
             id="project-description"
@@ -1187,8 +1243,9 @@ function ProjectSettings({
           </div>
           <p className="form-helper">
             Node runs use the development command as context and execute the
-            test command in each agent workspace after successful turns and on combined results when needed.
-            Saving settings does not run either command.
+            test command in each agent workspace after successful turns and on
+            combined results when needed. Saving settings does not run either
+            command.
           </p>
         </fieldset>
         {failure && <FormFailure failure={failure} />}

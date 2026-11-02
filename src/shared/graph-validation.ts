@@ -204,13 +204,7 @@ export function validateGraph(
         'An explicit reasoning effort needs an explicit model.',
       )
     if (model) {
-      if (!context.models.length)
-        issue(
-          'MODEL_CATALOG_UNAVAILABLE',
-          'Refresh runtime model options before preparing this graph.',
-          false,
-        )
-      else {
+      if (context.models.length) {
         const option = context.models.find((option) => option.id === model)
         if (!option || (effort && !option.efforts.includes(effort)))
           issue(

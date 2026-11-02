@@ -9,7 +9,7 @@ import type {
   CodexOptions,
   ThreadEvent,
   ThreadOptions,
-} from '@openai/codex-sdk'
+} from '../src/main/terminal/types'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {

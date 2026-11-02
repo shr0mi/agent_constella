@@ -252,4 +252,9 @@ export const migrations = [
     );
     `,
   },
+  {
+    version: 12,
+    name: 'native_terminal_provider',
+    sql: `ALTER TABLE projects ADD COLUMN default_provider TEXT NOT NULL DEFAULT 'codex' CHECK(default_provider IN ('codex', 'claude'));`,
+  },
 ] as const

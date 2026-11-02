@@ -1,5 +1,7 @@
 # Manager chats and local MCP
 
+> Historical SDK implementation record. Current execution and manager behavior is documented in [Native terminals](native-terminals.md).
+
 The board's **Project manager** can edit project settings, tasks and graphs within that project. A graph's **Task manager** is restricted to that task and can read project settings. Manager conversations, context packets, activity, status, errors, and resumable Codex thread IDs live in `manager_chats`, separately from node runs and the connectivity lab. Startup marks unfinished manager turns interrupted; it never reruns a request.
 
 Both manager panels have **New chat** and a **Saved chats** selector. New chat saves the previous conversation and selects an empty conversation with a fresh application ID and no Codex thread ID. Saved chats retain their original thread IDs and transcripts and can be selected and continued. The selected conversation persists across restart independently for each project board and task graph. Conversation changes leave project metadata, graph/worker execution, and Undo history untouched. Active or preparing manager turns block conversation switching until they are stopped or finish.

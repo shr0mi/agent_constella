@@ -1,0 +1,204 @@
+.native-terminal {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  background: var(--rail, #172131);
+  color: #f1f5fc;
+  overflow: hidden;
+}
+.terminal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.terminal-toolbar > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.terminal-toolbar small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.terminal-toolbar .button {
+  min-height: 32px;
+}
+.terminal-screen {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 12px 0;
+  overflow: hidden;
+}
+.terminal-screen .xterm {
+  height: 100%;
+}
+.terminal-screen .xterm-viewport {
+  scrollbar-color: #627187 #172131;
+}
+.native-terminal .terminal-caption {
+  margin: 0;
+  padding: 8px 14px;
+  color: #b3c0d3;
+  font-size: 11px;
+  border-top: 1px solid #344257;
+}
+.terminal-error {
+  margin: 0;
+  padding: 10px 14px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.node-workspace-content > .native-terminal {
+  flex: 1;
+}
+.manager-transcript:has(> .native-terminal) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.manager-transcript > .native-terminal {
+  flex: 1;
+}
+.manager-panel:has(.native-terminal) {
+  width: min(900px, calc(100vw - 240px));
+}
+.manager-panel:has(.native-terminal) .manager-composer textarea {
+  min-height: 48px;
+}
+.terminal-lab {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-toolbar,
+.native-terminal .terminal-caption {
+  flex-shrink: 0;
+}
+.transcript:has(> .native-terminal) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.terminals-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 28px 32px;
+}
+.terminal-multiplexer {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.terminal-session-list {
+  flex: 0 0 230px;
+  overflow: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.terminal-session {
+  display: flex;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.terminal-session.selected {
+  background: var(--accent-soft);
+}
+.terminal-session-select {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 8px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.terminal-session-select > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.terminal-session-select strong {
+  font-size: 12px;
+  font-weight: 550;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.terminal-session-select small {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.terminal-session-select:hover {
+  color: var(--accent);
+}
+.terminal-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: #172131;
+}
+.terminal-panes.split {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line-strong);
+}
+.terminal-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  flex: 1;
+  gap: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+.terminal-empty h2 {
+  color: var(--ink);
+  font-size: 18px;
+}
+@media (max-width: 1180px) {
+  .terminals-page {
+    padding: 24px;
+  }
+  .terminal-session-list {
+    flex-basis: 180px;
+  }
+  .terminal-panes.split {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.terminal-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import type { ThreadEvent, ThreadOptions, TurnOptions } from '@openai/codex-sdk'
+import type { ThreadEvent, ThreadOptions, TurnOptions } from '../src/main/terminal/types'
 import {
   openWorkspaceDatabase,
   type WorkspaceDatabase,

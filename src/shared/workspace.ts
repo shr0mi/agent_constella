@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { providerSchema, type AgentProvider } from './terminal'
 import { effortSchema, type Effort, type Result } from './contracts'
 import type { WorkflowSummary } from './workflow'
 
@@ -17,6 +18,7 @@ export const projectFieldsSchema = z
     testCommand: z.string().trim().max(2000),
     ideCommand: z.string().trim().max(2000).optional(),
     maxParallelAgents: z.number().int().min(1).max(8).optional(),
+    defaultProvider: providerSchema.optional(),
     defaultModel: z.string().trim().min(1).max(160).nullable().optional(),
     defaultEffort: effortSchema.nullable().optional(),
   })
@@ -83,6 +85,7 @@ export interface Project {
   testCommand: string
   ideCommand: string
   maxParallelAgents: number
+  defaultProvider?: AgentProvider
   defaultModel: string | null
   defaultEffort: Effort | null
   revision: number

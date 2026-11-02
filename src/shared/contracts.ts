@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { providerSchema, type TerminalBridge } from './terminal'
 import type { WorkspaceBridge } from './workspace'
 import type { GraphBridge } from './graph'
 import type { ExecutionBridge } from './execution'
@@ -11,7 +12,7 @@ import type {
   SkillSnapshot,
 } from './catalog'
 
-// This is the pinned TypeScript SDK's union, not a promise that every model supports every effort.
+// Persisted effort values; the selected native CLI validates provider support.
 export const effortSchema = z.enum([
   'minimal',
   'low',
@@ -25,6 +26,7 @@ export const effortSchema = z.enum([
 export type Effort = z.infer<typeof effortSchema>
 export const runInputSchema = z
   .object({
+    provider: providerSchema.optional(),
     prompt: z.string().trim().min(1).max(32_000),
     model: z.string().trim().min(1).max(160).nullable().optional(),
     effort: effortSchema.nullable().optional(),
@@ -53,6 +55,7 @@ export interface ModelOption {
 }
 export interface Diagnostics {
   sdkVersion: string
+  providers?: { provider: 'codex' | 'claude'; available: boolean; path?: string; version?: string; error?: string }[]
   cliVersion: string
   runtimePath: string
   auth: { status: 'signed-in' | 'missing' | 'unknown'; detail: string }
@@ -119,6 +122,7 @@ export interface SkillOption {
 export type Result<T> = { ok: true; value: T } | { ok: false; error: Failure }
 
 export interface ConstellaBridge {
+  terminal: TerminalBridge
   manager: ManagerBridge
   workflow: WorkflowBridge
   execution: ExecutionBridge
@@ -143,10 +147,8 @@ export const skills: SkillOption[] = [
 ]
 
 export const limitations = [
-  'The TypeScript SDK uses codex exec. It exposes approval policy options, but has no approval-request event or approve/deny callback. This starter uses approvalPolicy=never; restricted operations fail instead of opening an approval dialog.',
-  'Events arrive at item boundaries and item updates. The SDK does not expose guaranteed token-by-token text deltas or incremental shell output. Nested tools invoked through the runtime’s exec wrapper can be absent from this stream, including denied writes; the visible feed is incomplete.',
-  'Selected skill contents and resource paths are snapshotted into each prompt. There is no typed skill selection or strict skill allowlist in this SDK. Codex may also discover installed skills and inherited configuration.',
-  'The SDK has no model-list or authentication API. Diagnostics use the pinned CLI login status and a short-lived app-server model/list request. Catalog entries are filtered to efforts the SDK can express; account availability is confirmed only by a real run.',
-  'Stop aborts the SDK subprocess. It does not undo file changes. Continue starts a new turn in the saved Codex thread, not the interrupted process.',
-  'Thread history belongs to the local Codex home. The app stores thread IDs and a bounded event transcript separately. Deleting Codex sessions, changing Codex home, or deleting a scratch workspace can prevent continuation.',
+  'Agent nodes run your installed Codex or Claude Code CLI in real PTY terminals. Authentication, native commands, permissions and model availability belong to that CLI.',
+  'Hand work back through agent_report_done or Finish step before checks and acceptance. Quiet output or a finished response does not imply workflow completion.',
+  'Terminal sessions and local screen transcripts live in private app data. Closing a pane detaches; Stop ends the CLI process. A reboot ends processes; saved project state and transcripts remain.',
+  'Worktrees isolate code changes, not operating-system permissions. Use the native CLI permission controls.',
 ]

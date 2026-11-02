@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ThreadEvent, ThreadOptions, TurnOptions } from '@openai/codex-sdk'
+import type { ThreadEvent, ThreadOptions, TurnOptions } from '../src/main/terminal/types'
 import {
   openWorkspaceDatabase,
   type WorkspaceDatabase,
@@ -390,9 +390,6 @@ describe('node execution in isolated worktrees', () => {
     expect(f.transport.calls[0].options).toMatchObject({
       workingDirectory: run.worktree!.path,
       sandboxMode: 'workspace-write',
-      approvalPolicy: 'never',
-      networkAccessEnabled: false,
-      webSearchMode: 'disabled',
     })
     expect(existsSync(join(run.worktree!.path, '.constella'))).toBe(false)
     expect(
@@ -674,7 +671,7 @@ describe('node execution in isolated worktrees', () => {
     f.start('retry')
     await f.execution.waitForIdle()
     expect(f.execution.get(f.identity).runs.at(-1)?.error?.message).toContain(
-      'without a turn.completed',
+      'without handing back its result',
     )
     f.start('retry')
     await f.execution.waitForIdle()

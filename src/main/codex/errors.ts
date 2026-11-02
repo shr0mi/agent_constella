@@ -11,7 +11,7 @@ export function describeError(error: unknown): Failure {
     return {
       code: 'AUTHENTICATION',
       message: safe,
-      hint: 'Run npx codex login in this repository, then refresh diagnostics. An existing desktop login may use a different Codex home.',
+      hint: 'Sign in using your chosen native CLI, then retry the terminal session.',
     }
   }
   if (
@@ -22,21 +22,21 @@ export function describeError(error: unknown): Failure {
     return {
       code: 'MODEL_OPTIONS',
       message: safe,
-      hint: 'Refresh the model catalog or choose Configured default. Model and effort access depends on your account and runtime.',
+      hint: 'Use a model and effort supported by your chosen CLI, or clear the override to inherit its configuration.',
     }
   }
   if (/sandbox|permission|not permitted|denied|approval/i.test(safe)) {
     return {
       code: 'PERMISSION',
       message: safe,
-      hint: 'Check the selected sandbox. Interactive approval is unavailable through this SDK; this app never escalates access automatically.',
+      hint: 'Inspect the native CLI permission prompt and configuration in the terminal.',
     }
   }
   if (/ENOENT|locate Codex|Unsupported platform/i.test(safe)) {
     return {
       code: 'RUNTIME',
       message: safe,
-      hint: 'Run npm install with optional dependencies enabled to install the pinned native Codex runtime.',
+      hint: 'Install Codex CLI or Claude Code and make it available on PATH, then retry.',
     }
   }
   if (

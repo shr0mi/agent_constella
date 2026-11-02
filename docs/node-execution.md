@@ -1,5 +1,7 @@
 # Codex node execution — milestone 5
 
+> Historical SDK implementation record. Current execution and manager behavior is documented in [Native terminals](native-terminals.md).
+
 > Historical milestone notes: the current parallel-worktree execution, todo dependency, IDE, and integration behavior is documented in [Parallel workflows](parallel-workflows.md). The original single-directory and serial-execution details below describe the earlier design.
 
 Agent nodes now have a **Conversation & runs** workspace. **Run node** executes the saved initial prompt through the pinned Codex TypeScript SDK on a task branch in the existing project directory. The conversation supports follow-ups, stop, retry, and an explicit fresh conversation. Activity, test output, per-attempt file diffs, and saved execution context are available in separate tabs.

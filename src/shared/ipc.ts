@@ -1,5 +1,11 @@
 // Keep the preload's runtime imports free of validation and server dependencies.
 export const channels = {
+  terminalList: 'constella:terminal:list',
+  terminalRead: 'constella:terminal:read',
+  terminalInput: 'constella:terminal:input',
+  terminalResize: 'constella:terminal:resize',
+  terminalFinish: 'constella:terminal:finish',
+  terminalClose: 'constella:terminal:close',
   managerGet: 'constella:manager:get',
   managerList: 'constella:manager:list',
   managerNewChat: 'constella:manager:new-chat',

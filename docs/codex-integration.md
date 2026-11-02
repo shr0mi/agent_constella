@@ -1,5 +1,7 @@
 # Milestone 1: Codex integration record
 
+> Historical SDK implementation record. Current execution and manager behavior is documented in [Native terminals](native-terminals.md).
+
 Implementation date: 25 October 2026. The manual Electron checkpoint is pending user verification; milestone 1 is not checked off automatically.
 
 ## Runtime and architecture

@@ -1,3 +1,4 @@
+import { TerminalPane } from './components/TerminalPane'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Bot,
@@ -59,6 +60,7 @@ function changeDescription(entry: ChangeEntry) {
       ['instructions', 'Instructions'],
       ['devCommand', 'Development/run command'],
       ['testCommand', 'Test command'],
+      ['defaultProvider', 'Default provider'],
       ['defaultModel', 'Default model'],
       ['defaultEffort', 'Default effort'],
     ] as const
@@ -200,6 +202,30 @@ function ManagerPanel({
   useEffect(() => {
     if (tab === 'chat') bottom.current?.scrollIntoView({ block: 'end' })
   }, [chat, tab])
+  const launching = useRef(new Set<string>())
+  useEffect(() => {
+    if (
+      !chat ||
+      chat.turns.length ||
+      blockedReason ||
+      launching.current.has(chat.id)
+    )
+      return
+    launching.current.add(chat.id)
+    void value(
+      window.constella!.manager.send({
+        ...scope,
+        chatId: chat.id,
+        selectedNodeId: selectedNodeId ?? null,
+        message:
+          'Read the current application context through MCP, then wait for my instructions. Do not change anything until I ask.',
+      }),
+    )
+      .then(() => refresh())
+      .catch((error) => {
+        if (alive.current) setError(String(error))
+      })
+  }, [chat?.id, blockedReason])
   async function act(action: () => Promise<unknown>) {
     setPending(true)
     setError('')
@@ -229,7 +255,7 @@ function ManagerPanel({
             disabled={pending || active || !chat || chat.turns.length === 0}
             title={
               active
-                ? 'Stop the current turn before starting a new chat.'
+                ? 'Finish the manager assignment or stop its terminal before starting a new chat.'
                 : 'Start a fresh conversation and keep this one in saved chats.'
             }
             onClick={() => {
@@ -326,6 +352,13 @@ function ManagerPanel({
       {tab === 'chat' ? (
         <>
           <div className="manager-transcript" aria-live="polite">
+            {chat?.threadId?.startsWith('terminal:') && (
+              <TerminalPane
+                sessionId={chat.threadId.slice(9)}
+                disabled={!!blockedReason}
+                finishLabel="Finish manager assignment"
+              />
+            )}
             {!chat && <p className="helper">Loading conversation…</p>}
             {chat?.turns.length === 0 && (
               <div className="manager-empty">
@@ -348,47 +381,50 @@ function ManagerPanel({
                 )}
               </div>
             )}
-            {chat?.turns.map((turn) => (
-              <section className="manager-turn" key={turn.id}>
-                <div className="manager-user">
-                  <strong>You</strong>
-                  <p>{turn.message}</p>
-                </div>
-                {turn.items.map((item) =>
-                  item.type === 'agent_message' ? (
-                    <div className="manager-reply" key={item.id}>
-                      <strong>Manager</strong>
-                      <p>{item.text}</p>
-                    </div>
-                  ) : (
-                    <details className="manager-activity" key={item.id}>
-                      <summary>
-                        {item.title}{' '}
-                        {item.status && <small>· {item.status}</small>}
-                      </summary>
-                      <pre>{item.text}</pre>
-                    </details>
-                  ),
-                )}
-                <div className="manager-turn-status">
-                  {turn.status === 'running' && (
-                    <LoaderCircle size={12} className="spin" />
+            {!chat?.threadId?.startsWith('terminal:') &&
+              chat?.turns.map((turn) => (
+                <section className="manager-turn" key={turn.id}>
+                  <div className="manager-user">
+                    <strong>You</strong>
+                    <p>{turn.message}</p>
+                  </div>
+                  {turn.items.map((item) =>
+                    item.type === 'agent_message' ? (
+                      <div className="manager-reply" key={item.id}>
+                        <strong>Manager</strong>
+                        <p>{item.text}</p>
+                      </div>
+                    ) : (
+                      <details className="manager-activity" key={item.id}>
+                        <summary>
+                          {item.title}{' '}
+                          {item.status && <small>· {item.status}</small>}
+                        </summary>
+                        <pre>{item.text}</pre>
+                      </details>
+                    ),
                   )}
-                  {turn.status}
-                </div>
-                {turn.error && (
-                  <p className="manager-error">
-                    {turn.error.message}
-                    <br />
-                    {turn.error.hint}
-                  </p>
-                )}
-                <details className="manager-context">
-                  <summary>Project context for this turn</summary>
-                  <pre>{JSON.stringify(JSON.parse(turn.context), null, 2)}</pre>
-                </details>
-              </section>
-            ))}
+                  <div className="manager-turn-status">
+                    {turn.status === 'running' && (
+                      <LoaderCircle size={12} className="spin" />
+                    )}
+                    {turn.status}
+                  </div>
+                  {turn.error && (
+                    <p className="manager-error">
+                      {turn.error.message}
+                      <br />
+                      {turn.error.hint}
+                    </p>
+                  )}
+                  <details className="manager-context">
+                    <summary>Project context for this turn</summary>
+                    <pre>
+                      {JSON.stringify(JSON.parse(turn.context), null, 2)}
+                    </pre>
+                  </details>
+                </section>
+              ))}
             <div ref={bottom} />
           </div>
           <form
@@ -421,73 +457,77 @@ function ManagerPanel({
             {blockedReason && (
               <p className="manager-warning">{blockedReason}</p>
             )}
-            <div className="manager-options">
-              <select
-                aria-label="Manager model"
-                value={model}
-                disabled={pending || active}
-                onChange={(event) => {
-                  setModel(event.target.value)
-                  setEffort('')
-                }}
-              >
-                <option value="">
-                  Project default (
-                  {project?.defaultModel ?? 'configured runtime'})
-                </option>
-                <option value="__configured__">
-                  Configured runtime default
-                </option>
-                {models.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Manager reasoning effort"
-                value={effort}
-                disabled={pending || active || !effective.model}
-                onChange={(event) => setEffort(event.target.value)}
-              >
-                <option value="">
-                  Inherit (
-                  {resolveModelSettings(
-                    { model: modelOverride },
-                    undefined,
-                    project,
-                  ).effort ?? 'model default'}
-                  )
-                </option>
-                <option value="__default__">Model default</option>
-                {models
-                  .find((option) => option.id === effective.model)
-                  ?.efforts.map((effort) => (
-                    <option key={effort}>{effort}</option>
-                  ))}
-              </select>
-              <button
-                type="button"
-                className="icon-button"
-                title="Refresh model options"
-                onClick={() => void refreshDiagnostics()}
-              >
-                <History size={13} />
-              </button>
-            </div>
-            <textarea
-              aria-label="Message manager"
-              rows={3}
-              value={message}
-              maxLength={32000}
-              disabled={pending || active || !!blockedReason}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder={
-                scope.taskId
-                  ? 'How should this workflow change?'
-                  : 'What should we plan or change?'
-              }
-            />
+            {!(active && chat?.threadId?.startsWith('terminal:')) && (
+              <>
+                <div className="manager-options">
+                  <select
+                    aria-label="Manager model"
+                    value={model}
+                    disabled={pending || active}
+                    onChange={(event) => {
+                      setModel(event.target.value)
+                      setEffort('')
+                    }}
+                  >
+                    <option value="">
+                      Project default (
+                      {project?.defaultModel ?? 'configured runtime'})
+                    </option>
+                    <option value="__configured__">
+                      Configured runtime default
+                    </option>
+                    {models.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Manager reasoning effort"
+                    value={effort}
+                    disabled={pending || active || !effective.model}
+                    onChange={(event) => setEffort(event.target.value)}
+                  >
+                    <option value="">
+                      Inherit (
+                      {resolveModelSettings(
+                        { model: modelOverride },
+                        undefined,
+                        project,
+                      ).effort ?? 'model default'}
+                      )
+                    </option>
+                    <option value="__default__">Model default</option>
+                    {models
+                      .find((option) => option.id === effective.model)
+                      ?.efforts.map((effort) => (
+                        <option key={effort}>{effort}</option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Refresh model options"
+                    onClick={() => void refreshDiagnostics()}
+                  >
+                    <History size={13} />
+                  </button>
+                </div>
+                <textarea
+                  aria-label="Message manager"
+                  rows={3}
+                  value={message}
+                  maxLength={32000}
+                  disabled={pending || active || !!blockedReason}
+                  onChange={(event) => setMessage(event.target.value)}
+                  placeholder={
+                    scope.taskId
+                      ? 'How should this workflow change?'
+                      : 'What should we plan or change?'
+                  }
+                />
+              </>
+            )}
             <div className="manager-send-row">
               <small>Execution starts from the workflow controls.</small>
               {active ? (

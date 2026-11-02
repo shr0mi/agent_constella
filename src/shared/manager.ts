@@ -71,6 +71,7 @@ export interface ManagerTurn {
   error?: Failure
 }
 export interface ManagerChat extends ManagerScope {
+  provider?: 'codex' | 'claude'
   id: string
   createdAt: string
   threadId?: string

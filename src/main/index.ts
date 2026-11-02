@@ -25,7 +25,15 @@ import { WorkflowService } from './application/workflow-service'
 import { ManagerTools } from './application/manager-tools'
 import { ManagerService } from './application/manager-service'
 import { LocalMcpServer } from './mcp/server'
-import { Codex } from '@openai/codex-sdk'
+import { NativeCliClient } from './terminal/client'
+import { TerminalHost, configureTerminalHost } from './terminal/host'
+import {
+  terminalIdSchema,
+  terminalReadSchema,
+  terminalInputSchema,
+  terminalResizeSchema,
+  terminalFinishSchema,
+} from '../shared/terminal'
 import { graphIdentitySchema } from '../shared/graph'
 import { openWorkspaceDatabase, type WorkspaceDatabase } from './db/database'
 import { ConnectivityService } from './codex/service'
@@ -40,6 +48,7 @@ let managers: ManagerService | undefined
 let mcp: LocalMcpServer | undefined
 let database: WorkspaceDatabase | undefined
 let closing = false
+let terminals: TerminalHost
 
 function handle<T>(
   channel: string,
@@ -107,6 +116,28 @@ else {
   void app
     .whenReady()
     .then(async () => {
+      terminals = new TerminalHost(
+        join(app.getPath('userData'), 'terminals'),
+        join(directory, 'terminal-daemon.js'),
+      )
+      configureTerminalHost(terminals)
+      await terminals.initialize()
+      handle(channels.terminalList, () => terminals.list())
+      handle(channels.terminalRead, (input) =>
+        terminals.read(terminalReadSchema.parse(input)),
+      )
+      handle(channels.terminalInput, (input) =>
+        terminals.input(terminalInputSchema.parse(input)),
+      )
+      handle(channels.terminalResize, (input) =>
+        terminals.resize(terminalResizeSchema.parse(input)),
+      )
+      handle(channels.terminalFinish, (input) =>
+        terminals.finish(terminalFinishSchema.parse(input)),
+      )
+      handle(channels.terminalClose, (input) =>
+        terminals.close(terminalIdSchema.parse(input).sessionId),
+      )
       database = openWorkspaceDatabase(
         join(app.getPath('userData'), 'workspace.sqlite'),
       )
@@ -159,6 +190,7 @@ else {
       await mcp.start()
       managers = new ManagerService(database, managerTools, mcp)
       managers.initialize()
+      await managers.reconnect()
       workspace.setProjectDeletionGuard((projectId) => {
         if (workflow!.hasActiveProject(projectId))
           return 'A worker run, workflow transition, or integration is active in this project.'
@@ -171,12 +203,24 @@ else {
         return undefined
       })
       execution.setMcpConnection((identity) => {
-        const connection = mcp!.issue(identity, 'worker')
+        const connection = mcp!.issue(
+          { projectId: identity.projectId, taskId: identity.taskId },
+          'worker',
+          async (summary) => {
+            const id = execution!.get(identity).threadId
+            if (!id?.startsWith('terminal:'))
+              throw new Error(
+                'This worker terminal is not ready to hand back a result.',
+              )
+            await terminals.finish({ sessionId: id.slice(9), summary })
+          },
+        )
         return {
-          client: new Codex(connection.options),
+          client: new NativeCliClient(connection.options),
           release: connection.release,
         }
       })
+      execution.reconnect()
       handle(channels.managerGet, (input) => managers!.get(input))
       handle(channels.managerList, (input) => managers!.list(input))
       handle(channels.managerNewChat, (input) => managers!.newChat(input))
@@ -414,9 +458,9 @@ else {
     })
     void Promise.race([
       Promise.all([
-        service.shutdown(),
-        managers?.shutdown(),
-        workflow?.shutdown() ?? execution?.shutdown(),
+        service.shutdown(true),
+        managers?.shutdown(true),
+        workflow?.shutdown(true) ?? execution?.shutdown(true),
       ]),
       deadline,
     ])

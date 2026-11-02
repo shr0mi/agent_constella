@@ -1,0 +1,49 @@
+# Native CLI terminals
+
+AgentConstella runs the user's installed **Codex CLI** or **Claude Code** in real pseudoterminals. It does not use the Codex SDK, `codex exec`, or the provider's model APIs. The native CLI owns authentication, conversation context, permission prompts, commands, and tool execution.
+
+## Provider and launch settings
+
+Choose **Project settings → Default agent provider**. Existing projects migrate to Codex; Claude Code can be selected per project. New worker and manager terminals inherit this choice. Existing live terminals retain their provider. Model and effort overrides are passed at terminal creation; use native CLI commands to change a live session, or start a new conversation. The app no longer requires a provider model-list API to prepare a graph.
+
+Install and authenticate the chosen CLI yourself. AgentConstella finds executables on PATH and common macOS/local installation paths. It does not install, update, replace, or copy provider credentials. Both providers receive a literal initial prompt argument, never an interpolated shell command. Native workspace trust and permission prompts remain interactive.
+
+## Runtime and persistence
+
+`src/main/terminal/daemon.ts` is a detached process, built to `out/main/terminal-daemon.js`. It owns node-pty processes and headless xterm screens; Electron is a client. The renderer uses xterm.js through validated, named preload operations for input, resize, output, handoff, and close. It does not receive the background service's credentials.
+
+The service binds only to 127.0.0.1. A private descriptor contains its port and random authentication key. All control requests require that key; browser-origin requests are rejected. Session metadata and terminal transcripts live under the Electron user-data directory's `terminals/`, outside project repositories. Direct CLI interactions are retained in `terminal.ansi`, while `assignment.txt` and `session.json` preserve launch context and session state. The CLI also retains its own native chat history. No project chat file or global provider configuration is modified.
+
+The **Terminals** view switches between sessions and opens two side by side, stacking them on narrow desktop windows. Closing a pane detaches its viewer. Quitting Electron detaches execution monitoring without stopping running CLI processes. On restart, active worker/manager assignments reconnect without resending the prompt; MCP proxies receive fresh project credentials. Workflow scheduling remains paused after restart until resumed explicitly. A reboot or terminal-service failure ends the processes. Retry or start a new conversation in that case; saved app records and terminal transcripts remain. Old SDK-era conversations remain inspectable as historical attempts and are not replayed automatically.
+
+**Stop** ends the CLI process and cancels that assignment. It retains files. **Close terminal**, available after handoff, releases the idle process without changing accepted workflow records. Starting a fresh conversation retains prior attempt history and code.
+
+## Agent-node view
+
+Agent nodes use a nearly full-window terminal with one compact control row. **Open in IDE** is always available and opens that agent’s workspace. File/diff, activity, test, and snapshot tabs are removed from this view; checks and immutable execution records remain in the workflow engine. Revision input appears only after **Request revision**.
+
+## Workflow handoff
+
+A terminal's silence, an idle prompt, and a process exit are not workflow success.
+
+Worker terminals receive the existing read-only task-context MCP tools plus **agent_report_done**. The initial assignment instructs the worker to call it as its final tool, with a useful summary, only after completing the requested work. Alternatively, the developer can click **Finish step & run checks**. Manual handoff records terminal screen text as a fallback summary.
+
+After handoff, terminal keyboard input is disabled until another explicit assignment. The existing execution engine runs configured checks, captures immutable file changes, combines results, and applies manual/automatic acceptance. Human review and final integration still require their existing decisions. A result handoff is a declaration by the agent or developer, not proof that the code is correct; configured checks, clean-worktree verification, review, and integration previews remain responsible for acceptance. Stop and Ctrl+C are distinct: typing Ctrl+C interacts with the native CLI, while the workflow Stop control ends its process.
+
+## Managers and MCP
+
+Opening **Project manager** or **Task manager** starts the selected saved chat's native terminal if it has not started yet. Its initial assignment supplies current project context and asks it to wait for instructions. You then type directly in the CLI. The manager uses the existing scoped MCP editing tools, so task/graph validation, revision checks, history, and Undo remain unchanged. It must refresh live context through MCP before editing. Manager tools cannot approve reviews, accept node results, start workflows, or integrate branches.
+
+Finish the manager assignment before switching saved chats or creating a new one. The native terminal stays available for subsequent assignments. Previously saved chat metadata is retained; direct terminal input/output is stored in the local terminal transcript rather than reconstructed into a custom chat UI.
+
+CLI sessions connect to a stable per-session MCP proxy in the terminal service. The proxy forwards to the app's authenticated MCP listener while the app is open. Session-specific tokens are passed through environment variables; they are not exposed in renderer messages or public session records. Project tools are unavailable while Electron is closed and reconnect when the app reopens. Background coding can continue during that time.
+
+## Verification
+
+- `npm test`: existing project/graph/review/integration coverage plus real PTY lifecycle, concurrent sessions, literal CLI arguments, MCP authentication/proxying, explicit handoff, and detached-service reconnection.
+- `npm run build`: type-check and build all Electron entries, including the terminal daemon.
+- `npm run test:terminal-ui`: isolated real Electron/SQLite/Git/MCP/PTY checks using test CLI executables; verifies provider settings, worker terminal rendering, checks/acceptance, and manager terminal launch. `CONSTELLA_TERMINAL_SCREENSHOT=/tmp/constella/check` adds desktop/narrow captures.
+- `npm run test:graph-ui` and `npm run test:workflow-ui`: existing desktop regression flows.
+- `npm run probe:terminal`: run the PTY integration tests without provider inference.
+
+The automated provider processes are test CLIs. They exercise the real PTY and transport without consuming model allowance. Live provider authentication, account policy, and interactive trust prompts must be verified in the installed CLI.

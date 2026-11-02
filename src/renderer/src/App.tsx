@@ -1,3 +1,5 @@
+import { TerminalsPage } from './Terminals'
+import { TerminalPane } from './components/TerminalPane'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import {
@@ -100,6 +102,7 @@ function Sidebar() {
           <FolderKanban size={17} />
           Projects<span className="soon">{projects.length}</span>
         </NavLink>
+        <NavLink to="/terminals"><Terminal size={17} />Terminals</NavLink>
         <NavLink to="/playground">
           <FlaskConical size={17} />
           Connectivity lab
@@ -136,7 +139,7 @@ function Sidebar() {
             className={`status-dot ${diagnostics?.auth.status === 'signed-in' ? 'green' : ''}`}
           />
           <div>
-            Local Codex runtime
+            Native agent terminals
             <small>
               {diagnostics?.auth.status === 'signed-in'
                 ? 'Login detected'
@@ -240,6 +243,7 @@ export function App() {
         </div>
         <Routes>
           <Route path="/" element={<Navigate to="/projects" replace />} />
+          <Route path="/terminals" element={<TerminalsPage />} />
           <Route path="/playground" element={<Playground />} />
           <Route path="/integration" element={<IntegrationNotes />} />
           <Route path="/projects" element={<ProjectsPage />} />
@@ -284,9 +288,8 @@ function Playground() {
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<Effort | '' | '__default__'>('')
-  const [sandbox, setSandbox] = useState<'workspace-write' | 'read-only'>(
-    'workspace-write',
-  )
+  const sandbox = 'workspace-write' as const
+  const [provider, setProvider] = useState<'codex' | 'claude'>('codex')
   const [selectedSkill, setSelectedSkill] = useState(true)
   const [profileId, setProfileId] = useState('')
   const [additionalSkills, setAdditionalSkills] = useState<string[]>([])
@@ -352,6 +355,7 @@ function Playground() {
       await unwrap(
         window.constella!.run({
           prompt: message,
+          provider,
           model: modelOverride,
           effort: effortOverride,
           profileId: profileId || undefined,
@@ -372,7 +376,7 @@ function Playground() {
       <div className="page-heading">
         <div>
           <h1>Connectivity lab</h1>
-          <p>A small space to put your Codex connection to work.</p>
+          <p>Try your installed coding agents in a disposable terminal workspace.</p>
         </div>
         <button
           className="button secondary"
@@ -397,7 +401,7 @@ function Playground() {
               <Bot size={20} />
             </div>
             <div>
-              <strong>Codex playground</strong>
+              <strong>Agent terminal lab</strong>
               <span>
                 {session?.threadId
                   ? `Thread ${session.threadId.slice(0, 8)}… · saved locally`
@@ -428,7 +432,7 @@ function Playground() {
               onClick={() => setTab('events')}
             >
               <Activity size={14} />
-              SDK events
+              Session events
               <span className="count">
                 {runs.reduce((n, run) => n + run.events.length, 0)}
               </span>
@@ -436,7 +440,7 @@ function Playground() {
             <span className="tab-spacer" />
             <span className="small-muted">
               <ShieldCheck size={13} />
-              {sandbox === 'workspace-write' ? 'Workspace writes' : 'Read only'}
+              Native CLI permissions
             </span>
           </div>
           <div
@@ -451,7 +455,9 @@ function Playground() {
             aria-live="polite"
             aria-relevant="additions text"
           >
-            {runs.length === 0 ? (
+            {session?.threadId?.startsWith('terminal:') && tab === 'conversation' ? (
+              <TerminalPane sessionId={session.threadId.slice(9)} disabled={!active} finishLabel="Finish lab assignment" />
+            ) : runs.length === 0 ? (
               <div className="welcome">
                 <div className="welcome-symbol">
                   <Terminal size={29} />
@@ -489,7 +495,7 @@ function Playground() {
             ) : (
               <div className="event-log">
                 <div className="event-log-note">
-                  Raw SDK events · newest 300 per turn · large payloads are
+                  Raw Session events · newest 300 per turn · large payloads are
                   truncated. Nested tool activity can be missing from this
                   stream.
                 </div>
@@ -501,7 +507,7 @@ function Playground() {
                     </h3>
                     {run.events.length === 0 && (
                       <p className="small-muted">
-                        Waiting for the SDK process…
+                        Waiting for the native CLI…
                       </p>
                     )}
                     {run.events.map((event, i) => (
@@ -540,14 +546,14 @@ function Playground() {
               onSubmit={submit}
             >
               <label className="sr-only" htmlFor="prompt">
-                Message Codex
+                Agent assignment
               </label>
               <textarea
                 id="prompt"
                 placeholder={
                   session?.threadId
                     ? 'Continue this conversation…'
-                    : 'Ask Codex to do something in the scratch workspace…'
+                    : 'Give the CLI an initial assignment…'
                 }
                 value={prompt}
                 maxLength={32000}
@@ -604,7 +610,7 @@ function Playground() {
               <span>
                 {session?.threadId
                   ? 'Saved thread · each message starts a new turn'
-                  : 'Messages use your local Codex authentication'}
+                  : 'Sessions use your native CLI configuration'}
               </span>
               <span>⌘ / Ctrl + Enter to send</span>
             </div>
@@ -636,7 +642,7 @@ function Playground() {
             </div>
             <dl className="runtime-versions">
               <div>
-                <dt>SDK</dt>
+                <dt>Transport</dt>
                 <dd>{state?.diagnostics?.sdkVersion ?? '—'}</dd>
               </div>
               <div>
@@ -649,8 +655,8 @@ function Playground() {
             </dl>
             {state?.diagnostics?.auth.status !== 'signed-in' && (
               <p className="helper">
-                Sign in from this repository:
-                <code className="inline-command">npx codex login</code>Then
+                Sign in using your installed CLI:
+                <code className="inline-command">codex login / claude auth login</code>Then
                 refresh the connection.
               </p>
             )}
@@ -783,7 +789,7 @@ function Playground() {
                 <select
                   id="effort"
                   value={effort}
-                  disabled={!selectedModel}
+                  disabled={!effective.model}
                   onChange={(event) =>
                     setEffort(event.target.value as Effort | '' | '__default__')
                   }
@@ -799,9 +805,7 @@ function Playground() {
                 <ChevronDown size={13} />
               </div>
               <p className="helper">
-                {models.length
-                  ? 'Options from the pinned runtime catalog.'
-                  : 'Use the configured default until the runtime catalog is available.'}
+                The native CLI validates your model and effort settings.
               </p>
               {state?.diagnostics?.modelError && (
                 <details className="catalog-error">
@@ -809,33 +813,18 @@ function Playground() {
                   <pre>{state.diagnostics.modelError}</pre>
                 </details>
               )}
-              <label className="field-label" htmlFor="sandbox">
-                File access
-              </label>
-              <div className="select-wrap">
-                <select
-                  id="sandbox"
-                  value={sandbox}
-                  onChange={(event) =>
-                    setSandbox(event.target.value as typeof sandbox)
-                  }
-                >
-                  <option value="workspace-write">
-                    Write in scratch workspace
-                  </option>
-                  <option value="read-only">Read only</option>
-                </select>
-                <ChevronDown size={13} />
-              </div>
+              <label className="field-label" htmlFor="provider">Provider</label>
+              <select id="provider" value={provider} onChange={event => setProvider(event.target.value as 'codex' | 'claude')}>
+                <option value="codex">Codex CLI</option><option value="claude">Claude Code</option>
+              </select>
             </fieldset>
             <div className="permission-note">
               <ShieldCheck size={15} />
               <p>
-                No interactive approvals.
+                Native interactive permissions.
                 <br />
                 <span>
-                  Sandbox network access and web search are disabled. Nested
-                  tool failures can be absent from the event feed.{' '}
+                  Your CLI manages authentication, tool permissions, network access, and its own conversation history.{' '}
                   <NavLink to="/integration">See integration notes.</NavLink>
                 </span>
               </p>
@@ -946,8 +935,8 @@ function RunView({ run, number }: { run: Run; number: number }) {
               <div className="waiting">
                 <LoaderCircle size={14} className="spin" />
                 {run.status === 'stopping'
-                  ? 'Stopping the SDK process…'
-                  : 'Waiting for the first SDK event…'}
+                  ? 'Stopping the native CLI…'
+                  : 'Waiting for the native CLI…'}
               </div>
             )}
           {run.error && <FailureNotice failure={run.error} />}
@@ -1020,8 +1009,7 @@ function IntegrationNotes() {
     <main className="notes-page">
       <h1>Know the boundaries.</h1>
       <p className="notes-intro">
-        The starter uses the Codex TypeScript SDK for execution. These
-        constraints shape the full application.
+        The starter uses the installed Codex or Claude Code CLI in real terminals. The project workflow stays in AgentConstella.
       </p>
       <div className="notes-grid">
         {limitations.map((note, i) => (
@@ -1029,12 +1017,10 @@ function IntegrationNotes() {
             <h2>
               {
                 [
+                  'Native agents',
+                  'Workflow handoff',
+                  'Local sessions',
                   'Permissions',
-                  'Streaming',
-                  'Skills',
-                  'Model discovery',
-                  'Cancellation',
-                  'Local persistence',
                 ][i]
               }
             </h2>
@@ -1042,18 +1028,7 @@ function IntegrationNotes() {
           </section>
         ))}
       </div>
-      <div className="next-note">
-        <TriangleAlert size={18} />
-        <div>
-          <strong>Approval UI requires a transport decision.</strong>
-          <p>
-            Use Codex app-server if later milestones need bidirectional approval
-            requests, native skill inputs, or richer streaming. See
-            docs/codex-integration.md for the implementation record and
-            verification commands.
-          </p>
-        </div>
-      </div>
+      <div className="next-note"><Terminal size={18} /><div><strong>Your CLI stays interactive.</strong><p>Use native commands and permission prompts in each terminal. Hand a completed assignment back before checks, review, and integration proceed.</p></div></div>
       <NavLink to="/playground" className="button secondary">
         Back to the lab
         <ArrowRight size={14} />
