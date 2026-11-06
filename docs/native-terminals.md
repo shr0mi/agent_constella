@@ -16,6 +16,8 @@ The service binds only to 127.0.0.1. A private descriptor contains its port and 
 
 The **Terminals** view switches between sessions and opens two side by side, stacking them on narrow desktop windows. Closing a pane detaches its viewer. Quitting Electron detaches execution monitoring without stopping running CLI processes. On restart, active worker/manager assignments reconnect without resending the prompt; MCP proxies receive fresh project credentials. Workflow scheduling remains paused after restart until resumed explicitly. A reboot or terminal-service failure ends the processes. Retry or start a new conversation in that case; saved app records and terminal transcripts remain. Old SDK-era conversations remain inspectable as historical attempts and are not replayed automatically.
 
+New Codex terminals launch with `--no-alt-screen`, so conversation output remains in the terminal's 5,000-line scrollback. Wheel scrolling works after handoff and after reopening a pane. Fullscreen CLI sessions retain their mouse encoding on reconnect; after handoff, only vertical wheel reports are forwarded for browsing history, while typing and clicks remain disabled. Existing fullscreen sessions keep their current display mode. The raw `terminal.ansi` transcript is retained separately and is not an unlimited scrollback viewer.
+
 **Stop** ends the CLI process and cancels that assignment. It retains files. **Close terminal**, available after handoff, releases the idle process without changing accepted workflow records. Starting a fresh conversation retains prior attempt history and code.
 
 ## Agent-node view

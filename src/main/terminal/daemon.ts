@@ -13,16 +13,15 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import * as pty from 'node-pty'
-import headless from '@xterm/headless'
 import type { Terminal } from '@xterm/headless'
-import { SerializeAddon } from '@xterm/addon-serialize'
-import type { TerminalSession } from '../../shared/terminal'
+import { isTerminalWheelInput, type TerminalSession } from '../../shared/terminal'
+import { createTerminalScreen } from './screen'
 
 interface Owned {
   record: TerminalSession
   process: pty.IPty
   screen: Terminal
-  serialize: SerializeAddon
+  serialize: () => string
   chunks: { cursor: number; data: string }[]
   cursor: number
   deliveryBytes: number
@@ -142,14 +141,7 @@ export async function startDaemon(directory: string) {
           cwd: input.cwd,
           env,
         })
-        const screen = new headless.Terminal({
-          cols: 100,
-          rows: 30,
-          scrollback: 5000,
-          allowProposedApi: true,
-        })
-        const serialize = new SerializeAddon()
-        screen.loadAddon(serialize)
+        const { screen, serialize } = createTerminalScreen(100, 30)
         const owned: Owned = {
           record: {
             id: input.id,
@@ -246,7 +238,7 @@ export async function startDaemon(directory: string) {
             cursor,
             reset,
             data: reset
-              ? owned.serialize.serialize()
+              ? owned.serialize()
               : owned.chunks
                   .filter((c) => c.cursor > input.after && c.cursor <= cursor)
                   .map((c) => c.data)
@@ -255,11 +247,23 @@ export async function startDaemon(directory: string) {
           break
         }
         case 'input':
-          if (record.state !== 'running')
+          if (
+            record.state !== 'running' &&
+            !(
+              record.state === 'ready' &&
+              owned.screen.buffer.active.type === 'alternate' &&
+              owned.screen.modes.mouseTrackingMode !== 'none' &&
+              isTerminalWheelInput(input)
+            )
+          )
             throw new Error(
               'Continue this node or manager from its controls before editing a completed result.',
             )
-          owned.process.write(input.data)
+          owned.process.write(
+            input.encoding === 'binary'
+              ? Buffer.from(input.data, 'binary')
+              : input.data,
+          )
           reply(null)
           break
         case 'resize':

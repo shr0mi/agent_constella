@@ -222,7 +222,11 @@ app
     handle(channels.managerHistory, (input) => tools.history(input))
     handle(channels.terminalList, () => host.list())
     handle(channels.terminalRead, (input) => host.read(input))
-    handle(channels.terminalInput, (input) => host.input(input))
+    const terminalInputs = []
+    handle(channels.terminalInput, (input) => {
+      terminalInputs.push(input)
+      return host.input(input)
+    })
     handle(channels.terminalResize, (input) => host.resize(input))
     handle(channels.terminalFinish, (input) =>
       host.finish({ summary: '', ...input }),
@@ -370,9 +374,88 @@ app
       process.env.CONSTELLA_TERMINAL_SCREENSHOT,
       'multiplexer',
     )
+
+    // Exercise real xterm wheel events through preload, IPC, and the PTY.
+    const createScrollSession = async (title, command) => {
+      const session = await host.rpc({
+        op: 'create',
+        id: require('node:crypto').randomUUID(),
+        provider: 'codex',
+        title,
+        cwd: data,
+        executable: '/bin/sh',
+        args: ['-c', command],
+        prompt: '',
+      })
+      await until(`Array.from(document.querySelectorAll('.terminal-session-select')).some(b => b.textContent.includes(${JSON.stringify(title)}))`)
+      await run(`Array.from(document.querySelectorAll('.terminal-session-select')).find(b => b.textContent.includes(${JSON.stringify(title)})).click()`)
+      await until('document.querySelectorAll(".terminal-panes .xterm").length===1')
+      return session
+    }
+    window.webContents.debugger.attach('1.3')
+    const wheel = async () => {
+      const point = await run(`(() => {
+        const rect = document.querySelector('.terminal-panes .xterm-screen').getBoundingClientRect()
+        return { x: rect.left + 50, y: rect.top + 30 }
+      })()`)
+      await window.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {
+        type: 'mouseWheel', ...point, deltaY: -600, deltaX: 0,
+      })
+    }
+    const sliderTop = 'parseFloat(document.querySelector(".terminal-panes .xterm .scrollbar.vertical .slider")?.style.top ?? "0")'
+    const history = await createScrollSession(
+      'Scrollback fixture',
+      'i=1; while [ "$i" -le 200 ]; do printf "CHAT_%s\\n" "$i"; i=$((i+1)); done; read line',
+    )
+    await until(`${sliderTop}>0`)
+    let bottom = await run(sliderTop)
+    await wheel()
+    await until(`${sliderTop}<${bottom}`)
+    await host.finish({ sessionId: history.id, summary: 'History remains readable' })
+    // Remount the pane so this also tests the daemon's serialized history.
+    await run('document.querySelector(".terminal-session-select").click()')
+    await until('!document.querySelector(".terminal-session.selected").textContent.includes("Scrollback fixture")')
+    await run('Array.from(document.querySelectorAll(".terminal-session-select")).find(b => b.textContent.includes("Scrollback fixture")).click()')
+    await until('document.querySelector(".terminal-toolbar").textContent.includes("Result handed back")')
+    await until(`${sliderTop}>0`)
+    bottom = await run(sliderTop)
+    await wheel()
+    await until(`${sliderTop}<${bottom}`)
+
+    for (const sgr of [true, false]) {
+      const title = sgr ? 'SGR fullscreen fixture' : 'Binary fullscreen fixture'
+      const session = await createScrollSession(
+        title,
+        `stty raw -echo; printf '\\033[?1049h\\033[?1003h${sgr ? '\\033[?1006h' : ''}FULLSCREEN_READY'; cat > /dev/null`,
+      )
+      await until('!!document.querySelector(".terminal-panes .xterm.enable-mouse-events")')
+      const count = () => terminalInputs.filter(input => input.sessionId === session.id).length
+      async function assertWheel() {
+        const before = count()
+        await wheel()
+        for (let i = 0; i < 100 && count() === before; i++)
+          await new Promise(resolve => setTimeout(resolve, 20))
+        const input = terminalInputs.filter(input => input.sessionId === session.id).at(-1)
+        assert.ok(count() > before, `${title}: wheel reaches the PTY`)
+        assert.equal(input.encoding, sgr ? 'utf8' : 'binary')
+        assert.ok(sgr ? /^\x1b\[<64;\d+;\d+M$/.test(input.data) : input.data.startsWith('\x1b[M`'))
+      }
+      await assertWheel()
+      await host.finish({ sessionId: session.id, summary: 'Finished fullscreen fixture' })
+      await until('document.querySelector(".terminal-toolbar").textContent.includes("Result handed back")')
+      await assertWheel()
+      const before = count()
+      await run(`(() => {
+        const input = document.querySelector('.terminal-panes .xterm-helper-textarea')
+        input.value = 'must-not-submit'
+        input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'must-not-submit' }))
+      })()`)
+      await new Promise(resolve => setTimeout(resolve, 200))
+      assert.equal(count(), before, 'Typing stays blocked after handoff')
+    }
     assert.equal(errors.length, 0, errors.join('\n'))
     console.log(
-      'Native terminal UI passed: provider settings, agent terminal, checks/acceptance, manager CLI, desktop/narrow captures.',
+      'Native terminal UI passed: provider settings, agent terminal, checks/acceptance, manager CLI, scrollback after reconnect/handoff, SGR and binary wheel input, desktop/narrow captures.',
     )
     await finish(0)
   })

@@ -2,7 +2,11 @@ import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { TerminalRead, TerminalSession } from '../../shared/terminal'
+import type {
+  TerminalInput,
+  TerminalRead,
+  TerminalSession,
+} from '../../shared/terminal'
 import { cliArguments, cliPath } from './launch'
 import type { AgentOptions, ThreadOptions } from './types'
 
@@ -95,7 +99,7 @@ export class TerminalHost {
   read(input: { sessionId: string; after?: number }) {
     return this.rpc<TerminalRead>({ op: 'read', ...input })
   }
-  input(input: { sessionId: string; data: string }) {
+  input(input: TerminalInput) {
     // Preserve keystroke order across concurrent IPC/HTTP requests.
     const pending = (this.inputQueues.get(input.sessionId) ?? Promise.resolve())
       .catch(() => {})

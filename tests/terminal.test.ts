@@ -4,11 +4,15 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
+import headless from '@xterm/headless'
+import type { Terminal } from '@xterm/headless'
 import { TerminalHost, configureTerminalHost } from '../src/main/terminal/host'
 import { NativeCliClient } from '../src/main/terminal/client'
 import { cliArguments } from '../src/main/terminal/launch'
 import { startDaemon } from '../src/main/terminal/daemon'
+import { createTerminalScreen } from '../src/main/terminal/screen'
 import {
+  isTerminalWheelInput,
   terminalInputSchema,
   terminalResizeSchema,
 } from '../src/shared/terminal'
@@ -21,6 +25,8 @@ import { WorkflowService } from '../src/main/application/workflow-service'
 import type { ThreadEvent } from '../src/main/terminal/types'
 
 const cleanup: (() => Promise<unknown>)[] = []
+const writeScreen = (screen: Terminal, data: string) =>
+  new Promise<void>((resolve) => screen.write(data, resolve))
 afterEach(async () => {
   vi.unstubAllEnvs()
   for (const action of cleanup.splice(0).reverse()) await action()
@@ -88,6 +94,10 @@ describe('native CLI terminal multiplexer', () => {
       { url: 'http://127.0.0.1:123/mcp/x' },
     )
     expect(args.at(-1)).toBe(prompt)
+    expect(args).toContain('--no-alt-screen')
+    expect(
+      cliArguments('codex', prompt, {}, undefined, 'saved-session').slice(0, 3),
+    ).toEqual(['--no-alt-screen', 'resume', 'saved-session'])
     expect(args).toContain(
       'mcp_servers.agent_constella.bearer_token_env_var="CONSTELLA_MCP_TOKEN"',
     )
@@ -103,6 +113,143 @@ describe('native CLI terminal multiplexer', () => {
     expect(claude).toContain('--mcp-config')
     expect(claude.at(-1)).toBe(prompt)
     expect(claude).not.toContain('--print')
+    expect(claude).not.toContain('--no-alt-screen')
+  })
+  it('keeps normal-screen history scrollable after handoff and reconnect', async () => {
+    const { host, root } = await fixture()
+    const id = randomUUID()
+    await host.rpc({
+      op: 'create',
+      id,
+      provider: 'codex',
+      cwd: root,
+      executable: '/bin/sh',
+      args: [
+        '-c',
+        'i=1; while [ "$i" -le 150 ]; do printf "CHAT_%s\\n" "$i"; i=$((i+1)); done; read line',
+      ],
+      prompt: '',
+    })
+    await eventually(
+      () => host.read({ sessionId: id }),
+      (value) => value.data.includes('CHAT_150'),
+    )
+    await host.finish({ sessionId: id, summary: 'Done' })
+    const snapshot = await host.read({ sessionId: id })
+    expect(snapshot.reset).toBe(true)
+    const screen = new headless.Terminal({
+      cols: snapshot.session.cols,
+      rows: snapshot.session.rows,
+      scrollback: 5000,
+      allowProposedApi: true,
+    })
+    try {
+      await writeScreen(screen, snapshot.data)
+      expect(screen.buffer.active.type).toBe('normal')
+      expect(screen.buffer.active.baseY).toBeGreaterThan(100)
+      screen.scrollToTop()
+      expect(screen.buffer.active.viewportY).toBe(0)
+      expect(screen.buffer.active.getLine(0)?.translateToString(true)).toBe(
+        'CHAT_1',
+      )
+      await expect(
+        host.input({ sessionId: id, data: '\x1b[<64;6;6M' }),
+      ).rejects.toThrow('Continue')
+    } finally {
+      screen.dispose()
+    }
+  })
+  it('preserves fullscreen mouse encoding across reconnects and terminal resets', async () => {
+    const { screen, serialize } = createTerminalScreen(100, 30)
+    const replay = new headless.Terminal({ allowProposedApi: true })
+    try {
+      // The mode sequence may arrive in separate PTY output chunks.
+      await writeScreen(screen, '\x1b[?1049;1003;10')
+      await writeScreen(screen, '06h')
+      await writeScreen(replay, serialize())
+      expect(replay.buffer.active.type).toBe('alternate')
+      expect(replay.modes.mouseTrackingMode).toBe('any')
+      const reports: string[] = []
+      replay.onData((data) => reports.push(data))
+      await writeScreen(replay, '\x1b[?1006$p')
+      expect(reports).toContain('\x1b[?1006;1$y')
+      await writeScreen(screen, '\x1b[?1016h')
+      expect(serialize()).toContain('\x1b[?1016h')
+      await writeScreen(screen, '\x1b[?1016l')
+      expect(serialize()).not.toContain('\x1b[?1016h')
+      expect(serialize()).not.toContain('\x1b[?1006h')
+      await writeScreen(screen, '\x1b[?1006h\x1bc')
+      expect(serialize()).not.toContain('\x1b[?1006h')
+    } finally {
+      screen.dispose()
+      replay.dispose()
+    }
+  })
+  it('forwards wheel reports after fullscreen handoff without allowing typing or clicks', async () => {
+    const { host, root } = await fixture()
+    const id = randomUUID()
+    await host.rpc({
+      op: 'create',
+      id,
+      provider: 'codex',
+      cwd: root,
+      executable: '/bin/sh',
+      args: [
+        '-c',
+        "stty raw -echo; printf '\\033[?1049h\\033[?1003h\\033[?1006hFULLSCREEN_READY'; cat > input.bin",
+      ],
+      prompt: '',
+    })
+    const snapshot = await eventually(
+      () => host.read({ sessionId: id }),
+      (value) => value.data.includes('FULLSCREEN_READY'),
+    )
+    expect(snapshot.data).toContain('\x1b[?1006h')
+    await host.finish({ sessionId: id, summary: 'Done' })
+    for (const data of [
+      'edit\r',
+      '\x1b[<0;6;6M',
+      '\x1b[<64;6;6M\n',
+      '\x1b[<64;6;6M\x1b[<0;6;6M',
+    ])
+      await expect(host.input({ sessionId: id, data })).rejects.toThrow('Continue')
+    const sgr = '\x1b[<64;6;6M'
+    const binary = '\x1b[M' + String.fromCharCode(97, 200, 38)
+    await host.input({ sessionId: id, data: sgr })
+    await host.input({ sessionId: id, data: binary, encoding: 'binary' })
+    const expected = Buffer.concat([
+      Buffer.from(sgr),
+      Buffer.from(binary, 'binary'),
+    ])
+    await eventually(
+      () => readFile(join(root, 'input.bin')),
+      (value) => value.equals(expected),
+    )
+    expect((await host.list())[0].state).toBe('ready')
+    await host.close(id)
+    await expect(host.input({ sessionId: id, data: sgr })).rejects.toThrow(
+      'Continue',
+    )
+  })
+  it('recognizes only complete vertical mouse wheel reports as read-only input', () => {
+    expect(isTerminalWheelInput({ data: '\x1b[<64;6;6M' })).toBe(true)
+    expect(isTerminalWheelInput({ data: '\x1b[<93;6;6M' })).toBe(true)
+    expect(isTerminalWheelInput({ data: '\x1b[M`&&', encoding: 'binary' })).toBe(
+      true,
+    )
+    for (const data of [
+      'hello',
+      '\r',
+      '\x1b[A',
+      '\x1b[<0;6;6M',
+      '\x1b[<66;6;6M',
+      '\x1b[<64;0;6M',
+      '\x1b[<64;6;6M\n',
+    ])
+      expect(isTerminalWheelInput({ data })).toBe(false)
+    expect(
+      isTerminalWheelInput({ data: '\x1b[M`&&\n', encoding: 'binary' }),
+    ).toBe(false)
   })
   it('isolates simultaneous PTYs, forwards input, resizes, and retains output on reconnect', async () => {
     const { host, root } = await fixture()

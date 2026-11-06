@@ -34,6 +34,8 @@ export function cliArguments(
 ): string[] {
   const args: string[] = []
   if (provider === 'codex') {
+    // Keep conversation output in the terminal's normal scrollback buffer.
+    args.push('--no-alt-screen')
     if (mcp)
       args.push(
         '-c',

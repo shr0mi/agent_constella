@@ -8,8 +8,31 @@ export const terminalReadSchema = terminalIdSchema
   .extend({ after: z.number().int().min(0).default(0) })
   .strict()
 export const terminalInputSchema = terminalIdSchema
-  .extend({ data: z.string().min(1).max(128_000) })
+  .extend({
+    data: z.string().min(1).max(128_000),
+    encoding: z.enum(['utf8', 'binary']).optional(),
+  })
   .strict()
+export type TerminalInput = z.infer<typeof terminalInputSchema>
+
+// Only vertical wheel reports may reach a read-only fullscreen CLI. Never
+// accept keyboard input, clicks, paste, or extra bytes through this exception.
+export function isTerminalWheelInput({
+  data,
+  encoding,
+}: Pick<TerminalInput, 'data' | 'encoding'>): boolean {
+  let button: number
+  if (encoding === 'binary') {
+    if (data.length !== 6 || !/^\x1b\[M[\x60-\x7f][\x21-\xff]{2}$/.test(data))
+      return false
+    button = data.charCodeAt(3) - 32
+  } else {
+    const match = /^\x1b\[<(\d{2});[1-9]\d{0,5};[1-9]\d{0,5}M$/.exec(data)
+    if (!match || match[0] !== data) return false
+    button = Number(match[1])
+  }
+  return button >= 64 && button <= 93 && (button & 3) <= 1
+}
 export const terminalResizeSchema = terminalIdSchema
   .extend({
     cols: z.number().int().min(2).max(500),
@@ -46,7 +69,7 @@ export interface TerminalBridge {
     sessionId: string
     after?: number
   }): Promise<Result<TerminalRead>>
-  input(input: { sessionId: string; data: string }): Promise<Result<void>>
+  input(input: TerminalInput): Promise<Result<void>>
   resize(input: {
     sessionId: string
     cols: number

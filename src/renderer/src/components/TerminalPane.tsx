@@ -2,7 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { Check, LoaderCircle, Terminal as TerminalIcon } from 'lucide-react'
-import type { TerminalSession } from '../../../shared/terminal'
+import {
+  isTerminalWheelInput,
+  type TerminalInput,
+  type TerminalSession,
+} from '../../../shared/terminal'
 import '@xterm/xterm/css/xterm.css'
 import '../terminal.css'
 
@@ -55,17 +59,30 @@ export function TerminalPane({
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(element.current)
-    const input = term.onData((data) => {
-      if (state !== 'running' || disabledRef.current) return
+    const sendInput = (
+      data: string,
+      encoding: TerminalInput['encoding'] = 'utf8',
+    ) => {
+      if (
+        (state !== 'running' || disabledRef.current) &&
+        !(
+          state !== 'exited' &&
+          term.buffer.active.type === 'alternate' &&
+          isTerminalWheelInput({ data, encoding })
+        )
+      )
+        return
       void api
-        .input({ sessionId, data })
+        .input({ sessionId, data, encoding })
         .then((result) => {
           if (!result.ok && alive) setError(result.error.message)
         })
         .catch((error) => {
           if (alive) setError(String(error))
         })
-    })
+    }
+    const input = term.onData((data) => sendInput(data))
+    const binaryInput = term.onBinary((data) => sendInput(data, 'binary'))
     const resize = () => {
       if (
         !alive ||
@@ -115,6 +132,7 @@ export function TerminalPane({
       clearTimeout(timer)
       observer.disconnect()
       input.dispose()
+      binaryInput.dispose()
       term.dispose()
     }
   }, [sessionId])
