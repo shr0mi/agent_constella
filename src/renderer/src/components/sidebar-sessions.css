@@ -1,0 +1,122 @@
+.sidebar-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rail-line) transparent;
+}
+
+.sidebar .brand,
+.sidebar .workspace-label,
+.sidebar-bottom {
+  flex-shrink: 0;
+}
+
+.sidebar-content .sidebar-projects {
+  max-height: none;
+  overflow: visible;
+}
+
+.sidebar-sessions h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-sessions h2 > span {
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-session {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-control);
+  color: var(--rail-ink);
+  min-width: 0;
+}
+
+.sidebar-session:hover,
+.sidebar-session.active {
+  background: var(--rail-hover);
+}
+
+.sidebar-session.active strong {
+  font-weight: 600;
+}
+
+.session-status {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--rail-muted);
+  display: grid;
+  place-items: center;
+}
+
+.session-status.attention {
+  background: var(--rail-session-attention, #e8bf63);
+}
+
+.session-status.done {
+  background: #80cfa8;
+  color: var(--rail);
+}
+
+.sidebar-session-text {
+  min-width: 0;
+}
+
+.sidebar-session strong,
+.sidebar-session small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-session strong {
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1.5;
+}
+
+.sidebar-session small {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--rail-muted);
+}
+
+.sidebar-session-recent {
+  margin: 12px 10px 4px;
+  color: var(--rail-muted);
+  font-size: 11px;
+  font-weight: 450;
+}
+
+.sidebar-session-message {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--rail-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sidebar-session-message button {
+  color: var(--rail-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  display: block;
+  cursor: pointer;
+}
+
+.sidebar-session-message button:focus-visible {
+  outline: 2px solid var(--rail-ink);
+  outline-offset: 3px;
+}

@@ -158,7 +158,8 @@ app
         viewport: { x: 20, y: 30, zoom: 0.64 },
       },
     })
-    let failed = false
+    let failed = false, releaseFirstTurn
+    const firstTurn = new Promise((resolve) => { releaseFirstTurn = resolve })
     const thread = (options, resumed) => ({
       async runStreamed(prompt) {
         const name = prompt.match(/\nNode: (.+)\n/)[1]
@@ -177,6 +178,7 @@ app
               `Completed ${name}\n${calls.length}`,
             )
             if (name === a.data.title && !failed) {
+              await firstTurn
               failed = true
               yield {
                 type: 'turn.failed',
@@ -271,6 +273,11 @@ app
       taskReadRevision = workflow.revision
       return { ...execution.getTask(input), workflow }
     })
+    let sessionsUnavailable = false
+    handle(channels.nodeSessions, () => {
+      if (sessionsUnavailable) throw new Error('Deliberate session list failure')
+      return execution.listSessions()
+    })
     handle(channels.taskReview, (input) => execution.getReview(input))
     handle(channels.taskOpenIde, (input) => execution.openInIde(input, async (command, path) => { assert.equal(command, 'code --new-window'); openedIdePaths.push(path) }))
     handle(channels.taskCheckout, (input) => scheduler.checkoutTask(input))
@@ -350,6 +357,7 @@ app
     await until(
       'document.querySelectorAll(".workflow-node").length===6 && !!document.querySelector(".workflow-controls .workflow-progress")',
     )
+    await until('document.querySelector(".sidebar-sessions")?.textContent.includes("Run an agent node")')
     await run('location.hash="/agents"')
     await until('document.querySelectorAll(".catalog-card").length===2')
     await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'agents')
@@ -413,12 +421,20 @@ app
       '!!document.querySelector(".graph-run-node") && !document.querySelector(".graph-run-node").disabled',
     )
     await run('document.querySelector(".graph-run-node").click()')
+    await until('!!document.querySelector(".sidebar-session .session-status.running")')
+    await until('document.querySelector(".node-workspace")?.open')
+    await run('document.querySelector(".node-workspace > header button").click()')
+    await captureUi(window, process.env.CONSTELLA_SESSIONS_SCREENSHOT, 'sessions-running')
+    await run('document.querySelector(".sidebar-session").click()')
+    await until('document.querySelector(".node-workspace")?.open && !!document.querySelector(".sidebar-session[aria-current=page]")')
+    releaseFirstTurn()
     await until('!!document.querySelector(".workflow-node.state-failed")')
     const colors = await run(
       '({failed:getComputedStyle(document.querySelector(".workflow-node.state-failed")).backgroundColor,pending:getComputedStyle(document.querySelector(".workflow-node.state-pending")).backgroundColor})',
     )
     assert.notEqual(colors.failed, colors.pending)
     await until('document.querySelector(".node-latest-failure")?.textContent.includes("Deliberate UI fixture failure")')
+    await until('!!document.querySelector(".sidebar-session .session-status.attention")')
     await captureUi(window, process.env.CONSTELLA_WORKFLOW_SCREENSHOT, 'failed')
     assert.equal(
       workspace.getBoard({ projectId: project.id }).tasks[0].status,
@@ -430,7 +446,18 @@ app
     await run(
       'document.querySelector(".node-workspace > header button").click()',
     )
-    await click('Inspect Implement feature')
+    await until('!document.querySelector(".node-workspace")')
+    await run('location.hash="/projects"')
+    await until('!!document.querySelector(".projects-page")')
+    await captureUi(window, process.env.CONSTELLA_SESSIONS_SCREENSHOT, 'sessions-attention')
+    sessionsUnavailable = true
+    send(channels.nodeChanged, identity)
+    await until('document.querySelector(".sidebar-session-message")?.textContent.includes("outdated")')
+    assert.equal(await run('document.querySelectorAll(".sidebar-session").length'), 1)
+    sessionsUnavailable = false
+    await run('document.querySelector(".sidebar-session-message button").click()')
+    await until('!document.querySelector(".sidebar-session-message")')
+    await run('document.querySelector(".sidebar-session").click()')
     await until(
       'document.querySelector(".node-workspace")?.open && document.querySelector(".node-workspace-bar").textContent.includes("Failed")',
     )
@@ -445,9 +472,11 @@ app
     await until(
       'document.querySelector(".node-workspace-bar strong")?.textContent==="Completed"',
     )
+    await until('!!document.querySelector(".sidebar-session .session-status.done")')
     await run(
       'document.querySelector(".node-workspace > header button").click()',
     )
+    await captureUi(window, process.env.CONSTELLA_SESSIONS_SCREENSHOT, 'sessions-done')
     assert.equal(calls.filter((call) => call.name === j.data.title).length, 0)
     assert.equal(calls.filter((call) => call.name === b.data.title).length, 0)
     await until(
@@ -644,6 +673,9 @@ app
           defaultCodexSkillFree: true,
           canvasChangesNeedNoSave: true,
           individualNodeRun: true,
+          sidebarSessions: true,
+          sidebarSessionNavigation: true,
+          sidebarSessionRetry: true,
           branchJoin: true,
           failedAndCompletedVisuals: true,
           manualAcceptance: true,

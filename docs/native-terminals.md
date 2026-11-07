@@ -18,6 +18,10 @@ The **Terminals** view switches between sessions and opens two side by side, sta
 
 New Codex terminals launch with `--no-alt-screen`, so conversation output remains in the terminal's 5,000-line scrollback. Wheel scrolling works after handoff and after reopening a pane. Fullscreen CLI sessions retain their mouse encoding on reconnect; after handoff, only vertical wheel reports are forwarded for browsing history, while typing and clicks remain disabled. Existing fullscreen sessions keep their current display mode. The raw `terminal.ansi` transcript is retained separately and is not an unlimited scrollback viewer.
 
+Terminal panes use xterm's WebGL renderer for scrolling, falling back to the DOM renderer when WebGL is unavailable or its context is lost. Empty output polls do not trigger terminal writes, and output parsing completes before another batch is fetched.
+
+Normal scrollback stays local even when the CLI enables mouse tracking, so completed agent nodes remain scrollable without sending editing input. Detached services advertise support for fullscreen wheel input after handoff. Older services survive app restarts and cannot accept that input; those fullscreen sessions show one persistent explanation instead of a flashing error. Start a new terminal for normal scrollback in that case; the app does not stop running agents to upgrade their terminal service.
+
 **Stop** ends the CLI process and cancels that assignment. It retains files. **Close terminal**, available after handoff, releases the idle process without changing accepted workflow records. Starting a fresh conversation retains prior attempt history and code.
 
 ## Agent-node view
@@ -45,6 +49,7 @@ CLI sessions connect to a stable per-session MCP proxy in the terminal service. 
 - `npm test`: existing project/graph/review/integration coverage plus real PTY lifecycle, concurrent sessions, literal CLI arguments, MCP authentication/proxying, explicit handoff, and detached-service reconnection.
 - `npm run build`: type-check and build all Electron entries, including the terminal daemon.
 - `npm run test:terminal-ui`: isolated real Electron/SQLite/Git/MCP/PTY checks using test CLI executables; verifies provider settings, worker terminal rendering, checks/acceptance, and manager terminal launch. `CONSTELLA_TERMINAL_SCREENSHOT=/tmp/constella/check` adds desktop/narrow captures.
+- `CONSTELLA_TERMINAL_PROFILE=/tmp/constella-scroll.json npm run test:terminal-ui`: profile real wheel scrolling through 5,000 styled history lines, recording renderer task/layout time, DOM mutations, and frame timing. UI checks also exercise scrollback after reconnect/handoff and DOM fallback when WebGL is unavailable or lost.
 - `npm run test:graph-ui` and `npm run test:workflow-ui`: existing desktop regression flows.
 - `npm run probe:terminal`: run the PTY integration tests without provider inference.
 

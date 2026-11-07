@@ -14,6 +14,8 @@ export const terminalInputSchema = terminalIdSchema
   })
   .strict()
 export type TerminalInput = z.infer<typeof terminalInputSchema>
+export const terminalReadOnlyMessage =
+  'Continue this node or manager from its controls before editing a completed result.'
 
 // Only vertical wheel reports may reach a read-only fullscreen CLI. Never
 // accept keyboard input, clicks, paste, or extra bytes through this exception.
@@ -62,6 +64,8 @@ export interface TerminalRead {
   data: string
   cursor: number
   reset: boolean
+  // Absent on detached terminal services started before wheel-input support.
+  supportsReadOnlyWheel?: boolean
 }
 export interface TerminalBridge {
   list(): Promise<Result<TerminalSession[]>>

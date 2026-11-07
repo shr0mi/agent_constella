@@ -46,6 +46,7 @@ import { CatalogPage } from './Catalogs'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { TaskGraphPage } from './TaskGraph'
+import { SidebarSessions } from './components/SidebarSessions'
 
 function FailureNotice({
   failure,
@@ -96,38 +97,44 @@ function Sidebar() {
           Personal workspace<small>Local · single user</small>
         </div>
       </div>
-      <div className="nav-label">Workspace</div>
-      <nav aria-label="Main navigation">
-        <NavLink to="/projects">
-          <FolderKanban size={17} />
-          Projects<span className="soon">{projects.length}</span>
-        </NavLink>
-        <NavLink to="/terminals"><Terminal size={17} />Terminals</NavLink>
-        <NavLink to="/playground">
-          <FlaskConical size={17} />
-          Connectivity lab
-          <span className="nav-dot" />
-        </NavLink>
-        <NavLink to="/skills">
-          <Zap size={17} />
-          Skills
-        </NavLink>
-        <NavLink to="/agents">
-          <Bot size={17} />
-          Agents
-        </NavLink>
-      </nav>
-      {projects.length > 0 && (
-        <div className="sidebar-projects">
-          <div className="nav-label">Your projects</div>
-          {projects.map((project) => (
-            <NavLink key={project.id} to={`/projects/${project.id}`}>
-              <span>{project.name.slice(0, 1).toUpperCase()}</span>
-              <strong>{project.name}</strong>
-            </NavLink>
-          ))}
-        </div>
-      )}
+      <div className="sidebar-content">
+        <div className="nav-label">Workspace</div>
+        <nav aria-label="Main navigation">
+          <NavLink to="/projects">
+            <FolderKanban size={17} />
+            Projects<span className="soon">{projects.length}</span>
+          </NavLink>
+          <NavLink to="/terminals">
+            <Terminal size={17} />
+            Terminals
+          </NavLink>
+          <NavLink to="/playground">
+            <FlaskConical size={17} />
+            Connectivity lab
+            <span className="nav-dot" />
+          </NavLink>
+          <NavLink to="/skills">
+            <Zap size={17} />
+            Skills
+          </NavLink>
+          <NavLink to="/agents">
+            <Bot size={17} />
+            Agents
+          </NavLink>
+        </nav>
+        <SidebarSessions />
+        {projects.length > 0 && (
+          <div className="sidebar-projects">
+            <div className="nav-label">Your projects</div>
+            {projects.map((project) => (
+              <NavLink key={project.id} to={`/projects/${project.id}`}>
+                <span>{project.name.slice(0, 1).toUpperCase()}</span>
+                <strong>{project.name}</strong>
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
           <CircleHelp size={17} />

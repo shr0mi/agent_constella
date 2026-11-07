@@ -137,6 +137,7 @@ describe('native CLI terminal multiplexer', () => {
     await host.finish({ sessionId: id, summary: 'Done' })
     const snapshot = await host.read({ sessionId: id })
     expect(snapshot.reset).toBe(true)
+    expect(snapshot.supportsReadOnlyWheel).toBe(true)
     const screen = new headless.Terminal({
       cols: snapshot.session.cols,
       rows: snapshot.session.rows,
@@ -154,6 +155,9 @@ describe('native CLI terminal multiplexer', () => {
       )
       await expect(
         host.input({ sessionId: id, data: '\x1b[<64;6;6M' }),
+      ).resolves.toBeNull()
+      await expect(
+        host.input({ sessionId: id, data: '\x1b[A' }),
       ).rejects.toThrow('Continue')
     } finally {
       screen.dispose()
@@ -227,7 +231,8 @@ describe('native CLI terminal multiplexer', () => {
     )
     expect((await host.list())[0].state).toBe('ready')
     await host.close(id)
-    await expect(host.input({ sessionId: id, data: sgr })).rejects.toThrow(
+    await expect(host.input({ sessionId: id, data: sgr })).resolves.toBeNull()
+    await expect(host.input({ sessionId: id, data: 'edit\r' })).rejects.toThrow(
       'Continue',
     )
   })

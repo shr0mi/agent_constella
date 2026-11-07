@@ -113,6 +113,8 @@ it('loads the built preload with only the modules available in Electron’s sand
   expect(removeListener).toHaveBeenCalledWith(graphChannel, graphListener)
   await bridge.execution.getTask(graphIdentity)
   expect(invoke).toHaveBeenLastCalledWith('constella:node:task', graphIdentity)
+  await bridge.execution.listSessions()
+  expect(invoke).toHaveBeenLastCalledWith('constella:node:sessions')
   await bridge.execution.checkoutTask(graphIdentity)
   expect(invoke).toHaveBeenLastCalledWith(
     'constella:task:checkout',

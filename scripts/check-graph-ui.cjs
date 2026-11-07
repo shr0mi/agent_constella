@@ -295,6 +295,7 @@ ipcMain.handle('constella:node:task', () =>
       : [],
   }),
 )
+ipcMain.handle('constella:node:sessions', () => result([]))
 ipcMain.handle('constella:node:get', (_event, input) =>
   result({
     ...input,

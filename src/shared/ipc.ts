@@ -49,6 +49,7 @@ export const channels = {
   graphPrepare: 'constella:graph:prepare',
   graphChanged: 'constella:graph:changed',
   nodeGet: 'constella:node:get',
+  nodeSessions: 'constella:node:sessions',
   taskExecution: 'constella:node:task',
   taskReview: 'constella:task:review',
   taskOpenWorktree: 'constella:task:open-worktree',

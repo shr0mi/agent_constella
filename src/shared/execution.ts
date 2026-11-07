@@ -137,7 +137,16 @@ export interface NodeExecutionSnapshot extends NodeIdentity {
   active: ActiveNodeRun | null
   persistenceError?: Failure
 }
+export interface NodeSession extends NodeIdentity {
+  title: string
+  projectName: string
+  taskTitle: string
+  state: 'running' | 'attention' | 'done'
+  detail: string
+  updatedAt: string
+}
 export interface ExecutionBridge {
+  listSessions(): Promise<Result<NodeSession[]>>
   getTask(input: GraphIdentity): Promise<Result<TaskExecutionSnapshot>>
   getReview(input: GraphIdentity): Promise<Result<TaskReviewContext>>
   openWorktree(input: GraphIdentity): Promise<Result<void>>

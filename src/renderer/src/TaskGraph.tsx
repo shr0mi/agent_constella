@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import {
   Background,
   Controls,
@@ -161,6 +161,17 @@ function GraphEditor({
   const [connectionError, setConnectionError] = useState('')
   const [externalChange, setExternalChange] = useState(false)
   const [openNode, setOpenNode] = useState<string>()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedNode = searchParams.get('node')
+  useEffect(() => {
+    if (!saved || !requestedNode) return
+    const node = saved.document.nodes.find((node) => node.id === requestedNode)
+    if (!node) return
+    setSelectedNode(node.id)
+    setSelectedEdge(undefined)
+    setOpenNode(node.type === 'agent' ? node.id : undefined)
+  }, [saved?.task.id, requestedNode, location.key])
   const [view, setView] = useState(() => readGraphView({ projectId, taskId }))
   useEffect(
     () => writeGraphView({ projectId, taskId }, view),
@@ -1002,7 +1013,14 @@ function GraphEditor({
             graph={saved}
             node={node}
             runBlockers={runBlockers}
-            onClose={() => setOpenNode(undefined)}
+            onClose={() => {
+              setOpenNode(undefined)
+              if (requestedNode) {
+                const next = new URLSearchParams(searchParams)
+                next.delete('node')
+                setSearchParams(next, { replace: true })
+              }
+            }}
           />
         ) : null
       })()}

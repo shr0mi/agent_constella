@@ -260,6 +260,7 @@ else {
         ...execution!.getTask(input),
         workflow: workflow!.get(input),
       }))
+      handle(channels.nodeSessions, () => execution!.listSessions())
       handle(channels.taskReview, (input) => execution!.getReview(input))
       handle(channels.taskOpenIde, (input) => execution!.openInIde(input))
       handle(channels.taskCheckout, (input) => workflow!.checkoutTask(input))

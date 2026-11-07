@@ -14,7 +14,11 @@ import {
 import { join } from 'node:path'
 import * as pty from 'node-pty'
 import type { Terminal } from '@xterm/headless'
-import { isTerminalWheelInput, type TerminalSession } from '../../shared/terminal'
+import {
+  isTerminalWheelInput,
+  terminalReadOnlyMessage,
+  type TerminalSession,
+} from '../../shared/terminal'
 import { createTerminalScreen } from './screen'
 
 interface Owned {
@@ -237,6 +241,7 @@ export async function startDaemon(directory: string) {
             session: record,
             cursor,
             reset,
+            supportsReadOnlyWheel: true,
             data: reset
               ? owned.serialize()
               : owned.chunks
@@ -247,18 +252,24 @@ export async function startDaemon(directory: string) {
           break
         }
         case 'input':
-          if (
-            record.state !== 'running' &&
-            !(
+          // Wheel events can race a handoff or a screen-mode change. They
+          // must never turn into editing errors or keystrokes at an idle CLI.
+          if (record.state !== 'running' && isTerminalWheelInput(input)) {
+            if (
               record.state === 'ready' &&
               owned.screen.buffer.active.type === 'alternate' &&
-              owned.screen.modes.mouseTrackingMode !== 'none' &&
-              isTerminalWheelInput(input)
+              owned.screen.modes.mouseTrackingMode !== 'none'
             )
-          )
-            throw new Error(
-              'Continue this node or manager from its controls before editing a completed result.',
-            )
+              owned.process.write(
+                input.encoding === 'binary'
+                  ? Buffer.from(input.data, 'binary')
+                  : input.data,
+              )
+            reply(null)
+            break
+          }
+          if (record.state !== 'running')
+            throw new Error(terminalReadOnlyMessage)
           owned.process.write(
             input.encoding === 'binary'
               ? Buffer.from(input.data, 'binary')

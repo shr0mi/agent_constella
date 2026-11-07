@@ -6,7 +6,14 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { WorkspaceDatabase } from '../db/database'
-import { nodeRuns, nodeThreads, projects, tasks, workflows } from '../db/schema'
+import {
+  nodeRuns,
+  nodeThreads,
+  projects,
+  tasks,
+  taskGraphs,
+  workflows,
+} from '../db/schema'
 import { toActivity, type CodexClient } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
 import { applicationFailure, ApplicationError } from './errors'
@@ -22,6 +29,7 @@ import {
   type NodeIdentity,
   type NodeRun,
   type NodeExecutionSnapshot,
+  type NodeSession,
   type StartNodeInput,
 } from '../../shared/execution'
 import { graphIdentitySchema, type GraphIdentity } from '../../shared/graph'
@@ -232,6 +240,92 @@ export class NodeExecutionService {
       .map((row) => this.volatile.get(row.id) ?? row.document)
       .reverse()
     return saved
+  }
+  listSessions(): NodeSession[] {
+    // Fetch only the latest attempt per node, without loading transcripts.
+    const rows = this.db
+      .select({
+        id: nodeRuns.id,
+        nodeId: nodeRuns.nodeId,
+        taskId: tasks.id,
+        projectId: projects.id,
+        projectName: projects.name,
+        taskTitle: tasks.title,
+        graph: taskGraphs.document,
+        workflow: workflows.document,
+        status: sql<NodeRun['status']>`json_extract(${nodeRuns.document}, '$.status')`,
+        updatedAt: sql<string>`coalesce(json_extract(${nodeRuns.document}, '$.finishedAt'), ${nodeRuns.startedAt})`,
+      })
+      .from(nodeRuns)
+      .innerJoin(tasks, eq(tasks.id, nodeRuns.taskId))
+      .innerJoin(projects, eq(projects.id, tasks.projectId))
+      .innerJoin(taskGraphs, eq(taskGraphs.taskId, tasks.id))
+      .leftJoin(workflows, eq(workflows.taskId, tasks.id))
+      .where(
+        sql`${tasks.archivedAt} is null and ${nodeRuns.id} in (
+          select id from node_runs where rowid in (
+            select max(rowid) from node_runs group by node_id
+          )
+        )`,
+      )
+      .all()
+    const sessions: NodeSession[] = []
+    const runningLabels: Partial<Record<NodeRun['status'], string>> = {
+      preparing: 'Preparing',
+      testing: 'Running checks',
+      stopping: 'Stopping',
+    }
+    for (const row of rows) {
+      const node = row.graph.nodes.find((node) => node.id === row.nodeId)
+      if (node?.type !== 'agent') continue
+      const run = this.active.get(row.nodeId)?.run ?? this.volatile.get(row.id)
+      const status = run?.status ?? row.status
+      const workflowNode = row.workflow?.nodes[row.nodeId]
+      const completed = status === 'completed'
+      const accepted =
+        workflowNode?.status === 'completed' &&
+        workflowNode.runId === row.id &&
+        !!workflowNode.acceptanceId
+      const state = isActiveNodeRun(status)
+        ? 'running'
+        : completed && accepted
+          ? 'done'
+          : 'attention'
+      const detail =
+        state === 'done'
+          ? 'Done'
+          : state === 'running'
+            ? (runningLabels[status] ?? 'Running')
+            : completed
+              ? workflowNode?.status === 'failed'
+                ? 'Checks failed'
+                : workflowNode?.status === 'stale'
+                  ? 'Stale result'
+                  : 'Awaiting acceptance'
+              : status === 'cancelled'
+                ? 'Stopped'
+                : status[0].toUpperCase() + status.slice(1)
+      sessions.push({
+        projectId: row.projectId,
+        taskId: row.taskId,
+        nodeId: row.nodeId,
+        title: node.data.title || 'Untitled node',
+        projectName: row.projectName,
+        taskTitle: row.taskTitle,
+        state,
+        detail,
+        updatedAt: run?.finishedAt ?? row.updatedAt,
+      })
+    }
+    const priority = { attention: 0, running: 1, done: 2 }
+    sessions.sort(
+      (a, b) =>
+        priority[a.state] - priority[b.state] ||
+        b.updatedAt.localeCompare(a.updatedAt) ||
+        a.nodeId.localeCompare(b.nodeId),
+    )
+    let recent = 0
+    return sessions.filter((session) => session.state !== 'done' || recent++ < 8)
   }
   getTask(raw: unknown): TaskExecutionSnapshot {
     const identity = graphIdentitySchema.parse(raw)
