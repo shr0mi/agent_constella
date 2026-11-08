@@ -150,7 +150,6 @@ describe('bundled starter catalog', () => {
     const input = {
       prompt: 'Work',
       skillIds: [],
-      sandbox: 'workspace-write' as const,
     }
     expect(
       (

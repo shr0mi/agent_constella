@@ -45,7 +45,7 @@ async function fixture() {
       id: randomUUID(), nodeId: node.id, projectId: project.id, taskId: task.id,
       graphRevision: graph.revision, mode: 'run', status, nodeSnapshot: node,
       taskSnapshot: task, projectContext: project, dependencyResults: [],
-      prompt: 'Implement the editor', resolvedPrompt: '', options: { sandbox: 'workspace-write', skillIds: [] }, skillSnapshots: [],
+      prompt: 'Implement the editor', resolvedPrompt: '', options: { skillIds: [] }, skillSnapshots: [],
       startedAt: time, items: [], events: [], tests: { command: '', status: 'not-run', output: '', truncated: false, exitCode: null },
     }
     saveRun(run)

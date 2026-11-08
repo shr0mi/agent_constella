@@ -68,7 +68,7 @@ const profiles = ['Frontend builder', 'Project reviewer'].map(
   }),
 )
 const diagnostics = {
-  sdkVersion: '0.164.0',
+  transport: 'Native CLI terminal',
   cliVersion: 'codex-cli 0.164.0',
   runtimePath: 'fixture',
   auth: { status: 'signed-in', detail: 'fixture' },
@@ -319,7 +319,7 @@ ipcMain.handle('constella:node:start', (event, input) => {
     mode: input.mode,
     prompt: input.message ?? nodes[1].data.prompt,
     resolvedPrompt: 'Resolved task prompt with fixture profile and skills.',
-    options: { sandbox: 'workspace-write', skillIds: [skills[0].id] },
+    options: { skillIds: [skills[0].id] },
     skillSnapshots: [],
     nodeSnapshot: nodes[1],
     taskSnapshot: task,

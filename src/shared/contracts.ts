@@ -31,7 +31,6 @@ export const runInputSchema = z
     model: z.string().trim().min(1).max(160).nullable().optional(),
     effort: effortSchema.nullable().optional(),
     profileId: z.uuid().optional(),
-    sandbox: z.enum(['read-only', 'workspace-write']),
     skillIds: z
       .array(z.union([z.literal('connectivity-proof'), z.uuid()]))
       .max(21)
@@ -54,7 +53,7 @@ export interface ModelOption {
   defaultEffort?: Effort
 }
 export interface Diagnostics {
-  sdkVersion: string
+  transport: string
   providers?: { provider: 'codex' | 'claude'; available: boolean; path?: string; version?: string; error?: string }[]
   cliVersion: string
   runtimePath: string

@@ -18,7 +18,7 @@ Installation rebuilds the SQLite and PTY native modules for the pinned Electron 
 npm run rebuild:native
 ```
 
-AgentConstella uses your installed CLI and its existing authentication/configuration. It does not use the Codex SDK or change global provider settings. Sign in using the native CLI; permission and workspace-trust questions appear in the embedded terminal.
+AgentConstella uses your installed CLI and its existing authentication/configuration. Sign in using the native CLI; permission and workspace-trust questions appear in the embedded terminal.
 
 Electron downloads its native binary on first launch if it is not cached. To prepare it explicitly:
 
@@ -142,7 +142,7 @@ The terminal checks use actual PTYs and local MCP services with test CLI executa
 ## Structure
 
 ```text
-src/main/             Electron window, validated IPC, Codex service
+src/main/             Electron window, validated IPC, application services
 src/main/terminal/    Native CLI launch, detached PTY service, session transport
 src/main/codex/       Retained attempt lifecycle, skill resolution, atomic storage
 src/main/application/ Shared workspace/catalog/graph/execution/manager and Git services
@@ -151,7 +151,7 @@ src/main/db/          Drizzle schema, versioned SQL migrations, SQLite connectio
 src/preload/          Narrow typed context bridge
 src/shared/           IPC contracts and Zod inputs
 src/renderer/         React Router, Zustand, Tailwind, connectivity UI
-scripts/              Disposable real-SDK integration probe
+scripts/              Electron UI checks and test runner
 tests/                Lifecycle, failure, restart, and boundary tests
 docs/                 Integration findings and limitations
 ```
@@ -160,4 +160,4 @@ Only the main process accesses Codex, SQLite, the filesystem, and credentials. T
 
 `npm test` runs Vitest with Electron's Node runtime, so database tests load the same native SQLite module as the desktop app without switching binaries for the system Node version. This does not open the desktop UI.
 
-Read [the integration record](docs/codex-integration.md) before implementing the full conversation UI or permission gates.
+See [native terminals](docs/native-terminals.md) for CLI launch, persistence, permission prompts, and recovery behavior.

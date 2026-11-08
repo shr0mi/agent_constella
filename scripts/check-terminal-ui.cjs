@@ -171,7 +171,7 @@ app
         createdAt: now,
       },
       diagnostics: {
-        sdkVersion: 'Native CLI terminal',
+        transport: 'Native CLI terminal',
         cliVersion: 'fixture',
         runtimePath: bin,
         auth: { status: 'unknown', detail: 'Native CLI authentication' },

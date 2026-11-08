@@ -35,7 +35,7 @@ Skill creation writes valid YAML frontmatter and instructions to `SKILL.md`. Imp
 
 The skill editor supports `SKILL.md`, existing UTF-8 text resources, and new relative resource paths. It validates frontmatter, revision, and the original file hash before saving. External changes are not overwritten silently. A malformed externally edited SKILL.md can still be opened and repaired. Writes use a temporary file and rename; if the database update fails, the original file is restored.
 
-Agent profile editing includes a display name, role instructions, style guide, selected skill IDs, and default model/effort. Model choices come from the existing runtime diagnostics. Unsupported options are rejected when the runtime catalog is available; execution validates the resolved model/effort again before invoking the SDK.
+Agent profile editing includes a display name, role instructions, style guide, selected skill IDs, and default model/effort. Model and effort overrides are passed to the selected native CLI at terminal creation. The CLI validates provider support; clearing an override inherits its configuration.
 
 Remove/restore changes active catalog membership and retains files and stable IDs. An active profile's selected skill cannot be removed until that profile is edited or removed. Removed profiles remain editable, and restoring one checks its selected skills again. Source folders left on disk can still be discovered by native Codex; removal is not an exclusive runtime skill-disable policy.
 
@@ -45,16 +45,16 @@ Remove/restore changes active catalog membership and retains files and stable ID
 
 Migration 2 appends `catalog_skills` and `agent_profiles` to the existing database. Migration 1 is unchanged. Profile skill IDs are serialized as JSON; all mutations validate their scope and active status in the service. Mutations advance the shared workspace revision and notify catalog subscribers after commit. Async catalog filesystem operations are serialized so app edits do not interleave with snapshot preparation.
 
-## Resolving a Codex run
+## Resolving an agent run
 
 1. A lab session is bound to an optional project ID. Changing that ID archives the prior session metadata and creates a new scratch directory/thread context. Project context and saved history survive restart.
 2. The run resolver validates the selected profile and all profile/additional skills against that context. Global profiles can be used in either project; another project's local IDs are rejected even when supplied directly to the service.
 3. It snapshots the current profile, style guide, project brief/instructions, and selected skill contents. Repeated skill IDs from the profile and additional selection resolve once.
 4. Complete resource files are archived at `<app-data>/run-skills/<run-id>/<skill-id>/` and copied to `<scratch>/.constella/skills/<run-id>/<skill-id>/`. The run stores exact SKILL.md text, source/staged/archive paths, and per-file SHA-256 hashes and sizes. Later source edits do not change those copies.
-5. The prompt includes the resolved role, style guide, project context, skill instructions, and staged paths. Relative scripts/assets resolve beside the staged SKILL.md. The SDK still executes in the scratch directory, not the project repository. Stored development/test commands are context, not automatic actions.
+5. The prompt includes the resolved role, style guide, project context, skill instructions, and staged paths. Relative scripts/assets resolve beside the staged SKILL.md. The connectivity lab launches the selected CLI in its scratch directory; task nodes launch in their isolated worktrees. Stored development/test commands are context, not automatic actions.
 6. Model and effort inherit the profile defaults when the caller omits them. Explicit values override them; explicit `null` selects the configured/model default. The lab displays and sends the selected effective controls. The saved run includes effective options and the original profile snapshot.
 
-The pinned TypeScript SDK still has no native typed skill input. This implementation provides explicit instructions and resource paths; it does not promise an exclusive skill allowlist. Inherited Codex skills/configuration and previous same-thread instructions can still affect execution. Project changes always use a new session to avoid carrying prior project-specific conversation context into another project.
+Selected skills are supplied as explicit instructions and resource paths. Native provider skills/configuration and previous conversation instructions can still affect execution. Project changes always use a new session to avoid carrying prior project-specific conversation context into another project.
 
 ## Practical limits
 
@@ -68,11 +68,11 @@ The pinned TypeScript SDK still has no native typed skill input. This implementa
 ## Verification
 
 - **42 automated tests pass**, including migration from an existing version-1 database without losing its project, persisted profiles/style guides, equal-name scope separation, cross-project rejection, resource imports, binary preservation, removal/restore, external-edit protection, byte limits, BOM handling, and file rollback after a database failure.
-- The run integration test uses the real catalog resolver and connectivity service with an injected SDK client. It verifies the exact prompt, style/role/project text, staged resource files, archived copies, and persisted snapshots. It does not perform provider inference.
+- The run integration test uses the real catalog resolver and connectivity service with an injected agent client. It verifies the exact prompt, style/role/project text, staged resource files, archived copies, and persisted snapshots. It does not perform provider inference.
 - The built preload is executed with only Electron available to `require`, including catalog method and subscription checks.
 - Typechecking and production bundles pass.
 - An isolated hidden Electron check with fixture data verified the global/project tabs, skill editor, profile skill choices, global profile visibility in both project contexts, local-only profile visibility, and application of profile model defaults, with no renderer/preload errors. It used a temporary profile and made no model calls.
 
 For the manual checkpoint, create a global skill and global profile, create a local skill/profile in one project, then switch the lab between two project contexts. Select the profile, send a prompt that uses its resource, and inspect the run snapshot.
 
-References: [official skill format and local discovery](https://learn.chatgpt.com/docs/build-skills), [Codex TypeScript SDK](https://learn.chatgpt.com/docs/codex-sdk).
+See [native terminals](native-terminals.md) for provider launch and conversation behavior.

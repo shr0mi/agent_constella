@@ -1,4 +1,4 @@
-import type { ThreadEvent, ThreadOptions } from '../terminal/types'
+import type { AgentClient, ThreadEvent, ThreadOptions } from '../terminal/types'
 import { NativeCliClient } from '../terminal/client'
 import { terminalHost } from '../terminal/host'
 import { randomUUID } from 'node:crypto'
@@ -14,7 +14,7 @@ import {
   taskGraphs,
   workflows,
 } from '../db/schema'
-import { toActivity, type CodexClient } from '../codex/service'
+import { toActivity } from '../codex/service'
 import { resolvePrompt } from '../codex/skills'
 import { applicationFailure, ApplicationError } from './errors'
 import type { CatalogService } from './catalog-service'
@@ -61,7 +61,7 @@ export class NodeExecutionService {
   private mcpConnection?: (
     identity: GraphIdentity & { taskId: string; nodeId: string },
   ) => {
-    client: CodexClient
+    client: AgentClient
     release: () => void
   }
   setMcpConnection(
@@ -162,7 +162,7 @@ export class NodeExecutionService {
     private readonly graphs: GraphService,
     private readonly catalog: CatalogService,
     appData: string,
-    private readonly client: CodexClient = new NativeCliClient(),
+    private readonly client: AgentClient = new NativeCliClient(),
     private readonly checkTimeoutMs = 120_000,
   ) {
     this.worktrees = new TaskWorktreeService(database, appData)
@@ -742,7 +742,6 @@ export class NodeExecutionService {
         skillIds: node.data.skillIds,
         model: node.data.model,
         effort: node.data.effort,
-        sandbox: 'workspace-write',
       },
       nodeSnapshot: structuredClone(node),
       taskSnapshot: graph.task,
@@ -908,8 +907,6 @@ export class NodeExecutionService {
         provider: run.projectContext.defaultProvider ?? 'codex',
         title: `${run.taskSnapshot.title} / ${run.nodeSnapshot.data.title}`,
         attachOnly: recovering,
-        skipGitRepoCheck: false,
-        sandboxMode: 'workspace-write',
         model: run.options.model ?? undefined,
         modelReasoningEffort: run.options.effort ?? undefined,
       }

@@ -21,12 +21,9 @@ import {
   type WorkspaceDatabase,
 } from '../src/main/db/database'
 import { migrations } from '../src/main/db/migrations'
-import {
-  ConnectivityService,
-  type CodexClient,
-} from '../src/main/codex/service'
+import { ConnectivityService } from '../src/main/codex/service'
 import { SessionStore } from '../src/main/codex/storage'
-import type { ThreadEvent } from '../src/main/terminal/types'
+import type { AgentClient, ThreadEvent } from '../src/main/terminal/types'
 import type { AgentProfile, CatalogSkill } from '../src/shared/catalog'
 
 const roots: string[] = []
@@ -93,7 +90,6 @@ describe('scope-aware skill and agent catalogs', () => {
     })
     const input = {
       prompt: 'Run',
-      sandbox: 'workspace-write' as const,
       skillIds: [],
     }
     const run = (override = {}) =>
@@ -230,7 +226,7 @@ describe('scope-aware skill and agent catalogs', () => {
     ).rejects.toMatchObject({ code: 'SKILL_SCOPE' })
     await expect(
       catalog.resolveRun(
-        { prompt: 'Work', skillIds: [skill.id], sandbox: 'workspace-write' },
+        { prompt: 'Work', skillIds: [skill.id] },
         root,
         randomUUID(),
         b.id,
@@ -243,7 +239,6 @@ describe('scope-aware skill and agent catalogs', () => {
           prompt: 'Work',
           profileId: profile.id,
           skillIds: [],
-          sandbox: 'workspace-write',
         },
         root,
         randomUUID(),
@@ -474,7 +469,6 @@ describe('scope-aware skill and agent catalogs', () => {
         prompt: 'Run',
         profileId: localProfile.id,
         skillIds: [skill.id],
-        sandbox: 'workspace-write',
       },
       workspace,
       randomUUID(),
@@ -507,7 +501,7 @@ describe('scope-aware skill and agent catalogs', () => {
     ).toBe(skill.id)
   })
 
-  it('passes resolved role, style, skill content, project brief, and staged resource paths to the SDK adapter and saves them across restart', async () => {
+  it('passes resolved role, style, skill content, project brief, and staged resource paths to the agent client and saves them across restart', async () => {
     const { catalog, root, a } = await fixture()
     let skill = await catalog.createSkill(skillInput(a.id))
     skill = await catalog.saveSkillFile({
@@ -518,7 +512,7 @@ describe('scope-aware skill and agent catalogs', () => {
     })
     const profile = await catalog.createProfile(profileInput(a.id, [skill.id]))
     let prompt = ''
-    const client: CodexClient = {
+    const client: AgentClient = {
       startThread: () => ({
         runStreamed: async (input) => {
           prompt = input
@@ -555,7 +549,6 @@ describe('scope-aware skill and agent catalogs', () => {
       prompt: 'Implement a component',
       profileId: profile.id,
       skillIds: [],
-      sandbox: 'read-only',
     })
     await service.waitForIdle()
     const run = service.snapshot().session.runs[0]
@@ -594,7 +587,6 @@ describe('scope-aware skill and agent catalogs', () => {
       prompt: 'Run',
       profileId: profile.id,
       skillIds: [],
-      sandbox: 'read-only' as const,
     }
     expect(await catalog.resolveRun(base, root, randomUUID())).toMatchObject({
       model: 'account-model',

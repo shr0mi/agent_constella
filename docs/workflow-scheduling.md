@@ -8,7 +8,7 @@
 
 ## Acceptance and progression
 
-- Start completes when execution begins. An agent becomes ready only when every incoming predecessor has a current acceptance token. A successful SDK turn, successful configured checks (or explicitly unconfigured checks), and successful code collection are all required before acceptance.
+- Start completes when execution begins. An agent becomes ready only when every incoming predecessor has a current acceptance token. An explicit terminal handoff, successful configured checks (or explicitly unconfigured checks), and successful code collection are all required before acceptance.
 - Auto acceptance grants a token after success. Manual acceptance records the human's decision against the exact current run ID and workflow revision. A successful run by itself cannot release a manual node's successors.
 - Human Review becomes available after every predecessor is accepted. Its panel shows upstream summaries, check results, and links to conversations/diffs. Approval releases the gate. Request changes requires a note and an accepted upstream agent; it continues that conversation, invalidates the target and its descendants, reruns affected work, and requires review again. Revised manual nodes need a new acceptance.
 - End completes only when all required nodes are accepted. Start moves the task to Doing; failures, decisions, paused work, and interruptions keep it there. End moves it to Done. Integration is a separate action after Done. Started tasks cannot be moved to another column manually, but remain reorderable and archivable.
@@ -26,7 +26,7 @@ Node signatures include incoming dependencies, settings, selected profile/skills
 
 An explicit follow-up can reopen a completed or integrated workflow in the same node conversation. Its prior downstream acceptance and End completion are revoked, the board returns to Doing, and affected work must pass acceptance and review again. Earlier integration receipts stay in history; revising a task never rolls back code already integrated into the project.
 
-Pause records the paused state before stopping active execution. Archiving also stops active work before changing archive metadata. Restoring unfinished work leaves it paused. On restart, active attempts become interrupted and running/waiting workflows become paused; no SDK turn or test command is replayed automatically. Previously completed workflows and human approvals remain persisted. Attempts recorded before this milestone remain inspectable but are not silently adopted as accepted workflow results.
+Pause records the paused state before stopping active execution. Archiving also stops active work before changing archive metadata. Restoring unfinished work leaves it paused. On restart, live native assignments reconnect and missing processes leave attempts interrupted. Running/waiting workflows become paused; prompts and test commands are never replayed automatically. Previously completed workflows and human approvals remain persisted. Attempts recorded before this milestone remain inspectable but are not silently adopted as accepted workflow results.
 
 ## Explicit Git integration
 

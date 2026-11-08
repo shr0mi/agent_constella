@@ -61,22 +61,14 @@ export interface ThreadOptions {
   title?: string
   model?: string
   modelReasoningEffort?: Effort
-  // Retained in archived run/test contracts; native CLI permissions are user-owned.
-  skipGitRepoCheck?: boolean
-  sandboxMode?: string
-  approvalPolicy?: string
-  networkAccessEnabled?: boolean
-  webSearchMode?: string
 }
 export interface TurnOptions {
   signal?: AbortSignal
 }
 export interface AgentOptions {
   env?: Record<string, string>
-  config?: Record<string, unknown>
   mcp?: { url: string; token: string }
 }
-export type CodexOptions = AgentOptions
 export interface AgentClient {
   startThread(options: ThreadOptions): AgentThread
   resumeThread(id: string, options: ThreadOptions): AgentThread

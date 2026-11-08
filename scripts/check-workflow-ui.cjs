@@ -228,7 +228,7 @@ app
     )
     await scheduler.initialize()
     const diagnostics = {
-      sdkVersion: '0.164.0',
+      transport: 'Native CLI terminal',
       cliVersion: 'fixture',
       runtimePath: 'fixture',
       auth: { status: 'signed-in', detail: 'fixture' },

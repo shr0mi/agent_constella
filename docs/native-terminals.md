@@ -1,6 +1,6 @@
 # Native CLI terminals
 
-AgentConstella runs the user's installed **Codex CLI** or **Claude Code** in real pseudoterminals. It does not use the Codex SDK, `codex exec`, or the provider's model APIs. The native CLI owns authentication, conversation context, permission prompts, commands, and tool execution.
+AgentConstella runs the user's installed **Codex CLI** or **Claude Code** in real pseudoterminals. The native CLI owns authentication, conversation context, permission prompts, commands, and tool execution.
 
 ## Provider and launch settings
 
@@ -14,7 +14,7 @@ Install and authenticate the chosen CLI yourself. AgentConstella finds executabl
 
 The service binds only to 127.0.0.1. A private descriptor contains its port and random authentication key. All control requests require that key; browser-origin requests are rejected. Session metadata and terminal transcripts live under the Electron user-data directory's `terminals/`, outside project repositories. Direct CLI interactions are retained in `terminal.ansi`, while `assignment.txt` and `session.json` preserve launch context and session state. The CLI also retains its own native chat history. No project chat file or global provider configuration is modified.
 
-The **Terminals** view switches between sessions and opens two side by side, stacking them on narrow desktop windows. Closing a pane detaches its viewer. Quitting Electron detaches execution monitoring without stopping running CLI processes. On restart, active worker/manager assignments reconnect without resending the prompt; MCP proxies receive fresh project credentials. Workflow scheduling remains paused after restart until resumed explicitly. A reboot or terminal-service failure ends the processes. Retry or start a new conversation in that case; saved app records and terminal transcripts remain. Old SDK-era conversations remain inspectable as historical attempts and are not replayed automatically.
+The **Terminals** view switches between sessions and opens two side by side, stacking them on narrow desktop windows. Closing a pane detaches its viewer. Quitting Electron detaches execution monitoring without stopping running CLI processes. On restart, active worker/manager assignments reconnect without resending the prompt; MCP proxies receive fresh project credentials. Workflow scheduling remains paused after restart until resumed explicitly. A reboot or terminal-service failure ends the processes. Retry or start a new conversation in that case; saved app records and terminal transcripts remain. Historical attempts remain inspectable and are not replayed automatically.
 
 New Codex terminals launch with `--no-alt-screen`, so conversation output remains in the terminal's 5,000-line scrollback. Wheel scrolling works after handoff and after reopening a pane. Fullscreen CLI sessions retain their mouse encoding on reconnect; after handoff, only vertical wheel reports are forwarded for browsing history, while typing and clicks remain disabled. Existing fullscreen sessions keep their current display mode. The raw `terminal.ansi` transcript is retained separately and is not an unlimited scrollback viewer.
 

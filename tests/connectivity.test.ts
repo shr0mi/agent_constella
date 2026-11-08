@@ -7,15 +7,14 @@ import type {
   ThreadOptions,
   TurnOptions,
   Usage,
+  AgentClient,
 } from '../src/main/terminal/types'
 import { runInputSchema, type RunInput } from '../src/shared/contracts'
 import {
   ConnectivityService,
   toActivity,
-  type CodexClient,
 } from '../src/main/codex/service'
 import { SessionStore } from '../src/main/codex/storage'
-import { parseModels } from '../src/main/codex/runtime'
 
 const usage: Usage = {
   input_tokens: 12,
@@ -26,7 +25,6 @@ const usage: Usage = {
 }
 const input: RunInput = {
   prompt: 'Read the fixture',
-  sandbox: 'workspace-write',
   skillIds: ['connectivity-proof'],
 }
 const cleanup: string[] = []
@@ -38,7 +36,7 @@ afterEach(async () => {
 
 function fakeClient(
   events: (options: TurnOptions) => AsyncIterable<ThreadEvent>,
-): CodexClient & {
+): AgentClient & {
   startThread: ReturnType<typeof vi.fn>
   resumeThread: ReturnType<typeof vi.fn>
 } {
@@ -53,7 +51,7 @@ function fakeClient(
   }
 }
 
-async function setup(client: CodexClient) {
+async function setup(client: AgentClient) {
   const directory = await mkdtemp(join(tmpdir(), 'constella-test-'))
   cleanup.push(directory)
   const store = new SessionStore(directory)
@@ -113,11 +111,18 @@ describe('connectivity service lifecycle', () => {
     expect(state.session.workspace.startsWith(store.directory)).toBe(false)
     expect(client.startThread).toHaveBeenCalledWith(
       expect.objectContaining({
-        sandboxMode: 'workspace-write',
+        role: 'lab',
+        provider: 'codex',
+        workingDirectory: state.session.workspace,
       }),
     )
+    const savedPath = join(store.directory, 'session.json')
+    const saved = JSON.parse(await readFile(savedPath, 'utf8'))
+    saved.session.runs[0].options.sandbox = 'workspace-write'
+    await writeFile(savedPath, JSON.stringify(saved))
     const reopened = new ConnectivityService(store, client)
     await reopened.initialize()
+    expect(reopened.snapshot().session.runs[0].options).not.toHaveProperty('sandbox')
     await reopened.start({ ...input, prompt: 'Continue', skillIds: [] })
     await reopened.waitForIdle()
     expect(client.resumeThread).toHaveBeenCalledWith(
@@ -255,17 +260,15 @@ describe('connectivity service lifecycle', () => {
 })
 
 describe('runtime inputs', () => {
-  it('handles the real CLI null exit code on running command items despite the SDK declaration', () => {
+  it('reads archived command activities with a null exit code', () => {
     const item = JSON.parse(
       '{"id":"cmd","type":"command_execution","command":"sleep 30","aggregated_output":"","exit_code":null,"status":"in_progress"}',
     )
     expect(toActivity(item).status).toBe('in_progress')
   })
-  it('does not accept full access, arbitrary skills, or process settings through IPC', () => {
-    expect(
-      runInputSchema.safeParse({ ...input, sandbox: 'danger-full-access' })
-        .success,
-    ).toBe(false)
+  it('rejects permission overrides, arbitrary skills, and process settings through IPC', () => {
+    for (const sandbox of ['read-only', 'workspace-write', 'danger-full-access'])
+      expect(runInputSchema.safeParse({ ...input, sandbox }).success).toBe(false)
     expect(
       runInputSchema.safeParse({ ...input, skillIds: ['../../secret'] })
         .success,
@@ -273,33 +276,5 @@ describe('runtime inputs', () => {
     expect(
       runInputSchema.safeParse({ ...input, workingDirectory: '/' }).success,
     ).toBe(false)
-  })
-  it('uses runtime-supported efforts and filters values the SDK cannot express', () => {
-    const catalog = parseModels({
-      data: [
-        {
-          id: 'model-entry',
-          model: 'account-model',
-          displayName: 'Account Model',
-          isDefault: true,
-          defaultReasoningEffort: 'medium',
-          supportedReasoningEfforts: [
-            { reasoningEffort: 'low' },
-            { reasoningEffort: 'medium' },
-            { reasoningEffort: 'future-effort' },
-          ],
-        },
-      ],
-      nextCursor: null,
-    })
-    expect(catalog.models).toEqual([
-      {
-        id: 'account-model',
-        name: 'Account Model',
-        isDefault: true,
-        efforts: ['low', 'medium'],
-        defaultEffort: 'medium',
-      },
-    ])
   })
 })

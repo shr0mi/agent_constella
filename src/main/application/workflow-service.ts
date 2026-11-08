@@ -616,7 +616,7 @@ export class WorkflowService {
         'Inspect the upstream blockers.',
       )
     // An explicit revision may reopen completed work. The started hook revokes
-    // this node's and its descendants' acceptance before any new SDK work.
+    // this node's and its descendants' acceptance before any new agent work.
     const dependencyResults = this.parents(graph, input.nodeId).map((id) => {
       const state = record.nodes[id]
       let summary =

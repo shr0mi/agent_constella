@@ -295,7 +295,6 @@ function Playground() {
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState<Effort | '' | '__default__'>('')
-  const sandbox = 'workspace-write' as const
   const [provider, setProvider] = useState<'codex' | 'claude'>('codex')
   const [selectedSkill, setSelectedSkill] = useState(true)
   const [profileId, setProfileId] = useState('')
@@ -366,7 +365,6 @@ function Playground() {
           model: modelOverride,
           effort: effortOverride,
           profileId: profileId || undefined,
-          sandbox,
           skillIds: [
             ...(selectedSkill ? ['connectivity-proof'] : []),
             ...additionalSkills,
@@ -650,7 +648,7 @@ function Playground() {
             <dl className="runtime-versions">
               <div>
                 <dt>Transport</dt>
-                <dd>{state?.diagnostics?.sdkVersion ?? '—'}</dd>
+                <dd>{state?.diagnostics?.transport ?? '—'}</dd>
               </div>
               <div>
                 <dt>CLI</dt>

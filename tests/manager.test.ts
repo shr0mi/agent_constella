@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
-  CodexOptions,
+  AgentOptions,
   ThreadEvent,
   ThreadOptions,
 } from '../src/main/terminal/types'
@@ -1048,18 +1048,15 @@ describe('local MCP transport and manager sessions', () => {
     role: 'manager' | 'worker' = 'manager',
   ) {
     const grant = server.issue(scope, role)
-    const servers = grant.options.config!.mcp_servers as {
-      agent_constella: { url: string }
-    }
-    const token = grant.options.env!.CONSTELLA_MCP_TOKEN
+    const { url, token } = grant.options.mcp!
     const client = new Client({ name: 'manager-test', version: '1' })
     clients.push(client)
     await client.connect(
-      new StreamableHTTPClientTransport(new URL(servers.agent_constella.url), {
+      new StreamableHTTPClientTransport(new URL(url), {
         requestInit: { headers: { Authorization: `Bearer ${token}` } },
       }),
     )
-    return { client, grant, url: servers.agent_constella.url, token }
+    return { client, grant, url, token }
   }
   it('authenticates real MCP requests, isolates projects, hides mutating tools from workers and revokes completed sessions', async () => {
     const f = await fixture(),
@@ -1170,7 +1167,7 @@ describe('local MCP transport and manager sessions', () => {
       prompt: string
       threadId?: string
       options: ThreadOptions
-      config: CodexOptions
+      config: AgentOptions
     }[] = []
     const manager = new ManagerService(
       f.database,
@@ -1246,7 +1243,7 @@ describe('local MCP transport and manager sessions', () => {
     })
     await manager.stop(f.board)
     expect(calls[2].threadId).toBe('thread-1')
-    expect(calls[0].options.sandboxMode).toBe('read-only')
+    expect(calls[0].options).toMatchObject({ role: 'manager', provider: 'codex' })
     expect(calls[0].options).toMatchObject({
       model: 'fixture-model',
       modelReasoningEffort: 'high',
@@ -1261,9 +1258,10 @@ describe('local MCP transport and manager sessions', () => {
     })
     expect(calls[1].prompt).toContain('A local CSV tool')
     expect(calls[1].prompt).toContain('Use clear domain names.')
-    expect(calls[1].config.config?.developer_instructions).toContain(
+    expect(calls[1].prompt).toContain(
       'AgentConstella project manager',
     )
+    expect(calls[1].config.mcp?.url).toMatch(/^http:\/\/127\.0\.0\.1:/)
     expect(manager.get(f.board).turns).toHaveLength(2)
     expect(manager.get(f.scope).turns).toHaveLength(1)
     const saved = manager.get(f.scope)

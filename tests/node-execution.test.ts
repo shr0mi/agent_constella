@@ -19,7 +19,7 @@ import { WorkspaceService } from '../src/main/application/workspace-service'
 import { CatalogService } from '../src/main/application/catalog-service'
 import { GraphService } from '../src/main/application/graph-service'
 import { NodeExecutionService } from '../src/main/application/node-execution-service'
-import type { CodexClient } from '../src/main/codex/service'
+import type { AgentClient } from '../src/main/terminal/types'
 import type { NodeIdentity } from '../src/shared/execution'
 import { nodeRuns } from '../src/main/db/schema'
 import { eq } from 'drizzle-orm'
@@ -58,11 +58,11 @@ function client(turn: Turn) {
       return { events: turn(options, input, config.signal, resumed) }
     },
   })
-  const sdk: CodexClient = {
+  const client: AgentClient = {
     startThread: (options) => make(options),
     resumeThread: (id, options) => make(options, id),
   }
-  return { sdk, calls }
+  return { client, calls }
 }
 function successful(
   options: ThreadOptions,
@@ -203,7 +203,7 @@ async function fixture(
     graphs,
     catalog,
     appData,
-    transport.sdk,
+    transport.client,
     5000,
   )
   services.push(execution)
@@ -389,7 +389,8 @@ describe('node execution in isolated worktrees', () => {
     )
     expect(f.transport.calls[0].options).toMatchObject({
       workingDirectory: run.worktree!.path,
-      sandboxMode: 'workspace-write',
+      role: 'worker',
+      provider: 'codex',
     })
     expect(existsSync(join(run.worktree!.path, '.constella'))).toBe(false)
     expect(
@@ -435,7 +436,7 @@ describe('node execution in isolated worktrees', () => {
       graphs,
       catalog,
       f.appData,
-      transport.sdk,
+      transport.client,
     )
     services.push(restored)
     await restored.initialize()
@@ -517,7 +518,7 @@ describe('node execution in isolated worktrees', () => {
       'partial work',
     )
   })
-  it('can cancel during preparation before the SDK starts', async () => {
+  it('can cancel during preparation before the agent starts', async () => {
     const f = await fixture()
     f.start()
     await f.execution.stop(f.identity)
@@ -697,7 +698,7 @@ describe('node execution in isolated worktrees', () => {
       f.graphs,
       f.catalog,
       f.appData,
-      transport.sdk,
+      transport.client,
     )
     services.push(restored)
     await restored.initialize()

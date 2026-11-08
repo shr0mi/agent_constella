@@ -15,7 +15,8 @@ const storedSessionSchema = z.object({
       id: z.uuid(),
       prompt: z.string(),
       resolvedPrompt: z.string(),
-      options: runInputSchema.omit({ prompt: true }),
+      // Archived runs may contain retired options; new IPC inputs remain strict.
+      options: runInputSchema.omit({ prompt: true }).strip(),
       skillSnapshots: z.array(
         z.object({
           id: z.string(),

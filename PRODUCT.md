@@ -65,7 +65,7 @@ The existing product name is AgentConstella. The owner's stated UI goal is to ma
 - `README.md`: current capabilities, desktop workflows, setup, and documented limitations.
 - `docs/projects-and-kanban.md`, `docs/skills-and-agents.md`, and `docs/task-graphs.md`: project, catalog, and graph behavior.
 - `docs/node-execution.md`, `docs/workflow-scheduling.md`, and `docs/parallel-workflows.md`: execution, dependencies, worktrees, and integration.
-- `docs/manager-chats.md` and `docs/codex-integration.md`: manager tools, runtime behavior, and transport limitations.
+- `docs/manager-chats.md` and `docs/native-terminals.md`: manager tools, runtime behavior, and transport limitations.
 - `src/renderer/src/`: existing interface implementation and terminology.
 - `scripts/check-graph-ui.cjs` and `scripts/check-workflow-ui.cjs`: automated desktop flow checks with screenshot support.
 

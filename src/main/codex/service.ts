@@ -21,8 +21,6 @@ import type {
   PreparedCatalogRun,
 } from '../../shared/catalog'
 
-export type CodexClient = AgentClient
-
 const clip = (text: string): string =>
   text.length > 24_000
     ? `${text.slice(0, 24_000)}\n[truncated in app transcript]`
@@ -105,7 +103,7 @@ export class ConnectivityService {
 
   constructor(
     private readonly store: SessionStore,
-    private readonly client: CodexClient = new NativeCliClient(),
+    private readonly client: AgentClient = new NativeCliClient(),
     private readonly resolveCatalog?: CatalogRunResolver,
   ) {}
 
@@ -349,8 +347,6 @@ export class ConnectivityService {
           run.projectSnapshot?.defaultProvider ??
           'codex',
         title: 'Terminal lab',
-        skipGitRepoCheck: true,
-        sandboxMode: run.options.sandbox,
         model: run.options.model ?? undefined,
         modelReasoningEffort: run.options.effort ?? undefined,
       }

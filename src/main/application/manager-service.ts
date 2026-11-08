@@ -1,4 +1,4 @@
-import type { AgentOptions as CodexOptions } from '../terminal/types'
+import type { AgentClient, AgentOptions } from '../terminal/types'
 import { terminalHost } from '../terminal/host'
 import { NativeCliClient } from '../terminal/client'
 import { randomUUID } from 'node:crypto'
@@ -12,7 +12,6 @@ import {
   type ManagerTurn,
 } from '../../shared/manager'
 import type { WorkspaceDatabase } from '../db/database'
-import type { CodexClient } from '../codex/service'
 import { toActivity } from '../codex/service'
 import { applicationFailure, ApplicationError } from './errors'
 import { ManagerTools, managerInstructions } from './manager-tools'
@@ -37,7 +36,7 @@ export class ManagerService {
     private readonly database: WorkspaceDatabase,
     readonly tools: ManagerTools,
     private readonly mcp: LocalMcpServer,
-    private readonly client: (options: CodexOptions) => CodexClient = (
+    private readonly client: (options: AgentOptions) => AgentClient = (
       options,
     ) => new NativeCliClient(options),
   ) {}
@@ -369,10 +368,10 @@ export class ManagerService {
     chat: ManagerChat,
     turn: ManagerTurn,
     active: Active,
-    client: CodexClient,
+    client: AgentClient,
     repoPath: string,
     model?: string,
-    effort?: Parameters<CodexClient['startThread']>[0]['modelReasoningEffort'],
+    effort?: Parameters<AgentClient['startThread']>[0]['modelReasoningEffort'],
     attachOnly = false,
   ) {
     let completed = false
@@ -384,8 +383,6 @@ export class ManagerService {
         workingDirectory: repoPath,
         provider: chat.provider,
         title: chat.taskId ? 'Task manager' : 'Project manager',
-        skipGitRepoCheck: false,
-        sandboxMode: 'read-only' as const,
         model,
         modelReasoningEffort: effort,
       }

@@ -197,28 +197,6 @@ export class LocalMcpServer {
     this.grants.set(token, { scope, role, onDone })
     const options: AgentOptions = {
       mcp: { url: this.url, token },
-      env: {
-        ...Object.fromEntries(
-          Object.entries(process.env).filter(
-            (entry): entry is [string, string] => typeof entry[1] === 'string',
-          ),
-        ),
-        CONSTELLA_MCP_TOKEN: token,
-      },
-      config: {
-        ...(role === 'manager'
-          ? { developer_instructions: managerInstructions }
-          : {}),
-        mcp_servers: {
-          agent_constella: {
-            url: this.url,
-            bearer_token_env_var: 'CONSTELLA_MCP_TOKEN',
-            required: true,
-            startup_timeout_sec: 20,
-            tool_timeout_sec: 60,
-          },
-        },
-      },
     }
     return {
       options,

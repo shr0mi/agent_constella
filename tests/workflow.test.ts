@@ -24,7 +24,7 @@ import { NodeExecutionService } from '../src/main/application/node-execution-ser
 import { WorkflowService } from '../src/main/application/workflow-service'
 import { makeWorkflowNode, type WorkflowNode } from '../src/shared/graph'
 import { BranchIntegrationService } from '../src/main/application/branch-integration'
-import type { CodexClient } from '../src/main/codex/service'
+import type { AgentClient } from '../src/main/terminal/types'
 
 const roots: string[] = [],
   databases: WorkspaceDatabase[] = [],
@@ -214,7 +214,7 @@ async function fixture(
       }
     },
   })
-  const client: CodexClient = {
+  const client: AgentClient = {
     startThread: (config) => thread(config),
     resumeThread: (id, config) => thread(config, id),
   }
