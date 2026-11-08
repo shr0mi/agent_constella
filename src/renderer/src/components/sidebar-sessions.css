@@ -25,6 +25,13 @@
 
 .sidebar-sessions h2 > span {
   font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sidebar-attention-count {
+  color: var(--rail-session-attention);
 }
 
 .sidebar-session {
@@ -58,7 +65,31 @@
 }
 
 .session-status.attention {
-  background: var(--rail-session-attention, #e8bf63);
+  width: 14px;
+  height: 14px;
+  flex-basis: 14px;
+  margin-top: 2px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rail-session-attention);
+}
+
+.sidebar-session.requires-attention {
+  background: var(--rail-attention-surface);
+  outline: 1px solid var(--rail-attention-line);
+  outline-offset: -1px;
+  margin-block: 3px;
+}
+
+.sidebar-session.requires-attention:hover,
+.sidebar-session.requires-attention.active {
+  background: var(--rail-hover);
+  outline-color: var(--rail-session-attention);
+}
+
+.sidebar-session.requires-attention .sidebar-session-state {
+  color: var(--rail-session-attention);
+  font-weight: 600;
 }
 
 .session-status.done {

@@ -31,6 +31,9 @@
   --rail-ink: #f1f5fc;
   --rail-muted: #b3c0d3;
   --rail-line: #344257;
+  --rail-session-attention: #e8bf63;
+  --rail-attention-surface: #342e26;
+  --rail-attention-line: #75613b;
   --radius-control: 6px;
   --radius-panel: 12px;
   --shadow-overlay: 0 24px 72px #17213129;

@@ -32,6 +32,10 @@ Agent nodes use a nearly full-window terminal with one compact control row. **Op
 
 A terminal's silence, an idle prompt, and a process exit are not workflow success.
 
+Active worker terminals are monitored for interactive permission, trust, confirmation, and input prompts. The sidebar puts these sessions first with **Attention required**, a warning icon, and the reason. The corresponding graph node and minimap turn amber; selecting the sidebar session opens its native terminal to respond. Attention clears when the prompt disappears and normal work resumes. Results awaiting acceptance and human review also show **Attention required** in the graph, with their specific workflow state below it.
+
+Detection reads the current terminal screen, including ANSI redraws, rather than searching transcript history or treating silence as a blocker. It also works with detached terminal services started before an app update. This is a screen-based hint: custom or localized CLI prompts may not match the recognized controls. It does not answer prompts, grant permissions, release a running agent's concurrency slot, or change the workflow handoff rules.
+
 Worker terminals receive the existing read-only task-context MCP tools plus **agent_report_done**. The initial assignment instructs the worker to call it as its final tool, with a useful summary, only after completing the requested work. Alternatively, the developer can click **Finish step & run checks**. Manual handoff records terminal screen text as a fallback summary.
 
 After handoff, terminal keyboard input is disabled until another explicit assignment. The existing execution engine runs configured checks, captures immutable file changes, combines results, and applies manual/automatic acceptance. Human review and final integration still require their existing decisions. A result handoff is a declaration by the agent or developer, not proof that the code is correct; configured checks, clean-worktree verification, review, and integration previews remain responsible for acceptance. Stop and Ctrl+C are distinct: typing Ctrl+C interacts with the native CLI, while the workflow Stop control ends its process.

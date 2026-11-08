@@ -85,6 +85,28 @@
   outline-offset: 3px;
 }
 
+.workflow-node.requires-attention {
+  background: var(--warning-soft);
+  border: 2px solid var(--warning);
+  padding: 13px;
+}
+
+.workflow-node.requires-attention .workflow-node-state {
+  color: var(--warning);
+  font-weight: 650;
+}
+
+.workflow-node.requires-attention > p {
+  color: var(--warning);
+}
+
+.workflow-node-attention-detail {
+  margin-top: 3px;
+  color: var(--warning);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .workflow-controls {
   display: flex;
   flex-wrap: wrap;

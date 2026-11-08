@@ -248,6 +248,8 @@ Project rows are whole navigation targets. Hover or focus changes their tone and
 
 Graph nodes retain familiar handles and explicit type/state labels. Pending is neutral; ready/running cobalt; completed green; failure red; review/interrupted states amber. Stale, stopped, and interrupted states also have dashed borders. Selection adds a cobalt outline (2px), offset (3px), independent of state. Workflow state CSS loads after graph CSS and controls final node treatments.
 
+Native CLI permission, confirmation, and input prompts show **Attention required** on their agent node with a warning icon, amber surface, stronger amber border (2px), and a specific reason. Acceptance and human review gates use the same treatment while retaining their workflow label beneath it. The minimap marks attention in amber. Sidebar sessions needing attention appear first with a warning icon, amber label and outlined surface; the Sessions heading counts them. Opening the session leads directly to its terminal. These indicators clear as the CLI resumes; they do not imply workflow completion.
+
 ### Dialogs / Conversations / Review
 
 Shared native dialogs use white headers, quiet dividers, internal scrolling, and a visible close control. Closing restores prior focus; busy dialogs disable dismissal.

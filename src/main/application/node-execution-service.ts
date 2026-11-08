@@ -40,6 +40,7 @@ import type {
 import { taskGit, TaskWorktreeService } from './task-worktrees'
 import { runChecks } from './run-checks'
 import { z } from 'zod'
+import { terminalAttentionLabel, type TerminalAttention } from '../../shared/terminal'
 import { launchIde, ideArguments } from './ide-launcher'
 
 interface Active {
@@ -254,6 +255,7 @@ export class NodeExecutionService {
         graph: taskGraphs.document,
         workflow: workflows.document,
         status: sql<NodeRun['status']>`json_extract(${nodeRuns.document}, '$.status')`,
+        attention: sql<TerminalAttention | null>`json_extract(${nodeRuns.document}, '$.attention')`,
         updatedAt: sql<string>`coalesce(json_extract(${nodeRuns.document}, '$.finishedAt'), ${nodeRuns.startedAt})`,
       })
       .from(nodeRuns)
@@ -280,31 +282,36 @@ export class NodeExecutionService {
       if (node?.type !== 'agent') continue
       const run = this.active.get(row.nodeId)?.run ?? this.volatile.get(row.id)
       const status = run?.status ?? row.status
+      const attention = status === 'running' ? (run ? run.attention : row.attention) : undefined
       const workflowNode = row.workflow?.nodes[row.nodeId]
       const completed = status === 'completed'
       const accepted =
         workflowNode?.status === 'completed' &&
         workflowNode.runId === row.id &&
         !!workflowNode.acceptanceId
-      const state = isActiveNodeRun(status)
-        ? 'running'
-        : completed && accepted
-          ? 'done'
-          : 'attention'
+      const state = attention
+        ? 'attention'
+        : isActiveNodeRun(status)
+          ? 'running'
+          : completed && accepted
+            ? 'done'
+            : 'attention'
       const detail =
-        state === 'done'
-          ? 'Done'
-          : state === 'running'
-            ? (runningLabels[status] ?? 'Running')
-            : completed
-              ? workflowNode?.status === 'failed'
-                ? 'Checks failed'
-                : workflowNode?.status === 'stale'
-                  ? 'Stale result'
-                  : 'Awaiting acceptance'
-              : status === 'cancelled'
-                ? 'Stopped'
-                : status[0].toUpperCase() + status.slice(1)
+        attention
+          ? terminalAttentionLabel[attention]
+          : state === 'done'
+            ? 'Done'
+            : state === 'running'
+              ? (runningLabels[status] ?? 'Running')
+              : completed
+                ? workflowNode?.status === 'failed'
+                  ? 'Checks failed'
+                  : workflowNode?.status === 'stale'
+                    ? 'Stale result'
+                    : 'Awaiting acceptance'
+                : status === 'cancelled'
+                  ? 'Stopped'
+                  : status[0].toUpperCase() + status.slice(1)
       sessions.push({
         projectId: row.projectId,
         taskId: row.taskId,
@@ -341,6 +348,7 @@ export class NodeExecutionService {
         status: sql<
           NodeRun['status']
         >`json_extract(${nodeRuns.document}, '$.status')`,
+        attention: sql<TerminalAttention | null>`json_extract(${nodeRuns.document}, '$.attention')`,
       })
       .from(nodeRuns)
       .where(
@@ -357,6 +365,7 @@ export class NodeExecutionService {
           nodeId: row.nodeId,
           runId: row.id,
           status: this.volatile.get(row.id)?.status ?? row.status,
+          attention: (this.active.get(row.nodeId)?.run ?? this.volatile.get(row.id))?.attention ?? row.attention ?? undefined,
         })
     const active = [...this.active.values()].find(
       ({ run }) =>
@@ -940,6 +949,7 @@ export class NodeExecutionService {
         )
       this.assertRunDependencies(run)
       run.status = 'testing'
+      delete run.attention
       this.persist(run)
       run.tests = await runChecks(
         run.tests.command,
@@ -1036,6 +1046,7 @@ export class NodeExecutionService {
       }
       if (signal.aborted) run.status = 'cancelled'
       run.finishedAt = new Date().toISOString()
+      delete run.attention
       try {
         this.persist(run)
       } catch {
@@ -1044,6 +1055,8 @@ export class NodeExecutionService {
     }
   }
   private applyEvent(run: NodeRun, event: ThreadEvent) {
+    if (event.type === 'turn.started') delete run.attention
+    if (event.type === 'terminal.attention') run.attention = event.attention
     run.events.push({
       type: event.type,
       at: new Date().toISOString(),

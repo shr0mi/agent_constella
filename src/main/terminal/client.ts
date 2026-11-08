@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { terminalHost, type TerminalHost } from './host'
+import { TerminalAttentionMonitor } from './attention'
+import type { TerminalAttention } from '../../shared/terminal'
 import type {
   AgentClient,
   AgentOptions,
@@ -52,6 +54,8 @@ export class NativeCliClient implements AgentClient {
           yield { type: 'thread.started', thread_id: `terminal:${session.id}` }
           yield { type: 'turn.started' }
           let cursor = 0
+          let attention: TerminalAttention | undefined
+          const monitor = new TerminalAttentionMonitor()
           try {
             while (!turn.signal?.aborted) {
               const value = await host.read({
@@ -75,9 +79,15 @@ export class NativeCliClient implements AgentClient {
                 throw new Error(
                   `The native ${session.provider} terminal exited (${value.session.exitCode ?? 'unknown'}). Inspect its output and retry or start a new conversation.`,
                 )
+              const nextAttention = await monitor.read(value)
+              if (nextAttention !== attention) {
+                attention = nextAttention
+                yield { type: 'terminal.attention', attention }
+              }
               await new Promise((resolve) => setTimeout(resolve, 250))
             }
           } finally {
+            monitor.dispose()
             if (turn.signal?.aborted && turn.signal.reason !== 'detach')
               await host.close(session.id).catch(() => {})
           }

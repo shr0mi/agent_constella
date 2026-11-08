@@ -50,6 +50,7 @@ import {
 import type { AgentProfile, CatalogSnapshot } from '../../shared/catalog'
 import { effortSchema, type Effort, ModelOption } from '../../shared/contracts'
 import type { ProjectModelDefaults } from '../../shared/model-settings'
+import { terminalAttentionLabel } from '../../shared/terminal'
 import { useCatalog } from './catalog-store'
 import { SkillSelector } from './components/CatalogSelectors'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
@@ -76,6 +77,7 @@ type CanvasNode = Node<
     subtitle: string
     issueCount: number
     status: WorkflowNodeStatus
+    attention?: string
   },
   'workflow'
 >
@@ -88,18 +90,20 @@ function WorkflowCard({
   const kind = kinds[node.type],
     Icon = kind.icon
   const StatusIcon =
-    data.status === 'completed'
-      ? Check
-      : data.status === 'failed'
-        ? TriangleAlert
-        : data.status === 'running'
-          ? LoaderCircle
-          : data.status === 'ready'
-            ? Play
-            : Clock3
+    data.attention
+      ? TriangleAlert
+      : data.status === 'completed'
+        ? Check
+        : data.status === 'failed'
+          ? TriangleAlert
+          : data.status === 'running'
+            ? LoaderCircle
+            : data.status === 'ready'
+              ? Play
+              : Clock3
   return (
     <div
-      className={`workflow-node ${node.type} state-${data.status} ${selected ? 'selected' : ''} ${data.issueCount ? 'has-issues' : ''}`}
+      className={`workflow-node ${node.type} state-${data.status} ${data.attention ? 'requires-attention' : ''} ${selected ? 'selected' : ''} ${data.issueCount ? 'has-issues' : ''}`}
     >
       {node.type !== 'start' && (
         <Handle
@@ -115,13 +119,14 @@ function WorkflowCard({
       </div>
       <strong>{node.data.title || 'Untitled node'}</strong>
       <p>{data.subtitle}</p>
-      <div className="workflow-node-state">
+      <div className="workflow-node-state" role="status">
         <StatusIcon
           size={12}
-          className={data.status === 'running' ? 'spin' : ''}
+          className={!data.attention && data.status === 'running' ? 'spin' : ''}
         />
-        {workflowStatusLabel[data.status]}
+        {data.attention ? 'Attention required' : workflowStatusLabel[data.status]}
       </div>
+      {data.attention && <div className="workflow-node-attention-detail">{data.attention}</div>}
       {node.type !== 'end' && (
         <Handle
           type="source"
@@ -348,6 +353,14 @@ function GraphEditor({
     const node = saved?.document.nodes.find((node) => node.id === id)
     if (node?.type === 'agent') setOpenNode(id)
   }
+  function attentionReason(node: WorkflowNode) {
+    const previous = execution?.nodeStates.find((state) => state.nodeId === node.id)
+    if (previous?.status === 'running' && previous.attention)
+      return terminalAttentionLabel[previous.attention]
+    const status = runtimeStatus(node)
+    if (status === 'awaiting-acceptance' || status === 'waiting-review')
+      return workflowStatusLabel[status]
+  }
   const canvasNodes: CanvasNode[] = (draft?.nodes ?? []).map((node) => ({
     id: node.id,
     type: 'workflow',
@@ -357,13 +370,14 @@ function GraphEditor({
     data: {
       node,
       status: runtimeStatus(node),
+      attention: attentionReason(node),
       subtitle:
         node.type === 'agent'
           ? (catalog?.profiles.find(
               (profile) => profile.id === node.data.profileId,
             )?.name ??
               (node.data.profileId ? 'Unavailable profile' : 'Default agent')) +
-            (execution?.nodeStates.find((state) => state.nodeId === node.id)
+            (!attentionReason(node) && execution?.nodeStates.find((state) => state.nodeId === node.id)
               ? ` · ${nodeStatus(execution.nodeStates.find((state) => state.nodeId === node.id)!.status)}`
               : '')
           : node.type === 'review'
@@ -760,13 +774,15 @@ function GraphEditor({
               <Controls showInteractive={false} />
               <MiniMap<CanvasNode>
                 nodeColor={(node) =>
-                  node.data.status === 'completed'
-                    ? 'var(--success)'
-                    : node.data.status === 'failed'
-                      ? 'var(--danger)'
-                      : node.data.status === 'running'
-                        ? 'var(--accent)'
-                        : 'var(--muted)'
+                  node.data.attention
+                    ? 'var(--warning)'
+                    : node.data.status === 'completed'
+                      ? 'var(--success)'
+                      : node.data.status === 'failed'
+                        ? 'var(--danger)'
+                        : node.data.status === 'running'
+                          ? 'var(--accent)'
+                          : 'var(--muted)'
                 }
                 pannable
                 zoomable

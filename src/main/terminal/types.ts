@@ -1,5 +1,5 @@
 import type { Effort } from '../../shared/contracts'
-import type { AgentProvider } from '../../shared/terminal'
+import type { AgentProvider, TerminalAttention } from '../../shared/terminal'
 
 // Application lifecycle records, also used to read pre-terminal attempt history.
 // Native terminal bytes are never parsed into model/tool events.
@@ -46,6 +46,7 @@ export type ThreadItem =
 export type ThreadEvent =
   | { type: 'thread.started'; thread_id: string }
   | { type: 'turn.started' }
+  | { type: 'terminal.attention'; attention?: TerminalAttention }
   | { type: 'turn.completed'; usage?: Usage }
   | { type: 'turn.failed'; error: { message: string } }
   | { type: 'error'; message: string }

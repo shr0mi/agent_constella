@@ -118,3 +118,17 @@ it('restores recent sessions from storage and excludes removed nodes and archive
   f.database.db.update(tasks).set({ archivedAt: new Date().toISOString() }).where(eq(tasks.id, f.task.id)).run()
   expect(reopened.listSessions()).toEqual([])
 })
+
+it('surfaces native CLI attention in sidebar sessions and graph snapshots without releasing active work', async () => {
+  const f = await fixture()
+  const waiting = f.add('running', 'running')
+  waiting.run.attention = 'permission'
+  f.database.db.update(nodeRuns).set({ document: waiting.run }).where(eq(nodeRuns.id, waiting.run.id)).run()
+  expect(f.execution.listSessions()).toEqual([expect.objectContaining({ nodeId: waiting.node.id, state: 'attention', detail: 'Permission required' })])
+  expect(f.execution.getTask({ projectId: f.project.id, taskId: f.task.id }).nodeStates).toEqual([
+    expect.objectContaining({ nodeId: waiting.node.id, status: 'running', attention: 'permission' }),
+  ])
+  delete waiting.run.attention
+  f.database.db.update(nodeRuns).set({ document: waiting.run }).where(eq(nodeRuns.id, waiting.run.id)).run()
+  expect(f.execution.listSessions()[0]).toMatchObject({ state: 'running', detail: 'Running' })
+})

@@ -3,6 +3,12 @@ import type { Result } from './contracts'
 
 export const providerSchema = z.enum(['codex', 'claude'])
 export type AgentProvider = z.infer<typeof providerSchema>
+export type TerminalAttention = 'permission' | 'confirmation' | 'input'
+export const terminalAttentionLabel: Record<TerminalAttention, string> = {
+  permission: 'Permission required',
+  confirmation: 'Confirmation required',
+  input: 'Input required',
+}
 export const terminalIdSchema = z.object({ sessionId: z.uuid() }).strict()
 export const terminalReadSchema = terminalIdSchema
   .extend({ after: z.number().int().min(0).default(0) })

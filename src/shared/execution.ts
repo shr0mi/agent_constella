@@ -7,6 +7,7 @@ import {
 } from './graph'
 import type { Project, Task } from './workspace'
 import type { WorkflowSnapshot } from './workflow'
+import type { TerminalAttention } from './terminal'
 
 export const nodeIdentitySchema = graphIdentitySchema.extend({
   nodeId: z.uuid(),
@@ -73,6 +74,7 @@ export interface TestResult {
   finishedAt?: string
 }
 export interface NodeRun extends Omit<Run, 'status'> {
+  attention?: TerminalAttention
   projectId: string
   taskId: string
   nodeId: string
@@ -113,7 +115,7 @@ export interface TaskExecutionSnapshot extends GraphIdentity {
   worktree: TaskWorktree | null
   active: ActiveNodeRun | null
   activeRuns: ActiveNodeRun[]
-  nodeStates: { nodeId: string; runId: string; status: NodeRun['status'] }[]
+  nodeStates: { nodeId: string; runId: string; status: NodeRun['status']; attention?: TerminalAttention }[]
   persistenceError?: Failure
 }
 export interface TaskReviewContext extends GraphIdentity {

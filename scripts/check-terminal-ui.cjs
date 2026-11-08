@@ -47,7 +47,7 @@ app
     for (const cli of ['codex', 'claude'])
       writeFileSync(
         join(bin, cli),
-        `#!/bin/sh\nprintf '\\033[2J\\033[H${cli.toUpperCase()} — native terminal fixture\\n'\nprintf 'TTY: '; test -t 0 && printf 'connected\\n'\nprintf 'Ready for your instructions.\\n'\nwhile IFS= read -r line; do\nif [ "$line" = '__history_mouse__' ]; then\nprintf '\\033[?1003h\\033[?1006h'\ni=1; while [ "$i" -le 200 ]; do printf 'NODE_HISTORY_%s\\n' "$i"; i=$((i+1)); done\nelse printf 'You typed: %s\\n' "$line"; fi\ndone\n`,
+        `#!/bin/sh\nprintf '\\033[2J\\033[H${cli.toUpperCase()} — native terminal fixture\\n'\nprintf 'TTY: '; test -t 0 && printf 'connected\\n'\nprintf 'Ready for your instructions.\\n'\nwhile IFS= read -r line; do\nif [ "$line" = '__permission__' ]; then\nprintf '\\033[2J\\033[HDo you want to proceed?\\n1. Yes\\n2. Yes, and do not ask again\\n3. No\\nEnter to confirm · Esc to cancel'\nelif [ "$line" = '__resume__' ]; then\nprintf '\\033[2J\\033[HWorking on the task…\\n'\nelif [ "$line" = '__history_mouse__' ]; then\nprintf '\\033[?1003h\\033[?1006h'\ni=1; while [ "$i" -le 200 ]; do printf 'NODE_HISTORY_%s\\n' "$i"; i=$((i+1)); done\nelse printf 'You typed: %s\\n' "$line"; fi\ndone\n`,
         { mode: 0o755 },
       )
     process.env.PATH = `${bin}:${process.env.PATH}`
@@ -340,6 +340,19 @@ app
       (await host.list()).find((s) => s.id === id).provider,
       'claude',
     )
+    // Prompt detection keeps working after the terminal viewer is closed.
+    await run("document.querySelector('dialog[open] [aria-label]').click()")
+    await host.input({ sessionId: id, data: '__permission__\r' })
+    await until('document.querySelector(".sidebar-session.requires-attention .sidebar-session-state")?.textContent === "Attention required"')
+    await until('document.querySelector(".workflow-node.requires-attention .workflow-node-state")?.textContent === "Attention required"')
+    assert.equal(execution.listSessions()[0].detail, 'Permission required')
+    assert.equal(execution.getTask(identity).nodeStates.find(s => s.nodeId === nodeId).attention, 'permission')
+    assert.equal(execution.hasActiveTask(identity), true)
+    await captureUi(window, process.env.CONSTELLA_TERMINAL_SCREENSHOT, 'attention-required')
+    await run('document.querySelector(".sidebar-session.requires-attention").click()')
+    await until('!!document.querySelector(".node-workspace .terminal-screen .xterm")')
+    await host.input({ sessionId: id, data: '__resume__\r' })
+    await until('!document.querySelector(".sidebar-session.requires-attention") && !document.querySelector(".workflow-node.requires-attention")')
     await host.input({ sessionId: id, data: 'hello from GUI test\r' })
     await host.input({ sessionId: id, data: '__history_mouse__\r' })
     const nodeSlider = 'parseFloat(document.querySelector(".node-workspace .scrollbar.vertical .slider")?.style.top ?? "0")'
@@ -393,6 +406,8 @@ app
     assert.deepEqual(await run('window.__nodeScrollAlerts'), [])
     await run('window.__nodeScrollObserver.disconnect(); delete window.__nodeScrollObserver; delete window.__nodeScrollAlerts')
     await run("document.querySelector('dialog[open] [aria-label]').click()")
+    await until('document.querySelector(".workflow-node.requires-attention .workflow-node-attention-detail")?.textContent === "Awaiting acceptance"')
+    await until('document.querySelector(".sidebar-session.requires-attention")?.textContent.includes("Awaiting acceptance")')
     await run(`location.hash=${JSON.stringify(`/projects/${project.id}`)}`)
     await until('document.body.innerText.includes("Project manager")')
     await click('Project manager')

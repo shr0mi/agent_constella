@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Check } from 'lucide-react'
+import { Check, TriangleAlert } from 'lucide-react'
 import type { NodeSession } from '../../../shared/execution'
 import './sidebar-sessions.css'
 
-const labels = { running: 'Running', attention: 'Needs attention', done: 'Done' }
+const labels = { running: 'Running', attention: 'Attention required', done: 'Done' }
 
 export function SidebarSessions() {
   const [sessions, setSessions] = useState<NodeSession[]>([])
@@ -71,6 +71,7 @@ export function SidebarSessions() {
   }, [retry])
   const active = sessions.filter((session) => session.state !== 'done')
   const recent = sessions.filter((session) => session.state === 'done')
+  const attentionCount = active.filter((session) => session.state === 'attention').length
   function row(session: NodeSession) {
     const path = `/projects/${session.projectId}/tasks/${session.taskId}/graph`
     const selected =
@@ -80,16 +81,18 @@ export function SidebarSessions() {
       <Link
         key={session.nodeId}
         to={`${path}?node=${session.nodeId}`}
-        className={`sidebar-session${selected ? ' active' : ''}`}
+        className={`sidebar-session${selected ? ' active' : ''}${session.state === 'attention' ? ' requires-attention' : ''}`}
         aria-current={selected ? 'page' : undefined}
         title={`${session.title} · ${labels[session.state]} (${session.detail})\n${session.projectName} / ${session.taskTitle}`}
       >
         <span className={`session-status ${session.state}`} aria-hidden="true">
           {session.state === 'done' && <Check size={8} strokeWidth={3} />}
+          {session.state === 'attention' && <TriangleAlert size={14} />}
         </span>
         <span className="sidebar-session-text">
           <strong>{session.title}</strong>
-          <small>{labels[session.state]} · {session.projectName}</small>
+          <small className="sidebar-session-state">{labels[session.state]}</small>
+          <small>{session.state === 'attention' ? `${session.detail} · ` : ''}{session.projectName}</small>
         </span>
       </Link>
     )
@@ -102,7 +105,14 @@ export function SidebarSessions() {
     >
       <h2 className="nav-label" id="sidebar-sessions-title">
         Sessions
-        {active.length > 0 && <span>{active.length}</span>}
+        <span
+          className={attentionCount ? 'sidebar-attention-count' : undefined}
+          role="status"
+          aria-label={attentionCount ? `${attentionCount} sessions require attention` : `${active.length} active sessions`}
+        >
+          {attentionCount > 0 && <TriangleAlert size={12} aria-hidden="true" />}
+          {attentionCount || active.length || ''}
+        </span>
       </h2>
       {failed && (
         <div className="sidebar-session-message" role="status">

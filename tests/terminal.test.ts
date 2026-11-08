@@ -342,6 +342,37 @@ describe('native CLI terminal multiplexer', () => {
     await pending
     expect((await host.list()).length).toBe(1)
   })
+  it.each(['codex', 'claude'] as const)('reports %s prompts without an open viewer and clears attention after a response', async (provider) => {
+    const { host, root } = await fixture()
+    const id = randomUUID()
+    const prompt = provider === 'codex'
+      ? 'Would you like to run the following command?\r\n1. Yes, proceed\r\n2. No\r\nEnter to confirm'
+      : 'Do you want to proceed?\r\n1. Yes\r\n2. Yes, and don\'t ask again\r\n3. No\r\nEsc to cancel'
+    await host.rpc({
+      op: 'create', id, provider, cwd: root, executable: '/bin/sh',
+      args: ['-c', 'printf "\\033[2J\\033[H%s" "$1"; read answer; printf "\\033[2J\\033[HRunning tests…\\n"; read next', 'fixture', prompt],
+      prompt: '',
+    })
+    const controller = new AbortController()
+    const { events } = await new NativeCliClient({}, host)
+      .resumeThread(`terminal:${id}`, { attachOnly: true })
+      .runStreamed('', { signal: controller.signal })
+    const seen: ThreadEvent[] = []
+    const done = (async () => { for await (const event of events) seen.push(event) })()
+    try {
+      await eventually(async () => seen, (events) => events.some((event) => event.type === 'terminal.attention' && event.attention === 'permission'))
+      expect(seen.some((event) => event.type === 'turn.completed')).toBe(false)
+      await host.input({ sessionId: id, data: 'y\r' })
+      await eventually(async () => seen, (events) => events.some((event) => event.type === 'terminal.attention' && !event.attention))
+      expect(seen.filter((event) => event.type === 'terminal.attention')).toHaveLength(2)
+      await host.finish({ sessionId: id, summary: 'Done' })
+      await done
+      expect(seen.at(-1)?.type).toBe('turn.completed')
+    } finally {
+      controller.abort()
+      await done
+    }
+  })
   it('rejects unauthenticated local RPC and proxies only the session-scoped MCP credential', async () => {
     const { host, directory, root } = await fixture()
     const descriptor = JSON.parse(
