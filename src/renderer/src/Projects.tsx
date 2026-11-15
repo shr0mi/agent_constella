@@ -1,4 +1,11 @@
-import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from 'react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Archive,
@@ -9,6 +16,9 @@ import {
   ArrowUp,
   Check,
   CheckCheck,
+  ChevronDown,
+  Copy,
+  Minus,
   Circle,
   Clock3,
   FolderGit2,
@@ -30,7 +40,7 @@ import {
 import type { Project, Task, TaskStatus } from '../../shared/workspace'
 import { effortSchema, type Effort, type Failure } from '../../shared/contracts'
 import type { WorkflowSummary } from '../../shared/workflow'
-import { useAppStore } from './store'
+import { refreshDiagnostics, useAppStore } from './store'
 import { Modal } from './components/Modal'
 import { ManagerChat } from './ManagerChat'
 import { ProjectIdeButton, TaskIdeButton } from './TaskReview'
@@ -39,6 +49,7 @@ import {
   useWorkspaceStore,
   workspaceAction,
 } from './workspace-store'
+import { useCatalog } from './catalog-store'
 
 const columns: { id: TaskStatus; title: string; caption: string }[] = [
   { id: 'todo', title: 'To Do', caption: 'Ready to take shape' },
@@ -123,39 +134,73 @@ export function ProjectsPage() {
   const tasks = snapshot?.tasks.filter((task) => !task.archivedAt) ?? []
   return (
     <main className="projects-page">
-      <div className="page-heading">
-        <div>
-          <h1>Your projects</h1>
-          <p>A home for each repository. A clear view of the work ahead.</p>
+      <section className="dash-hero" aria-label="Workspace overview">
+        <div className="dash-hero-copy">
+          <span className="eyebrow">
+            <span className="eyebrow-dot" /> Local agent command center
+          </span>
+          <h1>
+            Orchestrate your agents.
+            <br />
+            <span className="dash-hero-dim">Ship the work.</span>
+          </h1>
+          <p>
+            Plan on a board, draw the workflow, and run Codex or Claude Code in
+            isolated worktrees — all on this device.
+          </p>
+          <div className="dash-hero-actions">
+            <ProjectActions />
+          </div>
         </div>
-        {projects.length > 0 && <ProjectActions />}
-      </div>
-      <div className="project-overview" aria-label="Workspace summary">
-        <div>
-          <FolderGit2 size={17} />
-          <strong>{projects.length}</strong>
-          <span>{projects.length === 1 ? 'repository' : 'repositories'}</span>
+        <div className="dash-orbit" aria-hidden="true">
+          <span className="orbit-ring ring-1" />
+          <span className="orbit-ring ring-2" />
+          <span className="orbit-core">
+            <Bot size={26} />
+          </span>
+          <span className="orbit-chip chip-a">
+            <GitBranch size={14} /> worktree
+          </span>
+          <span className="orbit-chip chip-b">
+            <Zap size={14} /> codex
+          </span>
+          <span className="orbit-chip chip-c">
+            <Target size={14} /> claude
+          </span>
         </div>
-        <div>
-          <Layers3 size={17} />
-          <strong>{tasks.length}</strong>
-          <span>{tasks.length === 1 ? 'active task' : 'active tasks'}</span>
-        </div>
-        <div>
-          <CheckCheck size={17} />
-          <strong>
-            {tasks.filter((task) => task.status === 'done').length}
-          </strong>
-          <span>completed</span>
-        </div>
-        <span className="local-storage-tag">
-          <span className="status-dot green" />
-          Saved on this device
-        </span>
-      </div>
+      </section>
+      <section className="dash-stats" aria-label="Workspace summary">
+        <DashStat
+          icon={<FolderGit2 size={16} />}
+          value={projects.length}
+          label={projects.length === 1 ? 'Repository' : 'Repositories'}
+          tag="[ LOCAL ]"
+        />
+        <DashStat
+          icon={<Layers3 size={16} />}
+          value={tasks.filter((task) => task.status === 'todo').length}
+          label="Queued tasks"
+          tag="[ TO DO ]"
+        />
+        <DashStat
+          icon={<Clock3 size={16} />}
+          value={tasks.filter((task) => task.status === 'doing').length}
+          label="In motion"
+          tag="[ DOING ]"
+          live
+        />
+        <DashStat
+          icon={<CheckCheck size={16} />}
+          value={tasks.filter((task) => task.status === 'done').length}
+          label="Integrated"
+          tag="[ DONE ]"
+        />
+      </section>
+      <GettingStarted variant="dashboard" />
+      <QuickAgents />
       <div className="projects-toolbar">
-        <span>
-          Repositories <small>{projects.length}</small>
+        <span className="section-title">
+          Repositories <small>{String(projects.length).padStart(2, '0')}</small>
         </span>
         <label className="workspace-search">
           <Search size={14} />
@@ -185,12 +230,11 @@ export function ProjectsPage() {
           <div className="empty-project-icon">
             <FolderGit2 size={32} />
           </div>
-          <h2>Give your next idea a workspace.</h2>
+          <h2>No repositories yet.</h2>
           <p>
             Create a project folder or open one you already have. We’ll set up
             Git and its board so you can start capturing the work.
           </p>
-          <ProjectActions />
           <span className="empty-footnote">
             Project files stay in place. Boards and settings are saved locally.
           </span>
@@ -262,6 +306,66 @@ export function ProjectsPage() {
         </div>
       )}
     </main>
+  )
+}
+
+function DashStat({
+  icon,
+  value,
+  label,
+  tag,
+  live = false,
+}: {
+  icon: React.ReactNode
+  value: number
+  label: string
+  tag: string
+  live?: boolean
+}) {
+  return (
+    <div className={`dash-stat${live && value > 0 ? ' is-live' : ''}`}>
+      <div className="dash-stat-top">
+        <span className="dash-stat-icon">{icon}</span>
+        <span className="dash-stat-tag">{tag}</span>
+      </div>
+      <strong className="dash-stat-value">{String(value).padStart(2, '0')}</strong>
+      <span className="dash-stat-label">{label}</span>
+    </div>
+  )
+}
+
+function QuickAgents() {
+  const { snapshot } = useCatalog(null)
+  const profiles = (snapshot?.profiles ?? []).filter((p) => !p.removedAt)
+  if (!profiles.length) return null
+  return (
+    <section className="dash-agents" aria-label="Agent profiles">
+      <div className="projects-toolbar">
+        <span className="section-title">
+          Agents <small>{String(profiles.length).padStart(2, '0')}</small>
+        </span>
+        <Link className="dash-link" to="/agents">
+          Manage agents <ArrowRight size={14} />
+        </Link>
+      </div>
+      <div className="dash-agent-row">
+        {profiles.slice(0, 4).map((profile) => (
+          <Link to="/agents" key={profile.id} className="dash-agent">
+            <span className="dash-agent-avatar">
+              <Bot size={18} />
+            </span>
+            <div>
+              <strong>{profile.name}</strong>
+              <span className="mono-meta">
+                {profile.model ?? 'default model'} · {profile.skillIds.length}{' '}
+                skills
+              </span>
+            </div>
+            <span className="dash-agent-pill">Ready</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -1129,16 +1233,12 @@ function ProjectSettings({
             spaces.
           </p>
           <label htmlFor="parallel-agents">Maximum simultaneous agents</label>
-          <input
+          <NumberStepper
             id="parallel-agents"
-            type="number"
             min={1}
             max={8}
-            required
             value={maxParallelAgents}
-            onChange={(event) =>
-              setMaxParallelAgents(Number(event.target.value))
-            }
+            onChange={setMaxParallelAgents}
           />
           <label htmlFor="project-default-provider">
             Default agent provider
@@ -1288,6 +1388,391 @@ function FormFailure({ failure }: { failure: Failure }) {
     <div className="form-error" role="alert">
       <strong>{failure.message}</strong>
       <p>{failure.hint}</p>
+    </div>
+  )
+}
+
+type Provider = 'codex' | 'claude'
+
+const providerInfo: Record<Provider, { name: string; install: string; login: string }> = {
+  codex: { name: 'Codex CLI', install: 'npm i -g @openai/codex', login: 'codex login' },
+  claude: {
+    name: 'Claude Code',
+    install: 'npm i -g @anthropic-ai/claude-code',
+    login: 'claude auth login',
+  },
+}
+
+function CopyLine({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="gs-command">
+      <span className="gs-prompt">$</span>
+      <code>{command}</code>
+      <button
+        type="button"
+        aria-label={`Copy ${command}`}
+        onClick={(event) => {
+          event.stopPropagation()
+          void navigator.clipboard?.writeText(command)
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 1400)
+        }}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+    </div>
+  )
+}
+
+const DISMISS_KEY = 'constella:getting-started-dismissed'
+
+/**
+ * First-run checklist (Onboarding Checklist style): collapsible card with a
+ * bar-style progress meter. Steps tick off on their own as the user works.
+ */
+export function GettingStarted({
+  variant,
+  provider: controlledProvider,
+  onProviderChange,
+}: {
+  variant: 'dashboard' | 'lab'
+  provider?: Provider
+  onProviderChange?: (provider: Provider) => void
+}) {
+  const navigate = useNavigate()
+  const diagnostics = useAppStore((store) => store.state?.diagnostics)
+  const runCount = useAppStore((store) => store.state?.session?.runs.length ?? 0)
+  const checking = useAppStore((store) => store.checking)
+  const snapshot = useWorkspaceStore((store) => store.snapshot)
+  const [localProvider, setLocalProvider] = useState<Provider>('codex')
+  const provider = controlledProvider ?? localProvider
+  const setProvider = onProviderChange ?? setLocalProvider
+  const [expanded, setExpanded] = useState(variant === 'lab')
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(DISMISS_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const info = providerInfo[provider]
+  const cliText = diagnostics?.cliVersion ?? ''
+  const signedIn = diagnostics?.auth.status === 'signed-in'
+  const installed =
+    signedIn || (cliText !== '' && !cliText.includes(`${provider}: not installed`))
+  const projects = snapshot?.projects ?? []
+  const tasks = (snapshot?.tasks ?? []).filter((task) => !task.archivedAt)
+  const steps: {
+    id: string
+    title: string
+    done: boolean
+    body: React.ReactNode
+  }[] = [
+    {
+      id: 'install',
+      title: `Install ${info.name}`,
+      done: installed,
+      body: (
+        <>
+          <CopyLine command={info.install} />
+          <p>Run it in any terminal, then restart this app.</p>
+        </>
+      ),
+    },
+    {
+      id: 'signin',
+      title: 'Sign in',
+      done: signedIn,
+      body: (
+        <>
+          <CopyLine command={info.login} />
+          <p>We check for you every few seconds.</p>
+        </>
+      ),
+    },
+    {
+      id: 'project',
+      title: 'Create your first project',
+      done: projects.length > 0,
+      body: (
+        <button type="button" className="gs-go" onClick={() => navigate('/projects')}>
+          Open projects <ArrowRight size={12} />
+        </button>
+      ),
+    },
+    {
+      id: 'task',
+      title: 'Add a task to the board',
+      done: tasks.length > 0,
+      body: (
+        <button
+          type="button"
+          className="gs-go"
+          onClick={() =>
+            navigate(projects[0] ? `/projects/${projects[0].id}` : '/projects')
+          }
+        >
+          {projects[0] ? `Open ${projects[0].name}` : 'Create a project first'}
+          <ArrowRight size={12} />
+        </button>
+      ),
+    },
+    {
+      id: 'run',
+      title: 'Run your first agent',
+      done: runCount > 0 || tasks.some((task) => task.status !== 'todo'),
+      body: (
+        <button type="button" className="gs-go" onClick={() => navigate('/playground')}>
+          Try it in the Connectivity lab <ArrowRight size={12} />
+        </button>
+      ),
+    },
+  ]
+  const completed = steps.filter((step) => step.done).length
+  const allDone = completed === steps.length
+  const firstOpen = steps.find((step) => !step.done)?.id ?? ''
+  const [openStep, setOpenStep] = useState(firstOpen)
+  useEffect(() => setOpenStep(firstOpen), [firstOpen])
+  useEffect(() => {
+    if (signedIn || !window.constella) return
+    if (!diagnostics) void refreshDiagnostics()
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshDiagnostics()
+    }, 8000)
+    return () => window.clearInterval(timer)
+  }, [signedIn, diagnostics])
+  if (variant === 'dashboard' && allDone && dismissed) return null
+  const bars = 14
+  const filled = Math.round((completed / steps.length) * bars)
+  return (
+    <MotionConfig
+      reducedMotion="user"
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+    >
+      <motion.section
+        layout
+        className={`gs-card gs-${variant} ${allDone ? 'is-done' : ''}`}
+        aria-label="Getting started"
+      >
+        <motion.button
+          layout="position"
+          type="button"
+          className="gs-header"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <motion.span
+            className="gs-chevron"
+            animate={{ rotate: expanded ? 0 : -90 }}
+          >
+            <ChevronDown size={15} />
+          </motion.span>
+          <span className="gs-title">
+            {allDone ? 'You’re all set' : 'Getting started'}
+            {!allDone && checking && <span className="gs-live">checking…</span>}
+          </span>
+          <span className="gs-meter" aria-hidden="true">
+            {Array.from({ length: bars }, (_, index) => (
+              <i key={index} className={index < filled ? 'on' : ''} />
+            ))}
+          </span>
+          <span className="gs-count">
+            {completed}/{steps.length}
+          </span>
+        </motion.button>
+        <AnimatePresence initial={false}>
+          {expanded && (
+            <motion.div
+              key="list"
+              className="gs-panel"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+            >
+              <div className="gs-provider" role="group" aria-label="Agent">
+                {(Object.keys(providerInfo) as Provider[]).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={provider === id ? 'selected' : ''}
+                    onClick={() => setProvider(id)}
+                  >
+                    {providerInfo[id].name}
+                  </button>
+                ))}
+              </div>
+              <ol className="gs-steps">
+                {steps.map((step, index) => {
+                  const isOpen = openStep === step.id && !step.done
+                  return (
+                    <li
+                      key={step.id}
+                      className={`${step.done ? 'done' : ''} ${isOpen ? 'open' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="gs-row"
+                        aria-expanded={isOpen}
+                        onClick={() => setOpenStep(isOpen ? '' : step.id)}
+                      >
+                        <span className="gs-num">
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            {step.done ? (
+                              <motion.span
+                                key="check"
+                                initial={{ scale: 0, rotate: -45 }}
+                                animate={{ scale: 1, rotate: 0 }}
+                                exit={{ scale: 0 }}
+                              >
+                                <Check size={12} strokeWidth={3} />
+                              </motion.span>
+                            ) : (
+                              <motion.span key="num" exit={{ scale: 0 }}>
+                                {String(index + 1).padStart(2, '0')}
+                              </motion.span>
+                            )}
+                          </AnimatePresence>
+                        </span>
+                        <span className="gs-step-title">{step.title}</span>
+                        {!step.done && (
+                          <ChevronDown size={14} className="gs-row-chevron" />
+                        )}
+                      </button>
+                      <AnimatePresence initial={false}>
+                        {isOpen && (
+                          <motion.div
+                            className="gs-body"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                          >
+                            <div className="gs-body-inner">{step.body}</div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </li>
+                  )
+                })}
+              </ol>
+              {allDone && variant === 'dashboard' && (
+                <button
+                  type="button"
+                  className="gs-dismiss"
+                  onClick={() => {
+                    try {
+                      localStorage.setItem(DISMISS_KEY, '1')
+                    } catch {
+                      /* Storage can be unavailable; hiding for now is fine. */
+                    }
+                    setDismissed(true)
+                  }}
+                >
+                  Hide this checklist
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.section>
+    </MotionConfig>
+  )
+}
+
+const digitVariants = {
+  enter: (direction: number) => ({
+    y: direction * 18,
+    opacity: 0,
+    scale: 0.5,
+    filter: 'blur(2px)',
+  }),
+  center: { y: 0, opacity: 1, scale: 1, filter: 'blur(0px)' },
+  exit: (direction: number) => ({
+    y: direction * -18,
+    opacity: 0,
+    scale: 0.5,
+    filter: 'blur(2px)',
+  }),
+}
+
+/** Pill number input with rolling digits (Stepper style). */
+export function NumberStepper({
+  id,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  id?: string
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+}) {
+  const previous = useRef(value)
+  const direction = value >= previous.current ? 1 : -1
+  useEffect(() => {
+    previous.current = value
+  }, [value])
+  const step = (delta: number) =>
+    onChange(Math.min(max, Math.max(min, value + delta)))
+  return (
+    <div
+      className="num-stepper"
+      id={id}
+      role="spinbutton"
+      tabIndex={0}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+          event.preventDefault()
+          step(1)
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+          event.preventDefault()
+          step(-1)
+        }
+      }}
+    >
+      <motion.button
+        type="button"
+        aria-label="Decrease"
+        tabIndex={-1}
+        disabled={value <= min}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.92 }}
+        onClick={() => step(-1)}
+      >
+        <Minus size={15} />
+      </motion.button>
+      <span className="num-stepper-value">
+        <AnimatePresence mode="popLayout" initial={false} custom={direction}>
+          <motion.span
+            key={value}
+            custom={direction}
+            variants={digitVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ type: 'spring', stiffness: 200, damping: 16, mass: 1.2 }}
+          >
+            {value}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+      <motion.button
+        type="button"
+        aria-label="Increase"
+        tabIndex={-1}
+        disabled={value >= max}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.92 }}
+        onClick={() => step(1)}
+      >
+        <Plus size={15} />
+      </motion.button>
+      <span className="num-stepper-hint">agents at once</span>
     </div>
   )
 }

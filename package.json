@@ -33,6 +33,7 @@
     "drizzle-orm": "0.45.4",
     "lucide-react": "1.61.0",
     "monaco-editor": "0.57.0",
+    "motion": "^14.14.0",
     "node-pty": "1.1.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",

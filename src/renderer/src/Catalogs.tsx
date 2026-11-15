@@ -6,6 +6,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  Copy,
   FileCode2,
   FolderInput,
   Globe2,
@@ -15,6 +16,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  X,
   Zap,
 } from 'lucide-react'
 import type {
@@ -24,7 +26,7 @@ import type {
   SkillDocument,
 } from '../../shared/catalog'
 import type { Effort, Failure } from '../../shared/contracts'
-import { Modal } from './components/Modal'
+import { Modal, TimedUndoButton } from './components/Modal'
 import { ModelFields, SkillSelector } from './components/CatalogSelectors'
 import { catalogAction, useCatalog, useCatalogStore } from './catalog-store'
 import { useAppStore } from './store'
@@ -50,7 +52,9 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
   const [newSkill, setNewSkill] = useState(false)
   const [skillDocument, setSkillDocument] = useState<SkillDocument>()
   const [profileEditor, setProfileEditor] = useState<AgentProfile | 'new'>()
+  const [detailId, setDetailId] = useState<string>()
   useEffect(() => {
+    setDetailId(undefined)
     setNewSkill(false)
     setSkillDocument(undefined)
     setProfileEditor(undefined)
@@ -69,6 +73,14 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
             .includes(search.toLowerCase()),
       )
     : []
+  const detail = (
+    kind === 'skills' ? (snapshot?.skills ?? []) : (snapshot?.profiles ?? [])
+  ).find((item) => item.id === detailId) as CatalogSkill | AgentProfile | undefined
+  function edit(item: CatalogSkill | AgentProfile) {
+    setDetailId(undefined)
+    if ('folderPath' in item) void editSkill(item)
+    else setProfileEditor(item)
+  }
   async function importSkill() {
     try {
       await catalogAction((api) => api.importSkill({ projectId }))
@@ -269,84 +281,100 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
           {records.map((item) => (
             <article
               key={item.id}
-              className={`catalog-card ${item.removedAt ? 'removed' : ''}`}
+              className={`catalog-card is-clickable ${item.removedAt ? 'removed' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${item.name}`}
+              onClick={() => setDetailId(item.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setDetailId(item.id)
+                }
+              }}
             >
               <div className="catalog-card-top">
                 <span className="catalog-symbol">
-                  {kind === 'skills' ? <Zap size={20} /> : <Bot size={21} />}
+                  {kind === 'skills' ? <Zap size={18} /> : <Bot size={19} />}
                 </span>
                 <span className="catalog-scope-chip">
-                  {item.projectId ? 'Project' : 'Global'} · v{item.revision}
+                  {item.projectId ? 'Project' : 'Global'}
                 </span>
+                <div className="card-hover-actions">
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Edit"
+                    aria-label={`Edit ${item.name}`}
+                    disabled={busy}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      edit(item)
+                    }}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title={item.removedAt ? 'Restore' : 'Remove'}
+                    aria-label={`${item.removedAt ? 'Restore' : 'Remove'} ${item.name}`}
+                    disabled={busy}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void toggle(item)
+                    }}
+                  >
+                    {item.removedAt ? <RotateCcw size={13} /> : <Archive size={13} />}
+                  </button>
+                </div>
               </div>
               <h2>{item.name}</h2>
-              <p className="catalog-card-description">
+              <p className="catalog-card-description clamp-2">
                 {'description' in item
                   ? item.description
                   : item.roleInstructions ||
                     'Add role instructions to guide this agent.'}
               </p>
-              {'folderPath' in item ? (
-                <>
-                  <code className="catalog-folder" title={item.folderPath}>
-                    {item.folderPath}
-                  </code>
-                  {item.source && (
-                    <p className="catalog-source" title={item.source.url}>
-                      Source: {item.source.repository} · {item.source.license} ·{' '}
-                      {item.source.revision.slice(0, 8)}
-                    </p>
-                  )}
-                </>
-              ) : (
+              {!('folderPath' in item) && (
                 <div className="profile-card-tags">
                   <span>
                     <Zap size={11} />
                     {item.skillIds.length} skills
                   </span>
-                  <span>{item.model ?? 'Runtime default'}</span>
-                  <span>{item.effort ?? 'Default effort'}</span>
-                  {item.styleGuide && <span>Style guide</span>}
+                  <span>{item.model ?? 'Default model'}</span>
                 </div>
               )}
-              <div className="catalog-card-actions">
-                <button
-                  className="button secondary"
-                  disabled={busy}
-                  onClick={() =>
-                    'folderPath' in item
-                      ? void editSkill(item)
-                      : setProfileEditor(item)
-                  }
-                >
-                  <Pencil size={12} />
-                  Edit
-                </button>
-                <button
-                  className="button catalog-remove"
-                  disabled={busy}
-                  onClick={() => void toggle(item)}
-                >
-                  {item.removedAt ? (
-                    <RotateCcw size={13} />
-                  ) : (
-                    <Archive size={13} />
-                  )}
-                  {item.removedAt ? 'Restore' : 'Remove'}
-                </button>
-              </div>
+              <span className="card-open-hint">
+                Details <ArrowRight size={12} />
+              </span>
             </article>
           ))}
         </div>
       )}
-      <div className="catalog-footnote">
+      <div
+        className="catalog-footnote"
+        title={
+          kind === 'skills'
+            ? tab === 'global'
+              ? 'Global skill folders are saved in app data.'
+              : 'Project skill folders are saved under .agents/skills/.'
+            : 'A global profile can select global skills; a project profile can also select its local skills.'
+        }
+      >
         <Check size={12} />
-        {kind === 'skills'
-          ? tab === 'global'
-            ? 'Global skill folders are saved in app data.'
-            : 'Project skill folders are saved under .agents/skills/.'
-          : 'Profiles are saved locally. A global profile can select global skills; a project profile can also select its local skills.'}
+        Saved on this device
       </div>
+      {detail && (
+        <CatalogDetail
+          item={detail}
+          skills={snapshot?.skills ?? []}
+          busy={busy}
+          onClose={() => setDetailId(undefined)}
+          onEdit={() => edit(detail)}
+          onToggle={() => void toggle(detail)}
+        />
+      )}
       {newSkill && (
         <CreateSkillEditor
           projectId={projectId}
@@ -372,6 +400,179 @@ export function CatalogPage({ kind }: { kind: 'skills' | 'profiles' }) {
         />
       )}
     </main>
+  )
+}
+
+function CatalogDetail({
+  item,
+  skills,
+  busy,
+  onClose,
+  onEdit,
+  onToggle,
+}: {
+  item: CatalogSkill | AgentProfile
+  skills: CatalogSkill[]
+  busy: boolean
+  onClose: () => void
+  onEdit: () => void
+  onToggle: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const isSkill = 'folderPath' in item
+  return (
+    <>
+      <div className="detail-scrim" onClick={onClose} />
+      <aside className="detail-panel" aria-label={`${item.name} details`}>
+        <header>
+          <span className="catalog-symbol">
+            {isSkill ? <Zap size={18} /> : <Bot size={19} />}
+          </span>
+          <div>
+            <h2>{item.name}</h2>
+            <span className="catalog-scope-chip">
+              {item.projectId ? 'Project' : 'Global'} · v{item.revision}
+              {item.removedAt ? ' · removed' : ''}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close details"
+          >
+            <X size={16} />
+          </button>
+        </header>
+        <div className="detail-body">
+          <section>
+            <h3>{isSkill ? 'What it does' : 'Role'}</h3>
+            <p>
+              {isSkill
+                ? item.description
+                : item.roleInstructions || 'No role instructions yet.'}
+            </p>
+          </section>
+          {isSkill ? (
+            <>
+              {item.source && (
+                <section>
+                  <h3>Source</h3>
+                  <dl className="detail-facts">
+                    <div>
+                      <dt>Repository</dt>
+                      <dd>
+                        <span title={item.source.url}>{item.source.repository}</span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>License</dt>
+                      <dd>{item.source.license}</dd>
+                    </div>
+                    <div>
+                      <dt>Revision</dt>
+                      <dd className="mono-meta">{item.source.revision.slice(0, 8)}</dd>
+                    </div>
+                  </dl>
+                </section>
+              )}
+              <section>
+                <h3>Folder</h3>
+                <div className="detail-path">
+                  <code title={item.folderPath}>{item.folderPath}</code>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Copy folder path"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(item.folderPath)
+                      setCopied(true)
+                      window.setTimeout(() => setCopied(false), 1400)
+                    }}
+                  >
+                    {copied ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <section>
+                <h3>Skills · {item.skillIds.length}</h3>
+                {item.skillIds.length ? (
+                  <div className="detail-chips">
+                    {item.skillIds.map((id) => (
+                      <span key={id}>
+                        <Zap size={11} />
+                        {skills.find((skill) => skill.id === id)?.name ?? id}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No skills selected.</p>
+                )}
+              </section>
+              <section>
+                <h3>Model</h3>
+                <dl className="detail-facts">
+                  <div>
+                    <dt>Model</dt>
+                    <dd>{item.model ?? 'Default'}</dd>
+                  </div>
+                  <div>
+                    <dt>Effort</dt>
+                    <dd>{item.effort ?? 'Default'}</dd>
+                  </div>
+                </dl>
+              </section>
+              {item.styleGuide && (
+                <section>
+                  <h3>Style guide</h3>
+                  <p className="clamp-6">{item.styleGuide}</p>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+        <footer>
+          {item.removedAt ? (
+            <button
+              type="button"
+              className="button catalog-remove"
+              disabled={busy}
+              onClick={onToggle}
+            >
+              <RotateCcw size={13} />
+              Restore
+            </button>
+          ) : (
+            <TimedUndoButton
+              label="Remove"
+              icon={<Archive size={13} />}
+              pendingLabel="Removing"
+              disabled={busy}
+              onConfirm={onToggle}
+            />
+          )}
+          <button
+            type="button"
+            className="button primary"
+            disabled={busy}
+            onClick={onEdit}
+          >
+            <Pencil size={13} />
+            Edit
+          </button>
+        </footer>
+      </aside>
+    </>
   )
 }
 
@@ -470,10 +671,7 @@ function CreateSkillEditor({
             value={name}
             onChange={(event) => setName(event.target.value)}
           />
-          <p className="form-helper">
-            Use lowercase letters, numbers, and hyphens. The app creates a
-            folder with SKILL.md.
-          </p>
+          <p className="form-helper">Lowercase letters, numbers and hyphens.</p>
           <label htmlFor="skill-description">Description</label>
           <textarea
             id="skill-description"
@@ -568,7 +766,7 @@ function SkillEditor({
   return (
     <Modal
       title={document.skill.name}
-      subtitle={document.skill.folderPath}
+      subtitle="Edit skill files"
       onClose={onClose}
       busy={busy}
       wide
@@ -637,10 +835,11 @@ function SkillEditor({
             value={content}
             onChange={(event) => setContent(event.target.value)}
           />
-          <p className="form-helper">
-            SKILL.md requires name and description in YAML frontmatter. Text
-            resources are editable up to 250 KB; other assets remain in the
-            folder.
+          <p
+            className="form-helper"
+            title="SKILL.md requires name and description in YAML frontmatter. Text resources are editable up to 250 KB; other assets remain in the folder."
+          >
+            Keep the name and description at the top of SKILL.md.
           </p>
         </fieldset>
         <EditorError error={error} />
@@ -669,6 +868,9 @@ function ProfileEditor({
   const [skillIds, setSkillIds] = useState(profile?.skillIds ?? [])
   const [model, setModel] = useState(profile?.model ?? '')
   const [effort, setEffort] = useState<Effort | ''>(profile?.effort ?? '')
+  const [section, setSection] = useState<'basics' | 'style' | 'skills' | 'model'>(
+    'basics',
+  )
   const [error, setError] = useState<Failure>()
   const busy = useCatalogStore((state) => state.pending > 0)
   async function save(event: FormEvent) {
@@ -709,8 +911,34 @@ function ProfileEditor({
       busy={busy}
       wide
     >
-      <form className="workspace-form" onSubmit={(event) => void save(event)}>
+      <form
+        className="workspace-form"
+        onSubmit={(event) => void save(event)}
+        onInvalidCapture={() => setSection('basics')}
+      >
+        <div className="editor-tabs" role="tablist" aria-label="Profile sections">
+          {(
+            [
+              ['basics', 'Basics'],
+              ['style', 'Style guide'],
+              ['skills', `Skills · ${skillIds.length}`],
+              ['model', 'Model'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={section === id}
+              className={section === id ? 'selected' : ''}
+              onClick={() => setSection(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <fieldset disabled={busy}>
+          <div className="editor-section" hidden={section !== 'basics'}>
           <label htmlFor="profile-name">Profile name</label>
           <input
             id="profile-name"
@@ -730,6 +958,8 @@ function ProfileEditor({
             onChange={(event) => setRole(event.target.value)}
             placeholder="Describe the agent’s expertise, responsibilities, and approach."
           />
+          </div>
+          <div className="editor-section" hidden={section !== 'style'}>
           <label htmlFor="profile-style">Style guide</label>
           <textarea
             id="profile-style"
@@ -739,6 +969,8 @@ function ProfileEditor({
             onChange={(event) => setStyle(event.target.value)}
             placeholder="Code conventions, visual style, communication preferences, and examples."
           />
+          </div>
+          <div className="editor-section" hidden={section !== 'skills'}>
           <label>
             Selected skills<span>{skillIds.length} / 20</span>
           </label>
@@ -748,6 +980,8 @@ function ProfileEditor({
             onChange={setSkillIds}
             disabled={busy}
           />
+          </div>
+          <div className="editor-section" hidden={section !== 'model'}>
           <ModelFields
             model={model}
             effort={effort}
@@ -755,10 +989,8 @@ function ProfileEditor({
             onEffort={setEffort}
             disabled={busy}
           />
-          <p className="form-helper">
-            Profile instructions and skill resources are snapshotted for each
-            run. A run may override these model defaults.
-          </p>
+          <p className="form-helper">A single run can still override these.</p>
+          </div>
         </fieldset>
         <EditorError error={error} />
         <EditorButtons

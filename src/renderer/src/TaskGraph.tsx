@@ -60,6 +60,7 @@ import { readGraphView, writeGraphView } from './graph-view'
 import { NodeWorkspace, nodeStatus } from './NodeWorkspace'
 import { ReviewPanel, WorkflowControls } from './WorkflowControls'
 import { ManagerChat } from './ManagerChat'
+import { TimedUndoButton } from './components/Modal'
 import {
   workflowStatusLabel,
   type WorkflowNodeStatus,
@@ -394,6 +395,7 @@ function GraphEditor({
     ...edge,
     selected: edge.id === selectedEdge,
     type: 'smoothstep',
+    animated: workflow?.nodes[edge.source]?.status === 'running',
     markerEnd: { type: MarkerType.ArrowClosed },
     style:
       workflow?.nodes[edge.source]?.status === 'completed'
@@ -1246,13 +1248,14 @@ function NodeSettings({
             task to Done.
           </p>
         )}
-        <button
-          className="button subtle-danger graph-delete"
-          onClick={onRemove}
-        >
-          <Trash2 size={13} />
-          Delete node & its connections
-        </button>
+        <TimedUndoButton
+          className="graph-delete"
+          label="Delete node & its connections"
+          icon={<Trash2 size={13} />}
+          pendingLabel="Deleting node"
+          seconds={4}
+          onConfirm={onRemove}
+        />
       </fieldset>
     </div>
   )
@@ -1449,10 +1452,14 @@ function EdgeSettings({
             </option>
           ))}
       </select>
-      <button className="button subtle-danger graph-delete" onClick={onRemove}>
-        <Trash2 size={13} />
-        Delete connection
-      </button>
+      <TimedUndoButton
+        className="graph-delete"
+        label="Delete connection"
+        icon={<Trash2 size={13} />}
+        pendingLabel="Deleting connection"
+        seconds={4}
+        onConfirm={onRemove}
+      />
     </fieldset>
   )
 }

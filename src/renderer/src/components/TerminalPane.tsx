@@ -55,13 +55,14 @@ export function TerminalPane({
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', monospace",
+      fontFamily: "'Geist Mono', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace",
       scrollback: 5000,
       theme: {
-        background: '#172131',
-        foreground: '#f1f5fc',
-        cursor: '#f1f5fc',
-        selectionBackground: '#43536a',
+        background: '#101216',
+        foreground: '#e4e6eb',
+        cursor: '#c6f35b',
+        cursorAccent: '#101216',
+        selectionBackground: '#c6f35b33',
       },
       allowProposedApi: false,
     })

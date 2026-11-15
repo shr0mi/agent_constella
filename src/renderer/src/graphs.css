@@ -150,7 +150,7 @@
 .graph-canvas .react-flow {
   --xy-edge-stroke-width: 1.7;
   --xy-node-color: var(--ink);
-  --xy-edge-stroke: #8897ae;
+  --xy-edge-stroke: #3a3f4a;
   --xy-edge-stroke-selected: var(--accent);
   --xy-background-color: var(--canvas);
   --xy-controls-button-background-color: var(--surface);
@@ -158,7 +158,7 @@
   --xy-controls-button-color: var(--text-secondary);
   --xy-controls-button-border-color: var(--line);
   --xy-minimap-background-color: var(--surface);
-  --xy-minimap-mask-background-color: #f3f5f8b3;
+  --xy-minimap-mask-background-color: #0a0b0eb3;
 }
 
 .workflow-node {

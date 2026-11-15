@@ -1,7 +1,9 @@
+import type React from 'react'
 import { TerminalsPage } from './Terminals'
 import { TerminalPane } from './components/TerminalPane'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
   ArrowRight,
@@ -23,6 +25,8 @@ import {
   Plus,
   Radio,
   RefreshCw,
+  Search,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Square,
@@ -32,14 +36,13 @@ import {
   Zap,
 } from 'lucide-react'
 import {
-  limitations,
   type Activity as ActivityItem,
   type Effort,
   type Failure,
   type Run,
 } from '../../shared/contracts'
 import { refreshDiagnostics, unwrap, useAppStore } from './store'
-import { ProjectBoardPage, ProjectsPage } from './Projects'
+import { GettingStarted, ProjectBoardPage, ProjectsPage } from './Projects'
 import { useWorkspaceStore } from './workspace-store'
 import { resolveModelSettings } from '../../shared/model-settings'
 import { CatalogPage } from './Catalogs'
@@ -97,6 +100,15 @@ function Sidebar() {
           Personal workspace<small>Local · single user</small>
         </div>
       </div>
+      <button
+        type="button"
+        className="sidebar-search"
+        onClick={() => window.dispatchEvent(new Event('constella:palette'))}
+      >
+        <Search size={14} />
+        <span>Search…</span>
+        <kbd>Ctrl K</kbd>
+      </button>
       <div className="sidebar-content">
         <div className="nav-label">Workspace</div>
         <nav aria-label="Main navigation">
@@ -157,6 +169,154 @@ function Sidebar() {
         </div>
       </div>
     </aside>
+  )
+}
+
+type PaletteItem = {
+  id: string
+  group: string
+  label: string
+  hint?: string
+  icon: React.ReactNode
+  to: string
+}
+
+function CommandPalette() {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const [closing, setClosing] = useState(false)
+  const navigate = useNavigate()
+  function close(after?: () => void) {
+    setClosing(true)
+    window.setTimeout(() => {
+      setOpen(false)
+      setClosing(false)
+      after?.()
+    }, 200)
+  }
+  const { snapshot } = useWorkspaceStore()
+  useEffect(() => {
+    const toggle = () => {
+      setOpen((current) => !current)
+      setQuery('')
+      setActive(0)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        toggle()
+      } else if (event.key === 'Escape') {
+        setClosing(true)
+        window.setTimeout(() => {
+          setOpen(false)
+          setClosing(false)
+        }, 200)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('constella:palette', toggle)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('constella:palette', toggle)
+    }
+  }, [])
+  if (!open) return null
+  const items: PaletteItem[] = [
+    { id: 'projects', group: 'Navigate', label: 'Projects', icon: <FolderKanban size={15} />, to: '/projects' },
+    { id: 'terminals', group: 'Navigate', label: 'Terminals', icon: <Terminal size={15} />, to: '/terminals' },
+    { id: 'lab', group: 'Navigate', label: 'Connectivity lab', icon: <FlaskConical size={15} />, to: '/playground' },
+    { id: 'skills', group: 'Navigate', label: 'Skills', icon: <Zap size={15} />, to: '/skills' },
+    { id: 'agents', group: 'Navigate', label: 'Agents', icon: <Bot size={15} />, to: '/agents' },
+    { id: 'notes', group: 'Navigate', label: 'Integration notes', icon: <CircleHelp size={15} />, to: '/integration' },
+    ...(snapshot?.projects ?? []).map((project) => ({
+      id: `p-${project.id}`,
+      group: 'Projects',
+      label: project.name,
+      hint: project.repoPath,
+      icon: <GitBranch size={15} />,
+      to: `/projects/${project.id}`,
+    })),
+    ...(snapshot?.tasks ?? [])
+      .filter((task) => !task.archivedAt)
+      .map((task) => ({
+        id: `t-${task.id}`,
+        group: 'Tasks',
+        label: task.title,
+        hint: task.status,
+        icon: <Layers3 size={15} />,
+        to: `/projects/${task.projectId}/tasks/${task.id}/graph`,
+      })),
+  ]
+  const q = query.trim().toLowerCase()
+  const results = items.filter((item) =>
+    `${item.label} ${item.hint ?? ''} ${item.group}`.toLowerCase().includes(q),
+  )
+  const current = Math.min(active, Math.max(results.length - 1, 0))
+  function go(item: PaletteItem | undefined) {
+    if (!item) return
+    close(() => navigate(item.to))
+  }
+  return (
+    <div
+      className={`cmdk-backdrop${closing ? ' closing' : ''}`}
+      onMouseDown={() => close()}
+    >
+      <div
+        className="cmdk"
+        role="dialog"
+        aria-label="Command palette"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="cmdk-input">
+          <Search size={16} />
+          <input
+            autoFocus
+            placeholder="Jump to a page, project or task…"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setActive(0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                setActive((current + 1) % Math.max(results.length, 1))
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActive((current - 1 + results.length) % Math.max(results.length, 1))
+              } else if (event.key === 'Enter') go(results[current])
+            }}
+          />
+          <kbd>Esc</kbd>
+        </div>
+        <div className="cmdk-list">
+          {results.length === 0 && <div className="cmdk-empty">No matches</div>}
+          {results.map((item, index) => (
+            <div key={item.id}>
+              {(index === 0 || results[index - 1].group !== item.group) && (
+                <div className="cmdk-group">{item.group}</div>
+              )}
+              <button
+                type="button"
+                className={`cmdk-item${index === current ? ' active' : ''}`}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => go(item)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+                {item.hint && <small>{item.hint}</small>}
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="cmdk-foot">
+          <span><kbd>↑↓</kbd> navigate</span>
+          <span><kbd>Enter</kbd> open</span>
+          <span><kbd>Ctrl K</kbd> toggle</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -248,7 +408,8 @@ export function App() {
             <FailureNotice failure={state.persistenceError} />
           )}
         </div>
-        <Routes>
+        <CommandPalette />
+        <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/terminals" element={<TerminalsPage />} />
           <Route path="/playground" element={<Playground />} />
@@ -301,6 +462,7 @@ function Playground() {
   const [additionalSkills, setAdditionalSkills] = useState<string[]>([])
   const [tab, setTab] = useState<'conversation' | 'events'>('conversation')
   const [pending, setPending] = useState(false)
+  const [drawer, setDrawer] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const followRef = useRef(true)
@@ -324,6 +486,37 @@ function Playground() {
     project,
   )
   const selectedModel = models.find((option) => option.id === effective.model)
+  const signedIn = state?.diagnostics?.auth.status === 'signed-in'
+  const skillCount =
+    (selectedSkill ? 1 : 0) + new Set([...profileSkills, ...additionalSkills]).size
+  function chooseProfile(id: string) {
+    const selected = catalog?.profiles.find((profile) => profile.id === id)
+    setProfileId(id)
+    setAdditionalSkills([])
+    setSelectedSkill(false)
+    setModel(selected?.model ?? '')
+    setEffort(selected?.effort ?? '')
+  }
+  function openDrawer(section?: string) {
+    setDrawer(true)
+    if (section)
+      window.setTimeout(
+        () =>
+          document
+            .getElementById(section)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+        280,
+      )
+  }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDrawer(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   useEffect(() => {
     setProfileId('')
     setAdditionalSkills([])
@@ -377,6 +570,7 @@ function Playground() {
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <main className="lab-page">
       <div className="page-heading">
         <div>
@@ -413,16 +607,7 @@ function Playground() {
                   : 'A new conversation, ready when you are'}
               </span>
             </div>
-            <span className={`run-status ${active ? 'live' : ''}`}>
-              <span className={`status-dot ${active ? 'green pulse' : ''}`} />
-              {active
-                ? last?.status === 'stopping'
-                  ? 'Stopping'
-                  : 'Working'
-                : last
-                  ? last.status
-                  : 'Ready'}
-            </span>
+            <RunStatus run={last} turn={runs.length} />
           </div>
           <div className="tabs">
             <button
@@ -443,9 +628,11 @@ function Playground() {
               </span>
             </button>
             <span className="tab-spacer" />
-            <span className="small-muted">
+            <span
+              className="small-muted lab-info"
+              title="Your CLI manages authentication, tool permissions, network access and its own conversation history."
+            >
               <ShieldCheck size={13} />
-              Native CLI permissions
             </span>
           </div>
           <div
@@ -462,6 +649,14 @@ function Playground() {
           >
             {session?.threadId?.startsWith('terminal:') && tab === 'conversation' ? (
               <TerminalPane sessionId={session.threadId.slice(9)} disabled={!active} finishLabel="Finish lab assignment" />
+            ) : runs.length === 0 && !signedIn ? (
+              <div className="lab-onboarding">
+                <GettingStarted
+                  variant="lab"
+                  provider={provider}
+                  onProviderChange={setProvider}
+                />
+              </div>
             ) : runs.length === 0 ? (
               <div className="welcome">
                 <div className="welcome-symbol">
@@ -534,52 +729,96 @@ function Playground() {
             <div ref={endRef} />
           </div>
           <div className="composer-area">
-            <div className="examples">
-              {examples.map((example) => (
-                <button
-                  key={example.label}
-                  disabled={active || pending}
-                  onClick={() => setPrompt(example.prompt)}
-                >
-                  {example.icon}
-                  {example.label}
-                </button>
-              ))}
-            </div>
+            {runs.length === 0 && signedIn && (
+              <div className="ac-suggestions">
+                {examples.map((example) => (
+                  <button
+                    key={example.label}
+                    type="button"
+                    disabled={active || pending}
+                    onClick={() => setPrompt(example.prompt)}
+                  >
+                    {example.icon}
+                    {example.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <form
-              className={`composer ${active ? 'is-active' : ''}`}
+              className={`ac-composer ${active ? 'is-active' : ''}`}
               onSubmit={submit}
             >
-              <label className="sr-only" htmlFor="prompt">
-                Agent assignment
-              </label>
-              <textarea
-                id="prompt"
-                placeholder={
-                  session?.threadId
-                    ? 'Continue this conversation…'
-                    : 'Give the CLI an initial assignment…'
-                }
-                value={prompt}
-                maxLength={32000}
-                disabled={active || pending || !session}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === 'Enter' &&
-                    (event.metaKey || event.ctrlKey)
-                  ) {
-                    event.preventDefault()
-                    event.currentTarget.form?.requestSubmit()
+              <div className="ac-top">
+                <ProviderPicker
+                  provider={provider}
+                  signedIn={signedIn}
+                  disabled={active || pending}
+                  onChange={setProvider}
+                />
+                <label className="sr-only" htmlFor="prompt">
+                  Agent assignment
+                </label>
+                <textarea
+                  id="prompt"
+                  placeholder={
+                    session?.threadId
+                      ? 'Continue this conversation…'
+                      : 'What should the agent do?'
                   }
-                }}
-              />
-              <div className="composer-toolbar">
-                <span>
-                  <Terminal size={13} />
-                  Scratch workspace<span className="composer-separator">/</span>
-                  {selectedModel?.name ?? 'Configured default'}
+                  value={prompt}
+                  maxLength={32000}
+                  rows={2}
+                  disabled={active || pending || !session}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      (event.metaKey || event.ctrlKey)
+                    ) {
+                      event.preventDefault()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
+                />
+              </div>
+              <div className="ac-bottom">
+                <ProfilePicker
+                  profiles={(catalog?.profiles ?? []).filter(
+                    (item) => !item.removedAt,
+                  )}
+                  selectedId={profile ? profileId : ''}
+                  disabled={active || pending || !session}
+                  manageTo={
+                    session?.projectId
+                      ? `/agents?project=${session.projectId}`
+                      : '/agents'
+                  }
+                  onChange={chooseProfile}
+                />
+                <button
+                  type="button"
+                  className="ac-pill"
+                  onClick={() => openDrawer('lab-skills')}
+                >
+                  <Zap size={13} />
+                  {skillCount}
+                  <span className="ac-pill-dim">
+                    {skillCount === 1 ? 'skill' : 'skills'}
+                  </span>
+                </button>
+                <span className="tab-spacer" />
+                <span className="ac-model" title="Model">
+                  {selectedModel?.name ?? 'Default model'}
                 </span>
+                <button
+                  type="button"
+                  className="ac-icon-button"
+                  onClick={() => openDrawer()}
+                  aria-label="Session settings"
+                  title="Session settings"
+                >
+                  <Settings2 size={15} />
+                </button>
                 {active ? (
                   <button
                     type="button"
@@ -593,21 +832,23 @@ function Playground() {
                     {last?.status === 'stopping' ? 'Stopping…' : 'Stop'}
                   </button>
                 ) : (
-                  <button
-                    className="send-button"
+                  <motion.button
+                    className="ac-send"
                     aria-label={
                       session?.threadId
                         ? 'Continue conversation'
                         : 'Send prompt'
                     }
                     disabled={!prompt.trim() || pending || !session}
+                    whileHover={{ scale: 1.06 }}
+                    whileTap={{ scale: 0.9 }}
                   >
                     {pending ? (
                       <LoaderCircle size={17} className="spin" />
                     ) : (
-                      <ArrowUp size={19} />
+                      <ArrowUp size={18} />
                     )}
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </form>
@@ -615,13 +856,34 @@ function Playground() {
               <span>
                 {session?.threadId
                   ? 'Saved thread · each message starts a new turn'
-                  : 'Sessions use your native CLI configuration'}
+                  : 'Runs in a disposable scratch workspace'}
               </span>
-              <span>⌘ / Ctrl + Enter to send</span>
+              <span>Ctrl + Enter to send</span>
             </div>
           </div>
         </section>
-        <aside className="config-column">
+        {drawer && (
+          <div className="lab-drawer-scrim" onClick={() => setDrawer(false)} />
+        )}
+        <aside
+          className={`config-column lab-drawer${drawer ? ' open' : ''}`}
+          inert={!drawer}
+          aria-label="Session settings"
+        >
+          <header className="lab-drawer-head">
+            <div>
+              <strong>Session settings</strong>
+              <span>Optional — the defaults work fine.</span>
+            </div>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={() => setDrawer(false)}
+              aria-label="Close settings"
+            >
+              <X size={16} />
+            </button>
+          </header>
           <section className="config-card">
             <div className="card-title">
               <Radio size={16} />
@@ -669,7 +931,7 @@ function Playground() {
               Provider access is verified by a real turn.
             </span>
           </section>
-          <section className="config-card lab-profile-config">
+          <section className="config-card lab-profile-config" id="lab-context">
             <div className="card-title">
               <Bot size={16} />
               <h2>Agent context</h2>
@@ -751,7 +1013,7 @@ function Playground() {
           <section className="config-card">
             <div className="card-title">
               <Cpu size={16} />
-              <h2>Run configuration</h2>
+              <h2 id="lab-run">Run configuration</h2>
             </div>
             <fieldset disabled={active || pending}>
               <label className="field-label" htmlFor="model">
@@ -818,10 +1080,6 @@ function Playground() {
                   <pre>{state.diagnostics.modelError}</pre>
                 </details>
               )}
-              <label className="field-label" htmlFor="provider">Provider</label>
-              <select id="provider" value={provider} onChange={event => setProvider(event.target.value as 'codex' | 'claude')}>
-                <option value="codex">Codex CLI</option><option value="claude">Claude Code</option>
-              </select>
             </fieldset>
             <div className="permission-note">
               <ShieldCheck size={15} />
@@ -838,7 +1096,7 @@ function Playground() {
           <section className="config-card">
             <div className="card-title">
               <Zap size={16} />
-              <h2>Selected skills</h2>
+              <h2 id="lab-skills">Selected skills</h2>
             </div>
             <label className="skill-option">
               <input
@@ -896,6 +1154,336 @@ function Playground() {
         </aside>
       </div>
     </main>
+    </MotionConfig>
+  )
+}
+
+const providers = [
+  { id: 'codex', name: 'Codex', hint: 'OpenAI Codex CLI', icon: <Terminal size={17} /> },
+  { id: 'claude', name: 'Claude Code', hint: 'Anthropic Claude Code', icon: <Sparkles size={17} /> },
+] as const
+
+/** Agent switch inside the composer: icon button that pops a picker above. */
+function ProviderPicker({
+  provider,
+  signedIn,
+  disabled,
+  onChange,
+}: {
+  provider: 'codex' | 'claude'
+  signedIn: boolean
+  disabled: boolean
+  onChange: (provider: 'codex' | 'claude') => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = providers.find((item) => item.id === provider) ?? providers[0]
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div className="ac-provider" ref={ref}>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="ac-provider-menu"
+            role="listbox"
+            aria-label="Choose agent"
+            style={{ transformOrigin: 'bottom left' }}
+            initial={{ opacity: 0, y: 12, filter: 'blur(8px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30, mass: 0.8 }}
+          >
+            {providers.map((item, index) => (
+              <motion.button
+                key={item.id}
+                type="button"
+                role="option"
+                aria-selected={item.id === provider}
+                className={item.id === provider ? 'selected' : ''}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.04 * index, type: 'spring', stiffness: 400, damping: 28 }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => {
+                  onChange(item.id)
+                  setOpen(false)
+                }}
+              >
+                <span className="ac-provider-icon">{item.icon}</span>
+                <span>
+                  <strong>{item.name}</strong>
+                  <small>{item.hint}</small>
+                </span>
+                {item.id === provider && <Check size={14} />}
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <motion.button
+        type="button"
+        className="ac-provider-trigger"
+        disabled={disabled}
+        aria-label={`Agent: ${current.name}. Change agent`}
+        title={`${current.name} · ${signedIn ? 'connected' : 'not connected'}`}
+        whileTap={{ scale: 0.92 }}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={current.id}
+            className="ac-provider-glyph"
+            initial={{ opacity: 0, scale: 0.5, rotate: -30 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            exit={{ opacity: 0, scale: 0.5, rotate: 30 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 24 }}
+          >
+            {current.icon}
+          </motion.span>
+        </AnimatePresence>
+        <span className={`ac-provider-dot ${signedIn ? 'ok' : 'warn'}`} />
+      </motion.button>
+    </div>
+  )
+}
+
+/** Profile pill that morphs into a list panel (Dropdown Disclosure style). */
+function ProfilePicker({
+  profiles,
+  selectedId,
+  disabled,
+  manageTo,
+  onChange,
+}: {
+  profiles: { id: string; name: string; skillIds: string[]; model: string | null; projectId: string | null }[]
+  selectedId: string
+  disabled: boolean
+  manageTo: string
+  onChange: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const options = [
+    { id: '', name: 'Default agent', detail: 'No profile · CLI defaults' },
+    ...profiles.map((item) => ({
+      id: item.id,
+      name: item.name,
+      detail: `${item.skillIds.length} ${item.skillIds.length === 1 ? 'skill' : 'skills'} · ${item.model ?? 'default model'}${item.projectId ? ' · project' : ''}`,
+    })),
+  ]
+  const current = options.find((item) => item.id === selectedId) ?? options[0]
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  const pill = (ghost: boolean) => (
+    <>
+      <motion.span
+        className="ac-profile-avatar"
+        layoutId={ghost ? undefined : `profile-icon-${current.id || 'default'}`}
+      >
+        <Bot size={13} />
+      </motion.span>
+      <motion.span
+        className="ac-profile-name"
+        layoutId={ghost ? undefined : `profile-name-${current.id || 'default'}`}
+      >
+        {current.name}
+      </motion.span>
+      <ChevronDown size={13} className="ac-profile-chevron" />
+    </>
+  )
+  return (
+    <div className="ac-profile" ref={ref}>
+      <span className="ac-pill ac-profile-ghost" aria-hidden="true">
+        {pill(true)}
+      </span>
+      <MotionConfig transition={{ type: 'spring', stiffness: 260, damping: 28, mass: 1 }}>
+        <motion.div
+          layout
+          className={`ac-profile-shell ${open ? 'open' : ''}`}
+          style={{ borderRadius: open ? 18 : 999 }}
+        >
+          <AnimatePresence mode="popLayout" initial={false}>
+            {open ? (
+              <motion.div
+                key="panel"
+                className="ac-profile-panel"
+                role="dialog"
+                aria-label="Choose agent profile"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              >
+                <header>
+                  <motion.strong layout="position">Choose agent</motion.strong>
+                  <button
+                    type="button"
+                    className="ac-icon-button small"
+                    aria-label="Close"
+                    onClick={() => setOpen(false)}
+                  >
+                    <X size={13} />
+                  </button>
+                </header>
+                <div className="ac-profile-list">
+                  {options.map((item) => (
+                    <motion.button
+                      key={item.id || 'default'}
+                      type="button"
+                      className={item.id === current.id ? 'selected' : ''}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => {
+                        onChange(item.id)
+                        setOpen(false)
+                      }}
+                    >
+                      <motion.span
+                        className="ac-profile-avatar"
+                        layoutId={`profile-icon-${item.id || 'default'}`}
+                      >
+                        <Bot size={14} />
+                      </motion.span>
+                      <span className="ac-profile-text">
+                        <motion.span
+                          className="ac-profile-name"
+                          layoutId={`profile-name-${item.id || 'default'}`}
+                        >
+                          {item.name}
+                        </motion.span>
+                        <small>{item.detail}</small>
+                      </span>
+                      <span className="ac-profile-check">
+                        <AnimatePresence>
+                          {item.id === current.id && (
+                            <motion.span
+                              initial={{ scale: 0, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0, opacity: 0 }}
+                            >
+                              <Check size={11} />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </span>
+                    </motion.button>
+                  ))}
+                </div>
+                <NavLink className="ac-profile-manage" to={manageTo}>
+                  Manage agents <ArrowRight size={12} />
+                </NavLink>
+              </motion.div>
+            ) : (
+              <motion.button
+                key="pill"
+                type="button"
+                className="ac-profile-trigger"
+                disabled={disabled}
+                aria-haspopup="dialog"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0 } }}
+                onClick={() => setOpen(true)}
+              >
+                {pill(false)}
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </MotionConfig>
+    </div>
+  )
+}
+
+function formatDuration(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** Header status: quiet standby, a live meter while working, a result after. */
+function RunStatus({ run, turn }: { run?: Run; turn: number }) {
+  const live = run?.status === 'running' || run?.status === 'stopping'
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!live) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [live])
+  const elapsed = run
+    ? formatDuration(
+        (run.finishedAt ? Date.parse(run.finishedAt) : now) -
+          Date.parse(run.startedAt),
+      )
+    : ''
+  const kind = !run
+    ? 'standby'
+    : run.status === 'running'
+      ? 'working'
+      : run.status === 'stopping'
+        ? 'stopping'
+        : run.status === 'completed'
+          ? 'done'
+          : run.status === 'cancelled'
+            ? 'cancelled'
+            : 'failed'
+  const label = {
+    standby: 'Standing by',
+    working: 'Working',
+    stopping: 'Stopping',
+    done: 'Done',
+    cancelled: 'Cancelled',
+    failed: run?.status === 'interrupted' ? 'Interrupted' : 'Failed',
+  }[kind]
+  return (
+    <span className={`run-state run-state-${kind}`} role="status" aria-live="polite">
+      {kind === 'working' || kind === 'stopping' ? (
+        <span className="run-state-meter" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+        </span>
+      ) : kind === 'done' ? (
+        <Check size={13} strokeWidth={2.75} />
+      ) : kind === 'failed' ? (
+        <X size={13} strokeWidth={2.75} />
+      ) : kind === 'cancelled' ? (
+        <Square size={10} />
+      ) : (
+        <Terminal size={13} />
+      )}
+      <span className="run-state-label">{label}</span>
+      {run && (
+        <span className="run-state-meta">
+          Turn {String(turn).padStart(2, '0')} · {elapsed}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -1009,35 +1597,174 @@ function ActivityView({ item }: { item: ActivityItem }) {
   )
 }
 
+const flowSteps = [
+  {
+    id: 'plan',
+    lane: 'app',
+    x: 8,
+    title: 'Plan the task',
+    caption: 'Board & graph',
+    detail:
+      'Create a task on the board and draw its workflow graph. Each agent node gets its role, skills and checks.',
+  },
+  {
+    id: 'worktree',
+    lane: 'app',
+    x: 25,
+    title: 'Isolated worktree',
+    caption: 'Own branch',
+    detail:
+      'Every coding node gets its own Git branch and worktree, so agents never overwrite each other’s changes.',
+  },
+  {
+    id: 'work',
+    lane: 'cli',
+    x: 37.5,
+    title: 'Agent works',
+    caption: 'Real terminal',
+    detail:
+      'Your installed Codex or Claude Code runs in a real terminal. Sign-in, native commands, permissions and model choice all belong to the CLI.',
+    note: 'Your CLI stays interactive — answer its permission prompts right in the terminal.',
+  },
+  {
+    id: 'handback',
+    lane: 'cli',
+    x: 62.5,
+    title: 'Hands back',
+    caption: 'Finish / report_done',
+    detail:
+      'The agent hands work back with agent_report_done or the Finish step. Quiet output or a finished reply does not count as done.',
+  },
+  {
+    id: 'checks',
+    lane: 'app',
+    x: 75,
+    title: 'Checks & review',
+    caption: 'Tests · approvals',
+    detail:
+      'Your test command runs on the result, and again on combined results when needed. Human review gates wait for your approval.',
+  },
+  {
+    id: 'integrate',
+    lane: 'app',
+    x: 92,
+    title: 'Integrate',
+    caption: 'Merge → Done',
+    detail:
+      'You merge into the base branch yourself. Only then does the task move to Done and release the tasks that depend on it.',
+  },
+] as const
+
+const flowFacts = [
+  ['Close a pane', 'detaches the viewer'],
+  ['Stop', 'ends the CLI process'],
+  ['Reboot', 'ends processes · state & transcripts kept'],
+  ['Worktrees', 'isolate code, not OS permissions'],
+] as const
+
 function IntegrationNotes() {
+  const [selected, setSelected] = useState<string>('work')
+  const step = flowSteps.find((item) => item.id === selected)
   return (
-    <main className="notes-page">
-      <h1>Know the boundaries.</h1>
-      <p className="notes-intro">
-        The starter uses the installed Codex or Claude Code CLI in real terminals. The project workflow stays in AgentConstella.
-      </p>
-      <div className="notes-grid">
-        {limitations.map((note, i) => (
-          <section className="note-card" key={note}>
-            <h2>
-              {
-                [
-                  'Native agents',
-                  'Workflow handoff',
-                  'Local sessions',
-                  'Permissions',
-                ][i]
-              }
-            </h2>
-            <p>{note}</p>
-          </section>
-        ))}
-      </div>
-      <div className="next-note"><Terminal size={18} /><div><strong>Your CLI stays interactive.</strong><p>Use native commands and permission prompts in each terminal. Hand a completed assignment back before checks, review, and integration proceed.</p></div></div>
-      <NavLink to="/playground" className="button secondary">
-        Back to the lab
-        <ArrowRight size={14} />
-      </NavLink>
-    </main>
+    <MotionConfig reducedMotion="user">
+      <main className="notes-page flow-page">
+        <span className="eyebrow">
+          <span className="eyebrow-dot" /> Integration notes
+        </span>
+        <h1>How it works</h1>
+        <p className="notes-intro">
+          AgentConstella runs the workflow. Your CLI does the coding. Click a step
+          to see what happens there.
+        </p>
+        <div className="flow-board">
+          <div className="flow-lane flow-lane-app">
+            <span className="flow-lane-label">
+              <Layers3 size={13} /> AgentConstella
+              <small>plans · isolates · checks · merges</small>
+            </span>
+          </div>
+          <div className="flow-lane flow-lane-cli">
+            <span className="flow-lane-label">
+              <Terminal size={13} /> Your CLI
+              <small>Codex / Claude Code · sign-in · permissions</small>
+            </span>
+          </div>
+          <svg
+            className="flow-svg"
+            viewBox="0 0 1000 300"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path
+              className="flow-path"
+              pathLength={100}
+              d="M 80 82 L 250 82 C 320 82, 310 222, 375 222 L 625 222 C 690 222, 680 82, 750 82 L 920 82"
+            />
+            <path
+              className="flow-comet"
+              pathLength={100}
+              d="M 80 82 L 250 82 C 320 82, 310 222, 375 222 L 625 222 C 690 222, 680 82, 750 82 L 920 82"
+            />
+          </svg>
+          {flowSteps.map((item, index) => (
+            <motion.button
+              key={item.id}
+              type="button"
+              className={`flow-node ${item.lane} ${selected === item.id ? 'selected' : ''}`}
+              style={{ left: `${item.x}%`, top: item.lane === 'app' ? '27.3%' : '74%' }}
+              initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              transition={{ delay: 0.15 + index * 0.08, type: 'spring', stiffness: 260, damping: 24 }}
+              whileHover={{ y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              aria-pressed={selected === item.id}
+              onClick={() => setSelected(item.id)}
+            >
+              <span className="flow-num">{String(index + 1).padStart(2, '0')}</span>
+              <span className="flow-text">
+                <strong>{item.title}</strong>
+                <small>{item.caption}</small>
+              </span>
+            </motion.button>
+          ))}
+        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          {step && (
+            <motion.section
+              key={step.id}
+              className={`flow-detail ${step.lane}`}
+              initial={{ opacity: 0, y: 8, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
+              transition={{ duration: 0.22 }}
+            >
+              <span className="flow-detail-tag">
+                {step.lane === 'app' ? '[ AGENTCONSTELLA ]' : '[ YOUR CLI ]'}
+              </span>
+              <h2>{step.title}</h2>
+              <p>{step.detail}</p>
+              {'note' in step && (
+                <p className="flow-detail-note">
+                  <Terminal size={13} />
+                  {step.note}
+                </p>
+              )}
+            </motion.section>
+          )}
+        </AnimatePresence>
+        <div className="flow-facts">
+          {flowFacts.map(([term, meaning]) => (
+            <div key={term}>
+              <strong>{term}</strong>
+              <span>{meaning}</span>
+            </div>
+          ))}
+        </div>
+        <NavLink to="/playground" className="button secondary">
+          Back to the lab
+          <ArrowRight size={14} />
+        </NavLink>
+      </main>
+    </MotionConfig>
   )
 }
