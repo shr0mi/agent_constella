@@ -21,6 +21,8 @@ function onPath(name: string, env = process.env): string | undefined {
 
 /** Finds an installed editor when the project has no IDE command yet. */
 export function detectIde(env = process.env): string | undefined {
+  // Keep tests independent of the editors installed on this machine.
+  if (env.VITEST && !env.CONSTELLA_TEST_DETECT_IDE) return undefined
   const local = env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local')
   const programs = env.ProgramFiles ?? 'C:\\Program Files'
   const fixed =

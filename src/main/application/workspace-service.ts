@@ -331,6 +331,8 @@ export class WorkspaceService {
 
   /** New projects default to a CLI that is actually installed. */
   private preferredProvider(): 'codex' | 'claude' {
+    // Tests need a deterministic default regardless of what this machine has.
+    if (process.env.VITEST) return 'codex'
     const installed = (provider: 'codex' | 'claude') => {
       try {
         cliPath(provider)

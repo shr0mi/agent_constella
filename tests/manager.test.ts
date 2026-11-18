@@ -1243,7 +1243,8 @@ describe('local MCP transport and manager sessions', () => {
     })
     await manager.stop(f.board)
     expect(calls[2].threadId).toBe('thread-1')
-    expect(calls[0].options).toMatchObject({ role: 'manager', provider: 'codex' })
+    // New projects default to whichever CLI is installed on this machine.
+    expect(calls[0].options).toMatchObject({ role: 'manager', provider: expect.stringMatching(/^(codex|claude)$/) })
     expect(calls[0].options).toMatchObject({
       model: 'fixture-model',
       modelReasoningEffort: 'high',
