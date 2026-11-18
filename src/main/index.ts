@@ -82,7 +82,8 @@ function createWindow(): void {
     minWidth: 1000,
     minHeight: 700,
     title: 'AgentConstella',
-    backgroundColor: '#f3f5f8',
+    backgroundColor: '#14161b',
+    icon: join(app.getAppPath(), 'docs', 'assets', 'brand', 'agentconstella-logo.png'),
     show: false,
     webPreferences: {
       preload: join(directory, '../preload/index.cjs'),

@@ -49,7 +49,7 @@ afterEach(async () => {
   })
   roots
     .splice(0)
-    .forEach((root) => rmSync(root, { recursive: true, force: true }))
+    .forEach((root) => removeTemp(root))
 })
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'constella-manager-'))
@@ -1298,3 +1298,13 @@ it('lets the manager save IDE and concurrency settings without launching an IDE 
   await f.tools.undo({ ...f.board, changeId: entry.id, commandId: command() })
   expect(f.workspace.getBoard({ projectId: f.project.id }).project).toMatchObject({ ideCommand: '', maxParallelAgents: 4 })
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

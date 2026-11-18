@@ -5,7 +5,6 @@ import {
   Controls,
   Handle,
   MarkerType,
-  MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -25,6 +24,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  Settings2,
   Save,
   ShieldCheck,
   Trash2,
@@ -164,6 +164,16 @@ function GraphEditor({
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState('')
+  const [panelTab, setPanelTab] = useState<'step' | 'workflow'>('workflow')
+  useEffect(() => {
+    setPanelTab(selectedNode || selectedEdge ? 'step' : 'workflow')
+  }, [selectedNode, selectedEdge])
+  useEffect(() => {
+    // Informational notices fade on their own instead of lingering.
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(''), 8000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
   const [connectionError, setConnectionError] = useState('')
   const [externalChange, setExternalChange] = useState(false)
   const [openNode, setOpenNode] = useState<string>()
@@ -619,6 +629,20 @@ function GraphEditor({
           </p>
         </div>
         <div className="graph-actions">
+          <Link
+            className="button secondary"
+            to={`/projects/${projectId}?settings=1`}
+            title="Open this project's settings"
+            onClick={(event) => {
+              if (dirty) {
+                event.preventDefault()
+                setNotice('Save your changes or discard them before leaving.')
+              }
+            }}
+          >
+            <Settings2 size={14} />
+            Project settings
+          </Link>
           <ManagerChat
             projectId={projectId}
             taskId={taskId}
@@ -633,44 +657,44 @@ function GraphEditor({
                 : undefined
             }
           />
-          <button
-            className="button secondary"
-            disabled={busy}
-            onClick={() => void refresh(true)}
-            title={
-              dirty
-                ? 'Discard this draft and load the saved graph'
-                : 'Reload the saved graph'
-            }
-          >
-            <RefreshCw size={14} />
-            {dirty ? 'Discard draft & reload' : 'Reload'}
-          </button>
-          <button
-            className="button secondary"
-            disabled={!editable || !dirty || !validation?.canSave}
-            onClick={() => void save()}
-          >
-            <Save size={14} />
-            Save graph
-          </button>
-          <button
-            className="button primary"
-            disabled={busy || dirty || externalChange || !validation?.valid}
-            onClick={() => void prepare()}
-            title={
-              dirty
-                ? 'Save this draft first'
-                : 'Validate the saved graph and its current assignments'
-            }
-          >
-            {busy ? (
-              <LoaderCircle size={14} className="spin" />
-            ) : (
-              <ShieldCheck size={14} />
-            )}
-            Check readiness
-          </button>
+          {dirty ? (
+            <>
+              <button
+                className="button secondary"
+                disabled={busy}
+                onClick={() => void refresh(true)}
+                title="Throw away your edits and load the saved graph"
+              >
+                <RefreshCw size={14} />
+                Discard changes
+              </button>
+              <button
+                className="button primary"
+                disabled={!editable || !validation?.canSave}
+                onClick={() => void save()}
+              >
+                <Save size={14} />
+                Save changes
+              </button>
+            </>
+          ) : (
+            !saved.prepared &&
+            (!workflow || workflow.phase === 'idle') && (
+              <button
+                className="button secondary"
+                disabled={busy || externalChange || !validation?.valid}
+                onClick={() => void prepare()}
+                title="Optional: double-check agents, skills and settings before starting"
+              >
+                {busy ? (
+                  <LoaderCircle size={14} className="spin" />
+                ) : (
+                  <ShieldCheck size={14} />
+                )}
+                Check setup
+              </button>
+            )
+          )}
         </div>
       </header>
       <WorkflowControls
@@ -694,7 +718,7 @@ function GraphEditor({
       <div className="graph-workspace">
         <section className="graph-surface" aria-label="Workflow graph editor">
           <div className="graph-palette">
-            <span>ADD NODE</span>
+            <span>Add a step</span>
             {(Object.keys(kinds) as WorkflowNodeType[]).map((type) => {
               const Icon = kinds[type].icon
               return (
@@ -770,29 +794,13 @@ function GraphEditor({
                 if (saved.revision === 1 && !view.viewport)
                   void instance.fitView({ padding: 0.2, maxZoom: 1 })
               }}
-              proOptions={{ hideAttribution: false }}
+              proOptions={{ hideAttribution: true }}
             >
               <Background color="var(--line-strong)" gap={22} size={1} />
               <Controls showInteractive={false} />
-              <MiniMap<CanvasNode>
-                nodeColor={(node) =>
-                  node.data.attention
-                    ? 'var(--warning)'
-                    : node.data.status === 'completed'
-                      ? 'var(--success)'
-                      : node.data.status === 'failed'
-                        ? 'var(--danger)'
-                        : node.data.status === 'running'
-                          ? 'var(--accent)'
-                          : 'var(--muted)'
-                }
-                pannable
-                zoomable
-              />
             </ReactFlow>
             <div className="graph-canvas-tip">
-              Drag nodes to arrange · Connect right handle → left handle ·
-              Select a node to configure
+              Drag to move · Drag from a dot to connect · Click a step to edit it
             </div>
             {connectionError && (
               <div className="graph-connection-error" role="alert">
@@ -855,17 +863,41 @@ function GraphEditor({
         <aside className="graph-details" aria-label="Node details">
           <header>
             <div>
+              <span className="panel-kicker">
+                {node ? kinds[node.type].label : edge ? 'Connection' : 'Overview'}
+              </span>
               <h2>
                 {node
-                  ? kinds[node.type].label
+                  ? node.data.title || kinds[node.type].label
                   : edge
                     ? 'Connection'
                     : 'Your workflow'}
               </h2>
             </div>
-            <GitBranch size={18} />
           </header>
-          {node?.type === 'review' && workflow && (
+          <div className="panel-tabs" role="tablist" aria-label="Panel">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panelTab === 'step'}
+              className={panelTab === 'step' ? 'selected' : ''}
+              disabled={!node && !edge}
+              title={!node && !edge ? 'Click a step on the canvas' : undefined}
+              onClick={() => setPanelTab('step')}
+            >
+              Step
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panelTab === 'workflow'}
+              className={panelTab === 'workflow' ? 'selected' : ''}
+              onClick={() => setPanelTab('workflow')}
+            >
+              Workflow <span>{draft.nodes.length}</span>
+            </button>
+          </div>
+          {panelTab === 'step' && node?.type === 'review' && workflow && (
             <ReviewPanel
               key={`review:${node.id}`}
               workflow={workflow}
@@ -875,10 +907,15 @@ function GraphEditor({
               worktreeReady={execution?.worktree?.state === 'ready'}
             />
           )}
-          {node?.type === 'agent' && (
+          {panelTab === 'step' && node?.type === 'agent' && (
             <div className="graph-node-work">
               <button
-                className="button primary graph-run-node"
+                className={`button ${
+                  workflow?.nodes[node.id]?.status === 'completed' ||
+                  workflow?.integration?.status === 'integrated'
+                    ? 'secondary'
+                    : 'primary'
+                } graph-run-node`}
                 disabled={
                   busy ||
                   !!nodeRunReason ||
@@ -891,8 +928,18 @@ function GraphEditor({
                 }
                 onClick={() => void runSelectedNode()}
               >
-                <Play size={14} />
-                Run node
+                {workflow?.nodes[node.id]?.status === 'completed' ||
+                workflow?.integration?.status === 'integrated' ? (
+                  <>
+                    <RefreshCw size={14} />
+                    Run again
+                  </>
+                ) : (
+                  <>
+                    <Play size={14} />
+                    Run this step
+                  </>
+                )}
               </button>
               <button
                 className="button secondary"
@@ -906,24 +953,38 @@ function GraphEditor({
               </button>
               <p>
                 {!saved.document.nodes.some((item) => item.id === node.id)
-                  ? 'Save this new node first.'
+                  ? 'Save your changes first.'
                   : (nodeRunReason ??
-                    'Run this node individually, or open its conversation to inspect results and request revisions.')}
+                    (workflow?.nodes[node.id]?.status === 'completed' ||
+                    workflow?.integration?.status === 'integrated'
+                      ? 'This step is finished. Running it again redoes the work, and you’ll need to review it again.'
+                      : 'Run just this step, or open its conversation.'))}
               </p>
             </div>
           )}
-          {node && catalog ? (
-            <NodeSettings
-              key={`settings:${node.id}`}
-              node={node}
-              catalog={catalog}
-              models={models ?? []}
-              project={project ?? saved.project}
-              disabled={!editable}
-              onChange={updateNode}
-              onRemove={() => removeNode(node.id)}
-            />
-          ) : edge ? (
+          {panelTab === 'step' && node && catalog ? (
+            <details
+              key={`edit:${node.id}`}
+              className="step-edit"
+              open={
+                node.type === 'agent' && (!workflow || workflow.phase === 'idle')
+                  ? true
+                  : undefined
+              }
+            >
+              <summary>Edit this step</summary>
+              <NodeSettings
+                key={`settings:${node.id}`}
+                node={node}
+                catalog={catalog}
+                models={models ?? []}
+                project={project ?? saved.project}
+                disabled={!editable}
+                onChange={updateNode}
+                onRemove={() => removeNode(node.id)}
+              />
+            </details>
+          ) : panelTab === 'step' && edge ? (
             <div className="graph-settings">
               <EdgeSettings
                 key={edge.id}
@@ -940,18 +1001,13 @@ function GraphEditor({
                 }}
               />
             </div>
-          ) : (
+          ) : panelTab === 'step' ? null : (
             <div className="graph-settings">
               <p className="graph-intro">
-                Give the work a path. Add agent tasks, connect dependencies, and
-                put a human decision wherever it matters.
+                Click a step on the canvas to edit it.
               </p>
-              <p className="helper">
-                Select a node for its prompt and assignments. All incoming
-                dependencies must be accepted before a node can proceed.
-              </p>
-              <div className="graph-task-brief">
-                <strong>Task brief</strong>
+              <details className="graph-task-brief">
+                <summary>Task brief</summary>
                 <p>{saved.task.description || 'No description yet.'}</p>
                 {saved.task.acceptanceCriteria && (
                   <>
@@ -959,9 +1015,10 @@ function GraphEditor({
                     <p>{saved.task.acceptanceCriteria}</p>
                   </>
                 )}
-              </div>
+              </details>
             </div>
           )}
+          {panelTab === 'workflow' && (
           <div className="graph-structure">
             <h3>
               Nodes <span>{draft.nodes.length}</span>
@@ -1021,6 +1078,7 @@ function GraphEditor({
               onConnect={(connection) => connect(connection)}
             />
           </div>
+          )}
         </aside>
       </div>
       {(() => {

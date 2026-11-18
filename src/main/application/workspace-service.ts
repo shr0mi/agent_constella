@@ -20,8 +20,9 @@ import type { WorkspaceDatabase } from '../db/database'
 import { projects, tasks, workspaceMeta, workflows } from '../db/schema'
 import { summarizeWorkflow } from '../../shared/workflow'
 import { ApplicationError } from './errors'
+import { cliPath } from '../terminal/launch'
 import { recordChange } from './change-log'
-import { ideArguments, launchIde } from './ide-launcher'
+import { effectiveIdeCommand, ideArguments, launchIde } from './ide-launcher'
 import type { ModelOption } from '../../shared/contracts'
 import {
   createProjectFolder,
@@ -49,7 +50,7 @@ export class WorkspaceService {
   async openInIde(raw: unknown, launch: typeof launchIde = launchIde): Promise<void> {
     const { projectId } = projectIdSchema.parse(raw)
     const project = this.project(projectId)
-    ideArguments(project.ideCommand)
+    ideArguments(effectiveIdeCommand(project.ideCommand))
     await launch(project.ideCommand, project.repoPath)
   }
 
@@ -328,6 +329,19 @@ export class WorkspaceService {
     }
   }
 
+  /** New projects default to a CLI that is actually installed. */
+  private preferredProvider(): 'codex' | 'claude' {
+    const installed = (provider: 'codex' | 'claude') => {
+      try {
+        cliPath(provider)
+        return true
+      } catch {
+        return false
+      }
+    }
+    return !installed('codex') && installed('claude') ? 'claude' : 'codex'
+  }
+
   private registerRepository(repoPath: string): Project {
     const existing = this.db
       .select()
@@ -347,6 +361,7 @@ export class WorkspaceService {
           instructions: '',
           devCommand: '',
           testCommand: '',
+          defaultProvider: this.preferredProvider(),
           revision: 1,
           createdAt: now,
           updatedAt: now,

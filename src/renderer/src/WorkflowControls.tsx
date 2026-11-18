@@ -67,37 +67,65 @@ export function WorkflowControls({
         className={`workflow-controls phase-${workflow.phase}`}
         aria-label="Workflow progression"
       >
-        <div className="workflow-progress">
-          <strong>
-            {workflow.phase === 'idle'
-              ? 'Workflow ready to start'
+        <div className="journey">
+          <div className="journey-head">
+            <strong>
+              {workflow.phase === 'idle'
+              ? 'Ready to run'
               : workflow.phase === 'completed'
                 ? workflow.integration?.status === 'integrated'
-                  ? 'Integrated'
-                  : 'Awaiting integration'
+                  ? 'Merged into your code'
+                  : 'Done — ready to merge'
               : workflow.phase === 'waiting'
                 ? waiting?.status === 'waiting-review'
-                  ? 'Waiting for human review'
+                  ? 'Waiting for your review'
                   : waiting
-                    ? 'Waiting for acceptance'
-                    : 'Choose a ready node'
-                : workflow.phase[0].toUpperCase() + workflow.phase.slice(1)}
-          </strong>
-          <span>
-            {workflow.summary.accepted} / {workflow.summary.total} required
-            nodes accepted
-          </span>
-          <div>
-            <i
-              style={{
-                transform: `scaleX(${workflow.summary.total ? workflow.summary.accepted / workflow.summary.total : 0})`,
-              }}
-            />
+                    ? 'Check the agent’s result'
+                    : 'Choose the next step to run'
+                : workflow.phase === 'running'
+                  ? 'Your agent is working'
+                  : workflow.phase[0].toUpperCase() + workflow.phase.slice(1)}
+            </strong>
+            <span>
+              {workflow.summary.accepted} of {workflow.summary.total} steps done
+            </span>
           </div>
+          <ol className="journey-track" aria-label="Task progress">
+            {(['Plan', 'Run', 'Review', 'Merge'] as const).map((label, index) => {
+              const stage =
+                workflow.integration?.status === 'integrated'
+                  ? 4
+                  : workflow.phase === 'completed' || workflow.phase === 'integrating'
+                    ? 3
+                    : workflow.phase === 'waiting'
+                      ? 2
+                      : workflow.phase === 'idle'
+                        ? 0
+                        : 1
+              return (
+                <li
+                  key={label}
+                  className={index < stage ? 'past' : index === stage ? 'now' : ''}
+                  aria-current={index === stage ? 'step' : undefined}
+                >
+                  <span className="journey-dot">
+                    {index < stage ? (
+                      <Check size={12} strokeWidth={3} />
+                    ) : (
+                      String(index + 1).padStart(2, '0')
+                    )}
+                  </span>
+                  <span className="journey-label">{label}</span>
+                </li>
+              )
+            })}
+          </ol>
         </div>
         <div className="workflow-control-actions">
-          <TaskIdeButton identity={identity} />
-          <TaskReviewButton identity={identity} available={worktreeReady} />
+          {worktreeReady && <TaskIdeButton identity={identity} iconOnly />}
+          {worktreeReady && (
+            <TaskReviewButton identity={identity} available={worktreeReady} />
+          )}
           {issue ? (
             <button
               className="button secondary"
@@ -177,17 +205,28 @@ export function WorkflowControls({
             )
           )}
         </div>
-        {workflow.phase === 'idle' && !worktreeReady && (
+        {workflow.phase === 'idle' && (
           <p className="workflow-integration-hint">
-            New tasks start from the base branch. If this task needs files from
-            another completed task, integrate that task’s branch first.
+            Press Start and your agent begins in its own copy of the project, so
+            your code stays safe until you merge.
+          </p>
+        )}
+        {workflow.phase === 'running' && (
+          <p className="workflow-integration-hint">
+            Click the glowing step to watch the agent or answer its questions.
+          </p>
+        )}
+        {workflow.phase === 'waiting' && waiting?.status === 'waiting-review' && (
+          <p className="workflow-integration-hint">
+            The agent has finished. Open the review to approve it or ask for
+            changes.
           </p>
         )}
         {workflow.phase === 'completed' && (
           <p className="workflow-integration-hint">
             {workflow.integration?.status === 'integrated'
               ? 'Accepted work has been merged into the base branch.'
-              : 'Work accepted in the task workspace. Use Integrate branch to merge it into the base branch and move this task to Done and release dependent todos.'}
+              : 'Everything is approved. Integrate merges it into your code and moves the task to Done.'}
           </p>
         )}
         {workflow.summary.blockers.filter((message) => message.startsWith('Waiting for “')).map((message) => <p className="workflow-blocker" key={message}>{message}</p>)}
@@ -232,10 +271,13 @@ export function ReviewPanel({
   worktreeReady?: boolean
 }) {
   const [note, setNote] = useState(''),
-    [target, setTarget] = useState(''),
+    [chosenTarget, setTarget] = useState(''),
     [pending, setPending] = useState(false)
   const node = workflow.nodes[nodeId],
     evidence = workflow.evidence[nodeId] ?? []
+  const revisable = evidence.filter((result) => result.status === 'completed')
+  // With a single upstream agent there is nothing to choose.
+  const target = chosenTarget || (revisable.length === 1 ? revisable[0].nodeId : '')
   const manual = workflow.scheduling === 'manual'
   async function decide(decision: 'approve' | 'changes') {
     setPending(true)
@@ -268,10 +310,10 @@ export function ReviewPanel({
       </header>
       <p>
         {node.status === 'completed'
-          ? 'You approved this review. A new upstream revision will invalidate this approval.'
+          ? 'Approved. If the agent’s work changes, you’ll review it again.'
           : node.status === 'waiting-review'
-            ? 'Inspect the accepted upstream results, then approve or request a revision. This gate always waits for your decision.'
-            : 'Every upstream dependency must complete and be accepted before this review can be decided.'}
+            ? 'The agent has finished. Look over its work, then approve it or ask for changes.'
+            : 'This opens once the agent before it has finished.'}
       </p>
       <TaskReviewButton
         identity={{ projectId: workflow.projectId, taskId: workflow.taskId }}
@@ -299,49 +341,55 @@ export function ReviewPanel({
       ))}
       {node.status === 'waiting-review' && (
         <fieldset disabled={pending || disabled}>
-          <label htmlFor="review-note">Review note / requested changes</label>
+          <label htmlFor="review-note">Note</label>
           <textarea
             id="review-note"
             rows={4}
             maxLength={8000}
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="Describe what needs to change, or add an approval note."
+            placeholder="Optional when approving. Required when asking for changes."
           />
-          <label htmlFor="review-target">Agent to revise</label>
+          {revisable.length > 1 && (
+          <>
+          <label htmlFor="review-target">Which agent should revise?</label>
           <select
             id="review-target"
             value={target}
             onChange={(event) => setTarget(event.target.value)}
           >
             <option value="">Choose an upstream agent…</option>
-            {evidence
-              .filter((result) => result.status === 'completed')
-              .map((result) => (
-                <option key={result.nodeId} value={result.nodeId}>
-                  {result.title}
-                </option>
-              ))}
+            {revisable.map((result) => (
+              <option key={result.nodeId} value={result.nodeId}>
+                {result.title}
+              </option>
+            ))}
           </select>
-          <p className="helper">
-            {manual
-              ? "Request changes continues this agent's conversation. Run affected downstream nodes individually or choose Run workflow afterward."
-              : "Request changes continues this agent's conversation, reruns affected downstream nodes, and returns to this review."}
-          </p>
-          <button
-            className="button primary"
-            onClick={() => void decide('approve')}
-          >
-            <Check size={13} />
-            Approve review
-          </button>
-          <button
-            className="button secondary"
-            disabled={!target || !note.trim() || pending}
-            onClick={() => void decide('changes')}
-          >
-            Request changes & revise
-          </button>
+          </>
+          )}
+          <div className="review-actions">
+            <button
+              className="button primary"
+              onClick={() => void decide('approve')}
+            >
+              <Check size={13} />
+              Approve
+            </button>
+            <button
+              className="button secondary"
+              disabled={!target || !note.trim() || pending}
+              title={
+                !note.trim()
+                  ? 'Write what should change first'
+                  : manual
+                    ? 'The agent revises; then run the next steps yourself'
+                    : 'The agent revises, then this review comes back'
+              }
+              onClick={() => void decide('changes')}
+            >
+              Ask for changes
+            </button>
+          </div>
         </fieldset>
       )}
     </section>

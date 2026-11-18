@@ -20,7 +20,7 @@ afterEach(() => cleanups.splice(0).reverse().forEach((cleanup) => cleanup()))
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'constella-sessions-'))
   const database = openWorkspaceDatabase(':memory:')
-  cleanups.push(() => { database.close(); rmSync(root, { recursive: true, force: true }) })
+  cleanups.push(() => { database.close(); removeTemp(root) })
   const workspace = new WorkspaceService(database)
   const project = await workspace.createProject({ path: join(root, 'project') })
   const task = workspace.createTask({ projectId: project.id, title: 'Build the editor', description: '' })
@@ -132,3 +132,13 @@ it('surfaces native CLI attention in sidebar sessions and graph snapshots withou
   f.database.db.update(nodeRuns).set({ document: waiting.run }).where(eq(nodeRuns.id, waiting.run.id)).run()
   expect(f.execution.listSessions()[0]).toMatchObject({ state: 'running', detail: 'Running' })
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

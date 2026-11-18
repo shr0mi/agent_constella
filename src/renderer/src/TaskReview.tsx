@@ -70,7 +70,6 @@ function IdeButton({ onOpen, iconOnly = false, label, title }: {
         )}
         {!iconOnly && 'Open in IDE'}
       </button>
-      {error && !iconOnly && <small className="integration-error" role="alert">{error}</small>}
     </>
   )
 }

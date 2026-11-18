@@ -7,7 +7,7 @@ import type {
   TerminalRead,
   TerminalSession,
 } from '../../shared/terminal'
-import { cliArguments, cliPath } from './launch'
+import { cliArguments, cliLaunch } from './launch'
 import type { AgentOptions, ThreadOptions } from './types'
 
 type Descriptor = { port: number; key: string; version: number; pid: number }
@@ -136,6 +136,7 @@ export class TerminalHost {
     const proxy = connection.mcp
       ? { url: `http://127.0.0.1:${this.descriptor!.port}/mcp/${sessionId}` }
       : undefined
+    const launch = cliLaunch(provider)
     return this.rpc<TerminalSession>({
       op: 'create',
       id: sessionId,
@@ -143,8 +144,11 @@ export class TerminalHost {
       role: options.role,
       title: options.title ?? `${provider} terminal`,
       cwd: options.workingDirectory,
-      executable: cliPath(provider),
-      args: cliArguments(provider, prompt, options, proxy),
+      executable: launch.executable,
+      args: [
+        ...launch.prefixArgs,
+        ...cliArguments(provider, prompt, options, proxy),
+      ],
       prompt,
       mcp: connection.mcp,
       mcpToken,

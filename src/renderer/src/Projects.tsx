@@ -6,8 +6,10 @@ import React, {
   type FormEvent,
 } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import logoUrl from '../../../docs/assets/brand/agentconstella-logo.png'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Activity,
   Archive,
   Bot,
   ArrowDown,
@@ -52,10 +54,36 @@ import {
 import { useCatalog } from './catalog-store'
 
 const columns: { id: TaskStatus; title: string; caption: string }[] = [
-  { id: 'todo', title: 'To Do', caption: 'Ready to take shape' },
-  { id: 'doing', title: 'Doing', caption: 'Work in motion' },
-  { id: 'done', title: 'Done', caption: 'Integrated into the base branch' },
+  { id: 'todo', title: 'To Do', caption: 'Planned, not started yet' },
+  { id: 'doing', title: 'In progress', caption: 'Agents are working on these' },
+  { id: 'done', title: 'Done', caption: 'Merged into your code' },
 ]
+
+const stages = ['Plan', 'Run', 'Review', 'Merge'] as const
+
+/** Where a task is in its life: 0 Plan · 1 Run · 2 Review · 3 Merge · 4 done. */
+function taskStage(task: Task, workflow?: WorkflowSummary): number {
+  if (task.status === 'done' || workflow?.integration === 'integrated') return 4
+  if (!workflow?.started) return 0
+  if (workflow.phase === 'completed' || workflow.phase === 'integrating') return 3
+  if (workflow.phase === 'waiting') return 2
+  return 1
+}
+
+function StageTrack({ stage }: { stage: number }) {
+  return (
+    <div className="stage-track" aria-label={`Stage: ${stages[Math.min(stage, 3)]}`}>
+      {stages.map((label, index) => (
+        <span
+          key={label}
+          className={index < stage ? 'past' : index === stage ? 'now' : ''}
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 function taskWorkflowLabel(workflow: WorkflowSummary) {
   if (workflow.running)
@@ -156,7 +184,7 @@ export function ProjectsPage() {
           <span className="orbit-ring ring-1" />
           <span className="orbit-ring ring-2" />
           <span className="orbit-core">
-            <Bot size={26} />
+            <img src={logoUrl} alt="AgentConstella" draggable={false} />
           </span>
           <span className="orbit-chip chip-a">
             <GitBranch size={14} /> worktree
@@ -356,12 +384,18 @@ function QuickAgents() {
             </span>
             <div>
               <strong>{profile.name}</strong>
-              <span className="mono-meta">
-                {profile.model ?? 'default model'} · {profile.skillIds.length}{' '}
-                skills
+              <span className="dash-agent-meta">
+                <span>
+                  <Zap size={11} />
+                  {profile.skillIds.length}{' '}
+                  {profile.skillIds.length === 1 ? 'skill' : 'skills'}
+                </span>
+                <span>{profile.model ?? 'Default model'}</span>
               </span>
             </div>
-            <span className="dash-agent-pill">Ready</span>
+            <span className="dash-agent-go" aria-hidden="true">
+              <ArrowRight size={14} />
+            </span>
           </Link>
         ))}
       </div>
@@ -398,9 +432,16 @@ export function ProjectBoardPage() {
   const [dragged, setDragged] = useState<string | null>(null)
   const [dropColumn, setDropColumn] = useState<TaskStatus | null>(null)
   const [undo, setUndo] = useState<Task | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('settings') === '1') {
+      setSettings(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
   useEffect(() => {
     setEditor(null)
-    setSettings(false)
+    if (searchParams.get('settings') !== '1') setSettings(false)
     setArchiveOpen(false)
     setSearch('')
     setUndo(null)
@@ -501,7 +542,19 @@ export function ProjectBoardPage() {
       </Link>
       <div className="page-heading board-heading">
         <div>
-          <h1>{project.name}</h1>
+          <div className="board-title-row">
+            <h1>{project.name}</h1>
+            <button
+              type="button"
+              className="board-settings-gear"
+              onClick={() => setSettings(true)}
+              disabled={pending > 0}
+              title="Project settings"
+              aria-label="Project settings"
+            >
+              <Settings2 size={16} />
+            </button>
+          </div>
           <p className="board-repo-path" title={project.repoPath}>
             {project.repoPath}
           </p>
@@ -510,7 +563,7 @@ export function ProjectBoardPage() {
           <ManagerChat projectId={project.id} taskId={null} />
           <ProjectIdeButton projectId={project.id} />
           <button
-            className="button secondary"
+            className="button secondary board-settings-button"
             onClick={() => setSettings(true)}
             disabled={pending > 0}
           >
@@ -527,6 +580,11 @@ export function ProjectBoardPage() {
           </button>
         </div>
       </div>
+      <NextStep
+        project={project}
+        tasks={activeTasks}
+        onNewTask={() => setEditor('todo')}
+      />
       {project.description && (
         <p className="project-brief">{project.description}</p>
       )}
@@ -611,9 +669,20 @@ export function ProjectBoardPage() {
               onDrop={(event) => drop(event, column.id)}
             >
               <div className="column-heading">
-                <span className="column-dot" />
+                <span className="column-icon" aria-hidden="true">
+                  {column.id === 'todo' ? (
+                    <Circle size={14} />
+                  ) : column.id === 'doing' ? (
+                    <Activity
+                      size={14}
+                      className={all.length ? 'pulse-soft' : ''}
+                    />
+                  ) : (
+                    <CheckCheck size={14} />
+                  )}
+                </span>
                 <h2>{column.title}</h2>
-                <span>{all.length}</span>
+                <span className="column-count">{all.length}</span>
                 <button
                   className="icon-button"
                   aria-label={`Add task to ${column.title}`}
@@ -672,27 +741,73 @@ export function ProjectBoardPage() {
                           Acceptance criteria added
                         </span>
                       )}
+                      <StageTrack
+                        stage={taskStage(
+                          task,
+                          snapshot?.workflows?.find(
+                            (workflow) => workflow.taskId === task.id,
+                          ),
+                        )}
+                      />
                       {(() => {
                         const workflow = snapshot?.workflows?.find(
                           (workflow) => workflow.taskId === task.id,
                         )
-                        return workflow?.started ? (
-                          <div
-                            className={`task-workflow-badge ${workflow.phase}`}
-                            title={workflow.blockers.join('\n')}
+                        if (!workflow?.started) return null
+                        const merged = workflow.integration === 'integrated'
+                        const tone = merged
+                          ? 'merged'
+                          : workflow.running
+                            ? 'live'
+                            : workflow.phase === 'completed'
+                              ? 'merge'
+                              : workflow.phase === 'waiting'
+                                ? 'you'
+                                : 'idle'
+                        return (
+                          <Link
+                            className={`task-status-chip tone-${tone}`}
+                            to={`/projects/${project.id}/tasks/${task.id}/graph`}
+                            title={workflow.blockers.join('\n') || 'Open workflow'}
                           >
-                            <span>{taskWorkflowLabel(workflow)}</span>
-                            <strong>
-                              {workflow.accepted}/{workflow.total}
-                            </strong>
-                            {workflow.blockers[0] && (
-                              <small>{workflow.blockers[0]}</small>
-                            )}
-                            {workflow.integration === 'conflicts' && (
-                              <small>Integration conflicts</small>
-                            )}
-                          </div>
-                        ) : null
+                            <span className="task-status-icon" aria-hidden="true">
+                              {tone === 'live' ? (
+                                <span className="run-state-meter">
+                                  <i />
+                                  <i />
+                                  <i />
+                                  <i />
+                                </span>
+                              ) : tone === 'merged' ? (
+                                <CheckCheck size={13} />
+                              ) : tone === 'you' ? (
+                                <Target size={13} />
+                              ) : (
+                                <GitBranch size={13} />
+                              )}
+                            </span>
+                            <span className="task-status-text">
+                              <strong>
+                                {merged
+                                  ? 'Merged'
+                                  : tone === 'merge'
+                                    ? 'Ready to merge'
+                                    : tone === 'you'
+                                      ? 'Needs your review'
+                                      : taskWorkflowLabel(workflow)}
+                              </strong>
+                              <small>
+                                {merged
+                                  ? 'View receipt'
+                                  : workflow.integration === 'conflicts'
+                                    ? 'Merge conflicts — open to resolve'
+                                    : (workflow.blockers[0] ??
+                                      `${workflow.accepted} of ${workflow.total} steps done`)}
+                              </small>
+                            </span>
+                            <ArrowRight size={13} className="task-status-go" />
+                          </Link>
+                        )
                       })()}
                       {(task.dependencyIds ?? []).length > 0 && (
                         <p className="task-dependency-note">
@@ -800,35 +915,42 @@ export function ProjectBoardPage() {
                     </article>
                   )
                 })}
-                {visible.length === 0 && (
-                  <div className="empty-column">
-                    {column.id === 'done' ? (
-                      <CheckCheck size={23} />
-                    ) : column.id === 'doing' ? (
-                      <Clock3 size={23} />
-                    ) : (
-                      <Circle size={23} />
-                    )}
-                    <p>
-                      {search
-                        ? 'No matching tasks'
-                        : column.id === 'todo'
-                          ? 'Make space for the next step.'
+                {visible.length === 0 &&
+                  (column.id === 'todo' && !search ? (
+                    <button
+                      type="button"
+                      className="empty-column empty-add"
+                      disabled={pending > 0}
+                      onClick={() => setEditor('todo')}
+                    >
+                      <Plus size={20} />
+                      <strong>
+                        {all.length ? 'Add another task' : 'Add your first task'}
+                      </strong>
+                      <span>Describe what you want built</span>
+                    </button>
+                  ) : (
+                    <div className="empty-column quiet">
+                      <p>
+                        {search
+                          ? 'No matching tasks'
                           : column.id === 'doing'
-                            ? 'Ready when you are.'
-                            : 'Your finished work lands here.'}
-                    </p>
-                  </div>
-                )}
+                            ? 'Tasks move here when their agents start.'
+                            : 'Merged tasks land here.'}
+                      </p>
+                    </div>
+                  ))}
               </div>
-              <button
-                className="column-add"
-                disabled={pending > 0 || column.id === 'done'}
-                onClick={() => setEditor(column.id)}
-              >
-                <Plus size={13} />
-                Add task
-              </button>
+              {column.id === 'todo' && visible.length > 0 && (
+                <button
+                  className="column-add"
+                  disabled={pending > 0}
+                  onClick={() => setEditor('todo')}
+                >
+                  <Plus size={13} />
+                  Add task
+                </button>
+              )}
             </section>
           )
         })}
@@ -1457,10 +1579,24 @@ export function GettingStarted({
     }
   })
   const info = providerInfo[provider]
-  const cliText = diagnostics?.cliVersion ?? ''
-  const signedIn = diagnostics?.auth.status === 'signed-in'
-  const installed =
-    signedIn || (cliText !== '' && !cliText.includes(`${provider}: not installed`))
+  const installed = !!diagnostics?.providers?.find(
+    (item) => item.provider === provider,
+  )?.available
+  const signedInKey = `constella:signed-in:${provider}`
+  const [confirmed, setConfirmed] = useState<Record<string, boolean>>((): Record<string, boolean> => {
+    try {
+      return {
+        codex: localStorage.getItem('constella:signed-in:codex') === '1',
+        claude: localStorage.getItem('constella:signed-in:claude') === '1',
+      }
+    } catch {
+      return {}
+    }
+  })
+  // The app cannot read the CLI's login, so sign-in is confirmed by the user
+  // or proven by a completed run.
+  const signedIn =
+    diagnostics?.auth.status === 'signed-in' || !!confirmed[provider] || runCount > 0
   const projects = snapshot?.projects ?? []
   const tasks = (snapshot?.tasks ?? []).filter((task) => !task.archivedAt)
   const steps: {
@@ -1487,7 +1623,22 @@ export function GettingStarted({
       body: (
         <>
           <CopyLine command={info.login} />
-          <p>We check for you every few seconds.</p>
+          <p>Finish the sign-in in your browser, then confirm here.</p>
+          <button
+            type="button"
+            className="gs-go"
+            disabled={!installed}
+            onClick={() => {
+              try {
+                localStorage.setItem(signedInKey, '1')
+              } catch {
+                /* Remember for this session only. */
+              }
+              setConfirmed((current) => ({ ...current, [provider]: true }))
+            }}
+          >
+            I’ve signed in <Check size={12} />
+          </button>
         </>
       ),
     },
@@ -1535,13 +1686,13 @@ export function GettingStarted({
   const [openStep, setOpenStep] = useState(firstOpen)
   useEffect(() => setOpenStep(firstOpen), [firstOpen])
   useEffect(() => {
-    if (signedIn || !window.constella) return
+    if (installed || !window.constella) return
     if (!diagnostics) void refreshDiagnostics()
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refreshDiagnostics()
     }, 8000)
     return () => window.clearInterval(timer)
-  }, [signedIn, diagnostics])
+  }, [installed, diagnostics])
   if (variant === 'dashboard' && allDone && dismissed) return null
   const bars = 14
   const filled = Math.round((completed / steps.length) * bars)
@@ -1774,5 +1925,178 @@ export function NumberStepper({
       </motion.button>
       <span className="num-stepper-hint">agents at once</span>
     </div>
+  )
+}
+
+/**
+ * One clear "what to do now" line for the board, derived from the project's
+ * real state. It always offers exactly one next action.
+ */
+function NextStep({
+  project,
+  tasks,
+  onNewTask,
+}: {
+  project: Project
+  tasks: Task[]
+  onNewTask: () => void
+}) {
+  const navigate = useNavigate()
+  const diagnostics = useAppStore((store) => store.state?.diagnostics)
+  const workflows = useWorkspaceStore((store) => store.snapshot?.workflows)
+  const pending = useWorkspaceStore((store) => store.pending)
+  useEffect(() => {
+    if (!diagnostics && window.constella) void refreshDiagnostics()
+  }, [diagnostics])
+  const provider = project.defaultProvider ?? 'codex'
+  const other = provider === 'codex' ? 'claude' : 'codex'
+  const has = (id: 'codex' | 'claude') =>
+    !!diagnostics?.providers?.find((item) => item.provider === id)?.available
+  const name = (id: 'codex' | 'claude') => (id === 'codex' ? 'Codex' : 'Claude Code')
+  const graph = (task: Task) =>
+    navigate(`/projects/${project.id}/tasks/${task.id}/graph`)
+  const summary = (task: Task) =>
+    workflows?.find((workflow) => workflow.taskId === task.id)
+  async function switchProvider(id: 'codex' | 'claude') {
+    try {
+      await workspaceAction((api) =>
+        api.updateProject({
+          projectId: project.id,
+          expectedRevision: project.revision,
+          name: project.name,
+          description: project.description,
+          instructions: project.instructions,
+          devCommand: project.devCommand,
+          testCommand: project.testCommand,
+          ideCommand: project.ideCommand ?? '',
+          maxParallelAgents: project.maxParallelAgents ?? 4,
+          defaultProvider: id,
+          defaultModel: null,
+          defaultEffort: null,
+        }),
+      )
+    } catch {
+      /* The shared notice explains a failed save. */
+    }
+  }
+  let step: {
+    tone: 'warn' | 'live' | 'you' | 'go' | 'done'
+    title: string
+    hint: string
+    action?: { label: string; run: () => void }
+  }
+  const open = tasks.filter((task) => task.status !== 'done')
+  const waiting = open.find((task) => {
+    const flow = summary(task)
+    return flow?.started && flow.phase === 'waiting'
+  })
+  const running = open.find((task) => summary(task)?.phase === 'running')
+  const mergeable = open.find((task) => {
+    const flow = summary(task)
+    return flow?.phase === 'completed' && flow.integration !== 'integrated'
+  })
+  const unstarted = open.find((task) => !summary(task)?.started)
+  if (diagnostics && !has(provider))
+    step = has(other)
+      ? {
+          tone: 'warn',
+          title: `This project is set to ${name(provider)}, which isn’t installed`,
+          hint: `${name(other)} is ready on this computer.`,
+          action: { label: `Use ${name(other)}`, run: () => void switchProvider(other) },
+        }
+      : {
+          tone: 'warn',
+          title: 'Install a coding agent to run tasks',
+          hint: 'Codex CLI or Claude Code — the setup takes a minute.',
+          action: { label: 'Open setup', run: () => navigate('/playground') },
+        }
+  else if (!tasks.length)
+    step = {
+      tone: 'go',
+      title: 'Add your first task',
+      hint: 'Use the dashed box in To Do below — describe what you want built.',
+    }
+  else if (waiting)
+    step = {
+      tone: 'you',
+      title: `“${waiting.title}” is waiting for you`,
+      hint: 'Review the agent’s work and approve or request changes.',
+      action: { label: 'Review', run: () => graph(waiting) },
+    }
+  else if (mergeable)
+    step = {
+      tone: 'you',
+      title: `“${mergeable.title}” is ready to merge`,
+      hint: 'Preview the changes, then integrate them into your branch.',
+      action: { label: 'Integrate', run: () => graph(mergeable) },
+    }
+  else if (running)
+    step = {
+      tone: 'live',
+      title: `Agents are working on “${running.title}”`,
+      hint: 'Open the graph to watch progress or answer the agent.',
+      action: { label: 'Watch', run: () => graph(running) },
+    }
+  else if (unstarted)
+    step = {
+      tone: 'go',
+      title: `Next: plan and start “${unstarted.title}”`,
+      hint: 'Open its graph, pick an agent for each step, then press Start.',
+      action: { label: 'Open graph', run: () => graph(unstarted) },
+    }
+  else
+    step = {
+      tone: 'done',
+      title: 'Everything here is merged',
+      hint: 'Nice work. Add the next task when you’re ready.',
+      action: { label: 'New task', run: onNewTask },
+    }
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={step.title}
+        className={`next-step tone-${step.tone}`}
+        role="status"
+        initial={{ opacity: 0, y: 6, filter: 'blur(4px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        exit={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
+        transition={{ duration: 0.25 }}
+      >
+        <span className="next-step-icon" aria-hidden="true">
+          {step.tone === 'warn' ? (
+            <Zap size={15} />
+          ) : step.tone === 'live' ? (
+            <span className="run-state-meter">
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          ) : step.tone === 'done' ? (
+            <CheckCheck size={15} />
+          ) : step.tone === 'you' ? (
+            <Target size={15} />
+          ) : (
+            <ArrowRight size={15} />
+          )}
+        </span>
+        <span className="next-step-text">
+          <span className="next-step-kicker">Next step</span>
+          <strong>{step.title}</strong>
+          <small>{step.hint}</small>
+        </span>
+        {step.action && (
+          <button
+            type="button"
+            className="button primary next-step-action"
+            disabled={pending > 0}
+            onClick={step.action.run}
+          >
+            {step.action.label}
+            <ArrowRight size={14} />
+          </button>
+        )}
+      </motion.div>
+    </AnimatePresence>
   )
 }

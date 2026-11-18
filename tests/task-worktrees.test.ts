@@ -24,7 +24,7 @@ afterEach(() => {
   databases.splice(0).forEach((database) => database.close())
   roots
     .splice(0)
-    .forEach((root) => rmSync(root, { recursive: true, force: true }))
+    .forEach((root) => removeTemp(root))
 })
 function git(path: string, ...args: string[]) {
   return execFileSync('git', ['-C', path, ...args], {
@@ -219,3 +219,13 @@ describe('readable task branches', () => {
     expect(git(other.repoPath, 'branch', '--list', 'codex')).toContain('codex')
   })
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

@@ -41,7 +41,7 @@ import { taskGit, TaskWorktreeService } from './task-worktrees'
 import { runChecks } from './run-checks'
 import { z } from 'zod'
 import { terminalAttentionLabel, type TerminalAttention } from '../../shared/terminal'
-import { launchIde, ideArguments } from './ide-launcher'
+import { launchIde, ideArguments, effectiveIdeCommand } from './ide-launcher'
 
 interface Active {
   run: NodeRun
@@ -477,7 +477,7 @@ export class NodeExecutionService {
       .from(projects)
       .where(eq(projects.id, identity.projectId))
       .get()!
-    ideArguments(project.ideCommand)
+    ideArguments(effectiveIdeCommand(project.ideCommand))
     if (identity.nodeId) this.get({ ...identity, nodeId: identity.nodeId })
     const agentWorkspace = identity.nodeId
       ? this.worktrees.getNode(identity.nodeId)

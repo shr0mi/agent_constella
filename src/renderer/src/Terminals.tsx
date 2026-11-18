@@ -1,10 +1,35 @@
 import { useEffect, useState } from 'react'
-import { Columns2, Terminal } from 'lucide-react'
+import { Columns2, Terminal, Trash2, X } from 'lucide-react'
 import type { TerminalSession } from '../../shared/terminal'
 import { TerminalPane } from './components/TerminalPane'
 
+const HIDDEN_KEY = 'constella:hidden-terminals'
+
+function readHidden(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+
 export function TerminalsPage() {
-  const [sessions, setSessions] = useState<TerminalSession[]>([])
+  const [allSessions, setSessions] = useState<TerminalSession[]>([])
+  const [hidden, setHidden] = useState<string[]>(readHidden)
+  // Finished sessions can be cleared from this list. Their transcripts stay in
+  // app data, and the background service forgets them on the next restart.
+  const sessions = allSessions.filter((session) => !hidden.includes(session.id))
+  const finished = sessions.filter((session) => session.state === 'exited')
+  function hide(ids: string[]) {
+    const next = [...new Set([...hidden, ...ids])]
+    setHidden(next)
+    setSelected((current) => current.filter((id) => !ids.includes(id)))
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify(next.slice(-500)))
+    } catch {
+      /* Hiding still works for this session. */
+    }
+  }
   const [selected, setSelected] = useState<string[]>([])
   const [error, setError] = useState('')
   useEffect(() => {
@@ -16,11 +41,14 @@ export function TerminalsPage() {
         if (!alive) return
         if (!result.ok) throw new Error(result.error.message)
         setSessions(result.value)
+        const visible = result.value.filter(
+          (session) => !readHidden().includes(session.id),
+        )
         setSelected((current) =>
           current.length
             ? current
-            : result.value.length
-              ? [result.value[0].id]
+            : visible.length
+              ? [visible[0].id]
               : [],
         )
         setError('')
@@ -42,9 +70,21 @@ export function TerminalsPage() {
           <h1>Terminals</h1>
           <p>Switch between your agents, or keep two sessions side by side.</p>
         </div>
-        <span className="small-muted">
-          {sessions.filter((s) => s.state !== 'exited').length} open sessions
-        </span>
+        <div className="terminals-heading-actions">
+          <span className="small-muted">
+            {sessions.length - finished.length} running
+          </span>
+          {finished.length > 0 && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => hide(finished.map((session) => session.id))}
+            >
+              <Trash2 size={13} />
+              Clear finished ({finished.length})
+            </button>
+          )}
+        </div>
       </div>
       {error && (
         <p className="terminal-error" role="alert">
@@ -88,6 +128,17 @@ export function TerminalsPage() {
                     </small>
                   </span>
                 </button>
+                {session.state === 'exited' && (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    title="Remove from list"
+                    aria-label={`Remove ${session.title} from the list`}
+                    onClick={() => hide([session.id])}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="icon-button"

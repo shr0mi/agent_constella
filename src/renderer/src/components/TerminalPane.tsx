@@ -165,10 +165,17 @@ export function TerminalPane({
       )
         return
       fit.fit()
+      // A finished process has no terminal left to resize.
+      if (state === 'exited') return
       void api
         .resize({ sessionId, cols: term.cols, rows: term.rows })
         .then((result) => {
-          if (!result.ok && alive) setError(result.error.message)
+          if (
+            !result.ok &&
+            alive &&
+            !/already exited/i.test(result.error.message)
+          )
+            setError(result.error.message)
         })
         .catch(() => {})
     }

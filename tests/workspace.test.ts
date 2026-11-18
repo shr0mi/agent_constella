@@ -20,6 +20,7 @@ import {
 } from '../src/main/db/database'
 import type { Task } from '../src/shared/workspace'
 import { migrations } from '../src/main/db/migrations'
+import { detectIde } from '../src/main/application/ide-launcher'
 
 const directories: string[] = []
 const databases: WorkspaceDatabase[] = []
@@ -29,7 +30,7 @@ afterEach(() => {
   })
   directories
     .splice(0)
-    .forEach((directory) => rmSync(directory, { recursive: true, force: true }))
+    .forEach((directory) => removeTemp(directory))
 })
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'constella-workspace-test-'))
@@ -57,9 +58,14 @@ describe('persistent project application service', () => {
     const f = fixture()
     const project = await f.service.openRepository({ path: f.repository('ide-project') })
     const launch = vi.fn().mockResolvedValue(undefined)
-    await expect(f.service.openInIde({ projectId: project.id }, launch))
-      .rejects.toMatchObject({ code: 'IDE_COMMAND' })
-    expect(launch).not.toHaveBeenCalled()
+    // With no IDE command saved, the app falls back to an installed editor.
+    // Only a machine without one reports the missing-command error.
+    if (!detectIde()) {
+      await expect(f.service.openInIde({ projectId: project.id }, launch))
+        .rejects.toMatchObject({ code: 'IDE_COMMAND' })
+      expect(launch).not.toHaveBeenCalled()
+    }
+    launch.mockClear()
     f.service.updateProject({
       projectId: project.id,
       expectedRevision: project.revision,
@@ -105,7 +111,9 @@ describe('persistent project application service', () => {
       projectId: project.id,
       expectedRevision: project.revision,
     }
-    expect(project).toMatchObject({ defaultProvider: 'codex', defaultModel: null, defaultEffort: null })
+    // New projects default to an installed CLI, so either provider is valid here.
+    expect(['codex', 'claude']).toContain(project.defaultProvider)
+    expect(project).toMatchObject({ defaultModel: null, defaultEffort: null })
     expect(() =>
       service.updateProject({
         ...input,
@@ -703,3 +711,13 @@ describe('persistent project application service', () => {
     }
   })
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

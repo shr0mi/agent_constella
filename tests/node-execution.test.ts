@@ -35,7 +35,7 @@ afterEach(async () => {
   })
   directories
     .splice(0)
-    .forEach((path) => rmSync(path, { recursive: true, force: true }))
+    .forEach((path) => removeTemp(path))
 })
 function git(path: string, ...args: string[]) {
   return execFileSync('git', ['-C', path, ...args], {
@@ -923,3 +923,13 @@ it('stops one agent independently and stops all remaining agents when their task
     expect(readFileSync(join(run.worktree!.path, 'partial.txt'), 'utf8')).toBe('keep partial work')
   }
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

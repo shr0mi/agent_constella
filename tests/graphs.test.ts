@@ -34,7 +34,7 @@ afterEach(() => {
   })
   roots
     .splice(0)
-    .forEach((root) => rmSync(root, { force: true, recursive: true }))
+    .forEach((root) => removeTemp(root))
 })
 const models: ModelOption[] = [
   {
@@ -615,3 +615,13 @@ describe('graph schema and topology rules', () => {
     expect(graphDocumentSchema.safeParse(invalid).success).toBe(false)
   })
 })
+
+/** Windows keeps database/Git handles open a moment longer than POSIX; leave
+ * the temp folder behind there instead of failing an otherwise passing test. */
+function removeTemp(path: string) {
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  } catch (error) {
+    if (process.platform !== 'win32') throw error
+  }
+}

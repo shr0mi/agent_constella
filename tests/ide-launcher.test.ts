@@ -9,7 +9,9 @@ it('passes quoted executable paths, arguments, and workspace paths literally wit
   const start = vi.fn(() => { queueMicrotask(() => child.emit('spawn')); return child })
   const path = "/tmp/task's $(do-not-execute)"
   await launchIde('code --new-window', path, start as unknown as typeof spawn)
-  expect(start).toHaveBeenCalledWith('code', ['--new-window', path], expect.objectContaining({ cwd: path, shell: false }))
+  // On Windows, a `code.cmd` launcher on PATH is swapped for the editor's real executable.
+  const executable = process.platform === 'win32' ? expect.stringMatching(/(^code$|code(\.exe)?$)/i) : 'code'
+  expect(start).toHaveBeenCalledWith(executable, ['--new-window', path], expect.objectContaining({ cwd: path, shell: false }))
   expect(child.unref).toHaveBeenCalledOnce()
   expect(() => ideArguments('"unterminated')).toThrow('unclosed quote')
   expect(() => ideArguments('')).toThrow('Project settings')

@@ -3,6 +3,7 @@ import { TerminalsPage } from './Terminals'
 import { TerminalPane } from './components/TerminalPane'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import logoUrl from '../../../docs/assets/brand/agentconstella-logo.png'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
@@ -13,7 +14,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleHelp,
-  Command,
   Cpu,
   FlaskConical,
   FolderKanban,
@@ -59,12 +59,18 @@ function FailureNotice({
   dismiss?: () => void
 }) {
   return (
-    <div className="failure" role="alert">
-      <TriangleAlert size={17} />
+    <motion.div
+      className="failure"
+      role="alert"
+      title={failure.code}
+      initial={{ opacity: 0, x: 24, filter: 'blur(4px)' }}
+      animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+      transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+    >
+      <TriangleAlert size={16} />
       <div>
-        <strong>{failure.code.replaceAll('_', ' ')}</strong>
-        <pre>{failure.message}</pre>
-        <p>{failure.hint}</p>
+        <strong>{failure.message}</strong>
+        {failure.hint && <p>{failure.hint}</p>}
       </div>
       {dismiss && (
         <button
@@ -75,6 +81,91 @@ function FailureNotice({
           <X size={16} />
         </button>
       )}
+    </motion.div>
+  )
+}
+
+function ProjectSwitcher() {
+  const projects = useWorkspaceStore((state) => state.snapshot?.projects) ?? []
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const currentId = /^\/projects\/([^/]+)/.exec(location.pathname)?.[1]
+  const current = projects.find((project) => project.id === currentId)
+  useEffect(() => setOpen(false), [location.pathname])
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div className="project-switcher" ref={ref}>
+      <button
+        type="button"
+        className={`project-switcher-trigger ${open ? 'open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="project-switcher-mark">
+          {current ? current.name.slice(0, 1).toUpperCase() : <FolderKanban size={15} />}
+        </span>
+        <span className="project-switcher-text">
+          <small>{current ? 'Project' : 'Workspace'}</small>
+          <strong>{current?.name ?? 'All projects'}</strong>
+        </span>
+        <ChevronDown size={14} className="project-switcher-chevron" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="project-switcher-menu"
+            role="listbox"
+            initial={{ opacity: 0, y: -6, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, y: -6, filter: 'blur(6px)' }}
+            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+          >
+            <button type="button" onClick={() => navigate('/projects')}>
+              <FolderKanban size={14} />
+              <span>All projects</span>
+              {!current && <Check size={13} />}
+            </button>
+            {projects.length > 0 && <div className="project-switcher-sep" />}
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                role="option"
+                aria-selected={project.id === currentId}
+                onClick={() => navigate(`/projects/${project.id}`)}
+              >
+                <span className="project-switcher-mini">
+                  {project.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span>{project.name}</span>
+                {project.id === currentId && <Check size={13} />}
+              </button>
+            ))}
+            <div className="project-switcher-sep" />
+            <button type="button" className="add" onClick={() => navigate('/projects')}>
+              <Plus size={14} />
+              <span>New or open a project</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -83,23 +174,21 @@ function Sidebar() {
   const diagnostics = useAppStore((s) => s.state?.diagnostics)
   const workspace = useWorkspaceStore((state) => state.snapshot)
   const projects = workspace?.projects ?? []
+  useEffect(() => {
+    if (!diagnostics && window.constella) void refreshDiagnostics()
+  }, [diagnostics])
   return (
     <aside className="sidebar">
       <div className="brand">
         <span className="brand-mark">
-          <Layers3 size={21} />
+          <img src={logoUrl} alt="" draggable={false} />
         </span>
         <span>
           AgentConstella
           <span className="brand-sub">Local agent workspace</span>
         </span>
       </div>
-      <div className="workspace-label">
-        <span className="workspace-avatar">A</span>
-        <div>
-          Personal workspace<small>Local · single user</small>
-        </div>
-      </div>
+      <ProjectSwitcher />
       <button
         type="button"
         className="sidebar-search"
@@ -123,7 +212,6 @@ function Sidebar() {
           <NavLink to="/playground">
             <FlaskConical size={17} />
             Connectivity lab
-            <span className="nav-dot" />
           </NavLink>
           <NavLink to="/skills">
             <Zap size={17} />
@@ -135,17 +223,6 @@ function Sidebar() {
           </NavLink>
         </nav>
         <SidebarSessions />
-        {projects.length > 0 && (
-          <div className="sidebar-projects">
-            <div className="nav-label">Your projects</div>
-            {projects.map((project) => (
-              <NavLink key={project.id} to={`/projects/${project.id}`}>
-                <span>{project.name.slice(0, 1).toUpperCase()}</span>
-                <strong>{project.name}</strong>
-              </NavLink>
-            ))}
-          </div>
-        )}
       </div>
       <div className="sidebar-bottom">
         <NavLink to="/integration">
@@ -153,20 +230,33 @@ function Sidebar() {
           Integration notes
           <ArrowRight size={14} />
         </NavLink>
-        <div className="local-indicator">
-          <span
-            className={`status-dot ${diagnostics?.auth.status === 'signed-in' ? 'green' : ''}`}
-          />
-          <div>
-            Native agent terminals
-            <small>
-              {diagnostics?.auth.status === 'signed-in'
-                ? 'Login detected'
-                : 'Check diagnostics to connect'}
-            </small>
-          </div>
-          <Command size={15} />
-        </div>
+        <NavLink to="/playground" className="agent-status" title="Open the Connectivity lab">
+          <span className="agent-status-title">Your agents</span>
+          {(['claude', 'codex'] as const).map((id) => {
+            const ready = !!diagnostics?.providers?.find(
+              (item) => item.provider === id,
+            )?.available
+            return (
+              <span key={id} className={`agent-status-row ${ready ? 'ready' : ''}`}>
+                <span className="agent-status-icon">
+                  {id === 'claude' ? <Sparkles size={13} /> : <Terminal size={13} />}
+                </span>
+                <span className="agent-status-name">
+                  {id === 'claude' ? 'Claude Code' : 'Codex'}
+                </span>
+                <span className="agent-status-state">
+                  {!diagnostics ? (
+                    '…'
+                  ) : ready ? (
+                    <Check size={13} strokeWidth={2.75} />
+                  ) : (
+                    'Not installed'
+                  )}
+                </span>
+              </span>
+            )
+          })}
+        </NavLink>
       </div>
     </aside>
   )
@@ -391,9 +481,28 @@ export function App() {
       <Sidebar />
       <div className="app-main">
         <header className="topbar">
-          <span>Workspace</span>
+          <NavLink to="/projects" className="crumb">
+            Workspace
+          </NavLink>
           <ChevronRight size={14} />
-          <strong>{pageName}</strong>
+          {(() => {
+            const [, root, projectId, sub, taskId] = location.pathname.split('/')
+            const task =
+              root === 'projects' && sub === 'tasks'
+                ? workspaceSnapshot?.tasks.find((item) => item.id === taskId)
+                : undefined
+            if (root === 'projects' && projectId && task)
+              return (
+                <>
+                  <NavLink to={`/projects/${projectId}`} end className="crumb">
+                    {pageName}
+                  </NavLink>
+                  <ChevronRight size={14} />
+                  <strong>{task.title}</strong>
+                </>
+              )
+            return <strong>{pageName}</strong>
+          })()}
           <span className="topbar-spacer" />
           <span className="topbar-local"><HardDrive size={13} /> Local workspace</span>
         </header>
@@ -486,7 +595,10 @@ function Playground() {
     project,
   )
   const selectedModel = models.find((option) => option.id === effective.model)
-  const signedIn = state?.diagnostics?.auth.status === 'signed-in'
+  // The CLI owns sign-in, so "ready" means the selected CLI was found and runs.
+  const signedIn = !!state?.diagnostics?.providers?.find(
+    (item) => item.provider === provider,
+  )?.available
   const skillCount =
     (selectedSkill ? 1 : 0) + new Set([...profileSkills, ...additionalSkills]).size
   function chooseProfile(id: string) {
@@ -751,7 +863,14 @@ function Playground() {
               <div className="ac-top">
                 <ProviderPicker
                   provider={provider}
-                  signedIn={signedIn}
+                  available={{
+                    codex: !!state?.diagnostics?.providers?.find(
+                      (item) => item.provider === 'codex',
+                    )?.available,
+                    claude: !!state?.diagnostics?.providers?.find(
+                      (item) => item.provider === 'claude',
+                    )?.available,
+                  }}
                   disabled={active || pending}
                   onChange={setProvider}
                 />
@@ -1166,18 +1285,19 @@ const providers = [
 /** Agent switch inside the composer: icon button that pops a picker above. */
 function ProviderPicker({
   provider,
-  signedIn,
+  available,
   disabled,
   onChange,
 }: {
   provider: 'codex' | 'claude'
-  signedIn: boolean
+  available: Record<'codex' | 'claude', boolean>
   disabled: boolean
   onChange: (provider: 'codex' | 'claude') => void
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const current = providers.find((item) => item.id === provider) ?? providers[0]
+  const ready = available[current.id]
   useEffect(() => {
     if (!open) return
     const onDown = (event: MouseEvent) => {
@@ -1228,6 +1348,9 @@ function ProviderPicker({
                   <strong>{item.name}</strong>
                   <small>{item.hint}</small>
                 </span>
+                <span className={`ac-provider-tag ${available[item.id] ? 'ready' : ''}`}>
+                  {available[item.id] ? 'Ready' : 'Not installed'}
+                </span>
                 {item.id === provider && <Check size={14} />}
               </motion.button>
             ))}
@@ -1236,10 +1359,14 @@ function ProviderPicker({
       </AnimatePresence>
       <motion.button
         type="button"
-        className="ac-provider-trigger"
+        className={`ac-provider-trigger ${ready ? 'is-ready' : 'is-missing'}`}
         disabled={disabled}
-        aria-label={`Agent: ${current.name}. Change agent`}
-        title={`${current.name} · ${signedIn ? 'connected' : 'not connected'}`}
+        aria-label={`Agent: ${current.name}, ${ready ? 'ready' : 'not found'}. Change agent`}
+        title={
+          ready
+            ? `${current.name} · ready`
+            : `${current.name} not found · click to set up`
+        }
         whileTap={{ scale: 0.92 }}
         onClick={() => setOpen((value) => !value)}
       >
@@ -1255,7 +1382,18 @@ function ProviderPicker({
             {current.icon}
           </motion.span>
         </AnimatePresence>
-        <span className={`ac-provider-dot ${signedIn ? 'ok' : 'warn'}`} />
+        <AnimatePresence>
+          {ready && (
+            <motion.span
+              key={current.id}
+              className="ac-provider-halo"
+              aria-hidden="true"
+              initial={{ opacity: 0.7, scale: 1 }}
+              animate={{ opacity: 0, scale: 1.55 }}
+              transition={{ duration: 1.1, ease: 'easeOut' }}
+            />
+          )}
+        </AnimatePresence>
       </motion.button>
     </div>
   )
@@ -1663,8 +1801,34 @@ const flowFacts = [
 ] as const
 
 function IntegrationNotes() {
-  const [selected, setSelected] = useState<string>('work')
-  const step = flowSteps.find((item) => item.id === selected)
+  const [selected, setSelected] = useState<string>('plan')
+  const [playing, setPlaying] = useState(false)
+  const index = Math.max(0, flowSteps.findIndex((item) => item.id === selected))
+  const step = flowSteps[index]
+  const go = (delta: number) =>
+    setSelected(flowSteps[(index + delta + flowSteps.length) % flowSteps.length].id)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement)?.closest('input, textarea, [contenteditable]')) return
+      if (event.key === 'ArrowRight') {
+        setPlaying(false)
+        go(1)
+      } else if (event.key === 'ArrowLeft') {
+        setPlaying(false)
+        go(-1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setTimeout(() => {
+      if (index === flowSteps.length - 1) setPlaying(false)
+      else go(1)
+    }, 2600)
+    return () => window.clearTimeout(timer)
+  })
   return (
     <MotionConfig reducedMotion="user">
       <main className="notes-page flow-page">
@@ -1677,16 +1841,22 @@ function IntegrationNotes() {
           to see what happens there.
         </p>
         <div className="flow-board">
-          <div className="flow-lane flow-lane-app">
+          <div className={`flow-lane flow-lane-app ${step.lane === 'app' ? 'is-active' : ''}`}>
             <span className="flow-lane-label">
-              <Layers3 size={13} /> AgentConstella
-              <small>plans · isolates · checks · merges</small>
+              <img className="flow-lane-logo" src={logoUrl} alt="" />
+              <span>
+                <strong>AgentConstella</strong>
+                <small>Plans the work, keeps it isolated, checks and merges it</small>
+              </span>
             </span>
           </div>
-          <div className="flow-lane flow-lane-cli">
+          <div className={`flow-lane flow-lane-cli ${step.lane === 'cli' ? 'is-active' : ''}`}>
             <span className="flow-lane-label">
-              <Terminal size={13} /> Your CLI
-              <small>Codex / Claude Code · sign-in · permissions</small>
+              <Terminal size={14} />
+              <span>
+                <strong>Your coding agent</strong>
+                <small>Codex or Claude Code does the coding in a real terminal</small>
+              </span>
             </span>
           </div>
           <svg
@@ -1710,7 +1880,7 @@ function IntegrationNotes() {
             <motion.button
               key={item.id}
               type="button"
-              className={`flow-node ${item.lane} ${selected === item.id ? 'selected' : ''}`}
+              className={`flow-node ${item.lane} ${selected === item.id ? 'selected' : ''} ${flowSteps.findIndex((other) => other.id === item.id) < index ? 'visited' : ''}`}
               style={{ left: `${item.x}%`, top: item.lane === 'app' ? '27.3%' : '74%' }}
               initial={{ opacity: 0, y: 10, filter: 'blur(4px)' }}
               animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -1718,7 +1888,10 @@ function IntegrationNotes() {
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.96 }}
               aria-pressed={selected === item.id}
-              onClick={() => setSelected(item.id)}
+              onClick={() => {
+                setPlaying(false)
+                setSelected(item.id)
+              }}
             >
               <span className="flow-num">{String(index + 1).padStart(2, '0')}</span>
               <span className="flow-text">
@@ -1738,17 +1911,55 @@ function IntegrationNotes() {
               exit={{ opacity: 0, y: -6, filter: 'blur(4px)' }}
               transition={{ duration: 0.22 }}
             >
-              <span className="flow-detail-tag">
-                {step.lane === 'app' ? '[ AGENTCONSTELLA ]' : '[ YOUR CLI ]'}
-              </span>
+              <div className="flow-detail-top">
+                <span className="flow-detail-tag">
+                  Step {index + 1} of {flowSteps.length} ·{' '}
+                  {step.lane === 'app' ? 'AgentConstella' : 'Your coding agent'}
+                </span>
+                <div className="flow-detail-nav">
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Previous step"
+                    onClick={() => {
+                      setPlaying(false)
+                      go(-1)
+                    }}
+                  >
+                    <ArrowRight size={15} style={{ transform: 'rotate(180deg)' }} />
+                  </button>
+                  <button
+                    type="button"
+                    className="flow-play"
+                    onClick={() => {
+                      if (!playing && index === flowSteps.length - 1) setSelected(flowSteps[0].id)
+                      setPlaying((value) => !value)
+                    }}
+                  >
+                    {playing ? <Square size={11} fill="currentColor" /> : <Activity size={13} />}
+                    {playing ? 'Stop' : 'Play walkthrough'}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label="Next step"
+                    onClick={() => {
+                      setPlaying(false)
+                      go(1)
+                    }}
+                  >
+                    <ArrowRight size={15} />
+                  </button>
+                </div>
+              </div>
               <h2>{step.title}</h2>
               <p>{step.detail}</p>
-              {'note' in step && (
-                <p className="flow-detail-note">
-                  <Terminal size={13} />
-                  {step.note}
-                </p>
-              )}
+              {'note' in step && <p className="flow-detail-tip">Tip: {step.note}</p>}
+              <div className="flow-detail-dots" aria-hidden="true">
+                {flowSteps.map((item, dot) => (
+                  <i key={item.id} className={dot === index ? 'now' : dot < index ? 'past' : ''} />
+                ))}
+              </div>
             </motion.section>
           )}
         </AnimatePresence>
