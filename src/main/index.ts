@@ -110,10 +110,6 @@ app.setName('AgentConstella')
 const hasLock = app.requestSingleInstanceLock()
 if (!hasLock) app.quit()
 else {
-  app.on('second-instance', () => {
-    if (window?.isMinimized()) window.restore()
-    window?.focus()
-  })
   void app
     .whenReady()
     .then(async () => {
@@ -435,6 +431,14 @@ else {
         ]),
       )
       createWindow()
+      app.on('second-instance', () => {
+        if (!window) {
+          createWindow()
+          return
+        }
+        if (window.isMinimized()) window.restore()
+        window.focus()
+      })
       app.on('activate', () => {
         if (!window) createWindow()
       })

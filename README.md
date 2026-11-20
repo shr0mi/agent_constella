@@ -27,7 +27,7 @@ coordinated agent workflows, reviewed code, and integrated branches.
 
 [![AgentConstella project board showing planned tasks, a workflow waiting for human review, and an integrated task](docs/assets/screenshots/project-board.png)](docs/assets/screenshots/project-board.png)
 
-<p align="center"><sub>The real desktop interface, shown with a disposable demo project. Click any screenshot to inspect it at full size.</sub></p>
+<p align="center"><sub>The current desktop interface, shown with disposable demo projects. Click any screenshot to inspect it at full size.</sub></p>
 
 ## Give agent work a place to come together
 
@@ -97,7 +97,7 @@ Independent ready nodes run up to the project's concurrency limit. A join waits 
 
 Each agent works on a persistent branch in its own worktree. Successful results are combined serially into the task workspace, where configured checks run again if the combination changes the tested file tree. Open that workspace in your IDE to inspect and run the result.
 
-**Done means integrated.** Reaching the graph's End leaves the task in **Doing**, awaiting integration. Your explicit merge into the base branch moves it to **Done** and releases dependent tasks.
+**Done means integrated.** Reaching the graph's End leaves the task **In progress**, awaiting integration. Your explicit merge into the base branch moves it to **Done** and releases dependent tasks.
 
 ## Inside the workspace
 
@@ -117,7 +117,7 @@ Open **Project manager** and describe the next feature in the native CLI termina
 
 Create profiles with role instructions, style guidance, skills, and model defaults. Share them globally or scope them to a project. The bundled `frontend-master` and `backend-sensei` profiles provide editable starting points; the default agent requires no custom profile.
 
-[![Global agent catalog showing the bundled backend-sensei and frontend-master profiles and their selected skills](docs/assets/screenshots/agent-profiles.png)](docs/assets/screenshots/agent-profiles.png)
+[![Global agent catalog showing the bundled backend-sensei and frontend-master profiles with two skills each](docs/assets/screenshots/agent-profiles.png)](docs/assets/screenshots/agent-profiles.png)
 
 ### Across repositories, all the way to Done
 
@@ -125,9 +125,9 @@ Keep several repositories in one workspace, then open a project's board to see w
 
 | Your repositories at a glance | An integrated task on its board |
 | --- | --- |
-| <a href="docs/assets/screenshots/projects-overview.png"><img src="docs/assets/screenshots/projects-overview.png" alt="Projects overview showing reading-test-app, stopwatch, and pomodoro-timer repositories" width="420" /></a> | <a href="docs/assets/screenshots/integrated-task.png"><img src="docs/assets/screenshots/integrated-task.png" alt="Reading-test-app board showing an integrated task in the Done column" width="420" /></a> |
+| <a href="docs/assets/screenshots/projects-overview.png"><img src="docs/assets/screenshots/projects-overview.png" alt="Projects dashboard showing workspace totals and the Orbit, reading-test-app, stopwatch, and pomodoro-timer repositories" width="420" /></a> | <a href="docs/assets/screenshots/integrated-task.png"><img src="docs/assets/screenshots/integrated-task.png" alt="Reading-test-app board showing a task marked Merged in the Done column" width="420" /></a> |
 
-Click any screenshot for full resolution. The board, graph, and profile examples use demo tasks and simulated inference. The project overview, manager conversation, and integrated-task screenshots were supplied from the desktop app. See [visual assets and regeneration](docs/assets/README.md).
+All six screenshots come from the desktop app. The workflows and the Project manager conversation use simulated agent responses with disposable repositories. See [visual assets and regeneration](docs/assets/README.md).
 
 ## You stay in control
 

@@ -21,15 +21,18 @@ Constraints: actual transparent background. Logo symbol only. No wordmark, no le
 
 ## Screenshots
 
-### Automated demo captures
+The screenshots show the bundled Electron renderer at the display's native pixel density. The profile catalog uses a 1000 × 740 CSS-pixel viewport. The other captures use a 1600 CSS-pixel width, with heights chosen to frame each view.
 
-The screenshots show the actual bundled Electron renderer, captured at the display's native pixel density. The board and graph use a 1600 × 1000 CSS-pixel viewport; the profile catalog uses a compact 1000 × 740 desktop viewport. The sample project is disposable. SQLite, Git worktrees, workflow scheduling, checks, acceptance, review, and integration use the real application services. Only provider inference is replaced with a local fixture; there are no provider calls or real account data.
+The demo uses disposable Git repositories and real application services for workflow scheduling, checks, review, and integration. A local CLI fixture reads project context and creates a task through the app's MCP server in the Project manager capture. The fixture supplies the terminal transcript, and workflow agent responses are simulated.
 
 | File | View |
 | --- | --- |
-| `screenshots/project-board.png` | Five demo tasks across To Do, Doing, and Done; a real completed integration and a pending human review. |
-| `screenshots/task-graph.png` | Parallel frontend/backend nodes, a combined result, and a selected human review gate. |
+| `screenshots/project-board.png` | Five Orbit tasks across To Do, In progress, and Done, including a pending human review and a merged task. |
+| `screenshots/task-graph.png` | Parallel frontend and backend steps, combined verification, and a selected human review gate. |
+| `screenshots/project-manager.png` | The Codex terminal in a Stopwatch project manager conversation that creates a session-history task through MCP. |
 | `screenshots/agent-profiles.png` | The bundled global agent profiles. |
+| `screenshots/projects-overview.png` | The Projects dashboard with four demo repositories and workspace totals. |
+| `screenshots/integrated-task.png` | The reading-test-app board with a task marked Merged in Done. |
 
 Regenerate from the repository root after installing dependencies:
 
@@ -38,14 +41,4 @@ npm run build
 node_modules/.bin/electron scripts/capture-readme.cjs
 ```
 
-This requires a desktop session capable of launching Electron. The script isolates app data and Git repositories in a temporary directory, cleans them up on completion, and writes only the three screenshot files to the repository. Set `CONSTELLA_README_SCREENSHOTS` to capture into another directory.
-
-### User-supplied desktop captures
-
-These screenshots were supplied by the project owner and are copied unchanged from the attachments. They retain their original desktop window framing, terminal text, and visible project paths. The demo capture script does not overwrite them.
-
-| File | View |
-| --- | --- |
-| `screenshots/projects-overview.png` | The Projects view listing reading-test-app, stopwatch, and pomodoro-timer. |
-| `screenshots/project-manager.png` | A native Codex CLI manager conversation reading live context and creating a stopwatch session-history task through MCP. |
-| `screenshots/integrated-task.png` | The reading-test-app board with an integrated task in Done. |
+The script needs a desktop session that can launch Electron. It uses temporary app data and Git repositories, removes the demo repositories on completion, and writes all six screenshots to `docs/assets/screenshots`. Set `CONSTELLA_README_SCREENSHOTS` to capture into a different directory.
